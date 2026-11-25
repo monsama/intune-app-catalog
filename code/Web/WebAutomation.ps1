@@ -294,7 +294,7 @@ function Global:Invoke-ManagedUpdateRun {
         Remove-Item -LiteralPath ($_.FullName -replace '\.json$', '.html') -Force -ErrorAction SilentlyContinue
     }
     Write-Host "Report: $base.html"
-    Write-Log "[$(if ($failed) { 'WARN' } else { 'OK' })] Managed updates run$(if ($PlanOnly) { ' (plan only)' }): $($items.Count) item(s), $failed failure(s). Report: $base.html"
+    Write-Log "[$(if ($failed) { 'WARN' } else { 'OK' })] Managed updates run$(if ($PlanOnly) { ' (plan only)' }): $(Format-Count ($items.Count) 'item'), $(Format-Count $failed 'failure'). Report: $base.html"
     return $(if ($failed) { 1 } else { 0 })
 }
 
@@ -447,7 +447,7 @@ function Global:Invoke-WebCatalogBackup {
     try { Compress-Archive -LiteralPath @($files | ForEach-Object { $_.FullName }) -DestinationPath $zip -CompressionLevel Optimal -ErrorAction Stop }
     catch { return @{ ok = $false; text = "The catalog backup failed: $($_.Exception.Message)" } }
     @(Get-ChildItem -LiteralPath $dir -Filter 'catalog-*.zip' -File | Sort-Object Name -Descending | Select-Object -Skip 30) | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
-    $text = "Backed up $($files.Count) app file(s) to $zip."
+    $text = "Backed up $(Format-Count ($files.Count) 'app file') to $zip."
     $gitDir = Join-Path $cat '.git'
     if ($Global:App.ReleasePolicy.BackupGit -and (Test-Path -LiteralPath $gitDir) -and (Get-Command git -ErrorAction SilentlyContinue)) {
         # Only a repository this user owns, with no hooks, fsmonitor or filters of its own: on a share, someone
@@ -687,7 +687,7 @@ function Global:Send-WebMonthlyReport {
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Managed updates $(& $enc $Month)</title>
 <style>body{font:14px system-ui,Segoe UI,sans-serif;margin:24px;color:#101828}table{border-collapse:collapse;width:100%;margin-bottom:20px}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #eaecf0;vertical-align:top}th{color:#475467;font-size:12px}</style></head>
 <body><h1>Managed updates - $(& $enc $Month)</h1>
-<p>$($d.runs) nightly run(s). Released: $($d.released), promoted: $($d.promoted), withdrawn: $($d.withdrawn), held: $($d.held), failures: $($d.failed).$(if ($null -ne $d.endPercent) { " Devices on the current version: $(& $enc $d.startPercent) % at the start of the month, $(& $enc $d.endPercent) % at the end." })</p>
+<p>$(Format-Count ($d.runs) 'nightly run'). Released: $($d.released), promoted: $($d.promoted), withdrawn: $($d.withdrawn), held: $($d.held), failures: $($d.failed).$(if ($null -ne $d.endPercent) { " Devices on the current version: $(& $enc $d.startPercent) % at the start of the month, $(& $enc $d.endPercent) % at the end." })</p>
 <h2>Apps now</h2><table><thead><tr><th>App</th><th>Current version</th><th>Devices on it</th><th>In release</th></tr></thead><tbody>$($appRows -join '')</tbody></table>
 <h2>What happened</h2><table><thead><tr><th>Run</th><th>App</th><th>Outcome</th><th>Details</th></tr></thead><tbody>$(if ($evRows.Count) { $evRows -join '' } else { '<tr><td colspan="4">Nothing was released, promoted or held this month.</td></tr>' })</tbody></table>
 </body></html>
@@ -774,7 +774,7 @@ function Global:ConvertTo-ManagedUpdateReportHtml {
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>Managed updates $(& $enc $Report.started)</title>
 <style>body{font:14px system-ui,Segoe UI,sans-serif;margin:24px;color:#101828}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #eaecf0;vertical-align:top}th{color:#475467;font-size:12px}</style></head>
 <body><h1>Managed updates</h1>
-<p>$(& $enc $Report.started) to $(& $enc $Report.finished)$(if ($Report.planOnly) { ' - plan only, nothing was changed' }) - $(@($Report.items).Count) item(s), $(& $enc $Report.failed) failure(s).</p>
+<p>$(& $enc $Report.started) to $(& $enc $Report.finished)$(if ($Report.planOnly) { ' - plan only, nothing was changed' }) - $(Format-Count (@($Report.items).Count) 'item'), $(Format-Count (& $enc $Report.failed) 'failure').</p>
 $(if ($Report.trend -and $null -ne $Report.trend.onCurrentPercent) { "<p>Devices on the current version: $(& $enc $Report.trend.onCurrentPercent) % of $(& $enc $Report.trend.devices).</p>" })
 <p>Release rule: at least $(& $enc $p.Days) days in each ring (fast track: $(& $enc $p.FastTrackHours) hours), at most $(& $enc $p.MaxFailedPercent) % failed, at least $(& $enc $p.MinInstalled) installed. Automatic release: $(if ($p.AutoRelease) { 'on' } else { 'off' }); automatic promotion: $(if ($p.AutoPromote) { 'on' } else { 'off' }); clean-up of old versions: $(if ($p.CleanupOld) { 'on' } else { 'off' }).</p>
 <table><thead><tr><th>App</th><th>Outcome</th><th>What happened</th></tr></thead><tbody>

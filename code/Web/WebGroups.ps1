@@ -248,7 +248,7 @@ function Global:Start-WebGroupJob {
             $names = @(@($Data.names) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Select-Object -Unique)
             if (-not $names.Count) { return @{ ok = $false; error = 'No groups chosen.' } }
             $config.GroupNames = $names; $config.GroupName = ''
-            $kind = "Delete $($names.Count) group(s)"
+            $kind = "Delete $(Format-Count ($names.Count) 'group')"
         }
         'RemoveMember' {
             if ([string]$Data.groupId -notmatch $guid -or [string]$Data.memberId -notmatch $guid) { return @{ ok = $false; error = 'Group and member ids must be GUIDs.' } }
@@ -301,7 +301,7 @@ function Global:Complete-WebGroupRename {
         foreach ($k in 'Required', 'Available', 'Exclude') { if (@(@($p.$k) | Where-Object { [string]$_ -ieq $old }).Count) { $p.$k = @(& $swap $p.$k); $settingsChanged = $true } }
     }
     if ($settingsChanged) { try { Write-SettingsFile | Out-Null } catch { } }
-    Write-Log "[OK] Renamed '$($After.OldName)' to '$($After.NewName)'; $($changed.Count) app(s) in the catalog updated$(if ($changed.Count) { ": $($changed -join ', ')" })."
+    Write-Log "[OK] Renamed '$($After.OldName)' to '$($After.NewName)'; $(Format-Count ($changed.Count) 'app') in the catalog updated$(if ($changed.Count) { ": $($changed -join ', ')" })."
     return @{ ok = $true; updated = $changed }
 }
 

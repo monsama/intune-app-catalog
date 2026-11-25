@@ -141,7 +141,7 @@ function Global:Get-AuditSummaryTexts {
         return [pscustomobject]@{ Metadata = $failed; Groups = $failed; Dependencies = $failed; MetadataDiffs = @(); GroupDiffs = @() }
     }
     $metaDiffs = @(Get-CatalogMetadataFieldDiffs -Local $CatalogApp.metadata -Remote $Result.Metadata -OdataType $Result.OdataType)
-    $metadataText = if ($metaDiffs.Count -eq 0) { "OK" } else { "$($metaDiffs.Count) field(s) differ: $(($metaDiffs | ForEach-Object { $_.Field }) -join ', ')" }
+    $metadataText = if ($metaDiffs.Count -eq 0) { "OK" } else { "$(Format-Count ($metaDiffs.Count) 'field') differ$(if (($metaDiffs.Count) -eq 1) { 's' }): $(($metaDiffs | ForEach-Object { $_.Field }) -join ', ')" }
     $groupDiffs = @()
     if ($Result.GroupFetchOk) {
         $groupDiffs = @(Get-GroupFieldDiffs -LocalApp $CatalogApp -RemoteResult $Result)
@@ -187,7 +187,7 @@ function Global:Get-AppDetailFindings {
     }
     elseif (@($texts.GroupDiffs).Count -gt 0) {
         $gd = @($texts.GroupDiffs)
-        $findings.Add((New-CheckFinding -Area "Groups" -App $name -CatalogName $name -AppId $id -Problem "$($gd.Count) assignment list(s) differ: $((@($gd | ForEach-Object { $_.Field })) -join ', ')" `
+        $findings.Add((New-CheckFinding -Area "Groups" -App $name -CatalogName $name -AppId $id -Problem "$(Format-Count ($gd.Count) 'assignment list') differ$(if (($gd.Count) -eq 1) { 's' }): $((@($gd | ForEach-Object { $_.Field })) -join ', ')" `
             -Catalog ((@($gd | ForEach-Object { "$($_.Field): $(Get-CheckValueText $_.Local)" })) -join "; ") `
             -Intune ((@($gd | ForEach-Object { "$($_.Field): $(Get-CheckValueText $_.Remote)" })) -join "; ") `
             -Actions @("Pull", "PushGroups") -Data ([pscustomobject]@{ Diffs = $gd })))
@@ -209,7 +209,7 @@ function Global:Get-CheckValueText {
     # nothing at all.
     param($Value)
     $text = (([string]$Value) -replace '\r?\n', ' ').Trim()
-    if (-not $text) { return "(blank)" }
+    if (-not $text) { return "(empty)" }
     if ($text.Length -gt 120) { return $text.Substring(0, 120) + "..." }
     return $text
 }

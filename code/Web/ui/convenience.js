@@ -80,7 +80,7 @@ async function gpCheck(ta) {
   const close = r.close || {}, near = r.missing.filter(n => close[n]), none = r.missing.filter(n => !close[n]);
   warn.textContent = [
     ...near.map(n => `"${n}" isn't in Entra ID, but "${close[n]}" is - did you mean that one?`),
-    ...(none.length ? [`${none.length === 1 ? 'No group' : 'No groups'} named ${none.map(n => `"${n}"`).join(', ')} in Entra ID. Pushing the groups creates ${none.length === 1 ? 'it as a new, empty group' : 'them as new, empty groups'} - check the spelling if ${none.length === 1 ? 'it' : 'they'} should already exist.`] : [])].join(' ');
+    ...(none.length ? [`${none.length === 1 ? 'No group' : 'No groups'} named ${none.map(n => `"${n}"`).join(', ')} in Entra ID. Sending the groups creates ${none.length === 1 ? 'it as a new, empty group' : 'them as new, empty groups'} - check the spelling if ${none.length === 1 ? 'it' : 'they'} should already exist.`] : [])].join(' ');
 }
 // Re-checked when the box changes (a chip removed, another app opened), so a warning never outlives its names.
 function gpRecheck(ta) { const src = ta._source || ta, anchor = ta._source ? ta.parentElement : ta, warn = anchor.parentElement.querySelector('.gpwarn');
@@ -420,7 +420,7 @@ async function managedForAll() {
   // Nor apps that update themselves (2.38.40) - winget's latest is their way.
   const names = apps.filter(a => a.wingetId && !a.managed && !a.updatesItself && !isStoreId(a.wingetId) && !isWauApp(a)).map(a => a.name);
   if (!names.length) return;
-  if (!(await ask(`Turn managed updates on for ${names.length} Winget app(s)?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
+  if (!(await ask(`Turn managed updates on for ${nWord(names.length, 'Winget app')}?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
   const r = await api('/api/managed-updates', { names, on: true });
   toast(r.ok ? `Managed updates on for ${nWord(r.changed.length, 'app')}${r.skipped.length ? ' - skipped: ' + r.skipped.join('; ') : ''}.` : r.error, !r.ok, r.ok ? [{ label: 'Undo', run: () => undoLast() }] : []);
   await loadApps(); loadHome();
@@ -458,7 +458,7 @@ async function wauSwitch() {
   if (!(await ask(`Switch ${nWord(p.apps.length, 'app')} from Winget-AutoUpdate to ${managedDefault ? 'managed updates' : 'the winget command'}?\n\n${p.apps.slice(0, 12).map(a => a.app).join(', ')}${p.apps.length > 12 ? ', ...' : ''}\n\n` +
     (managedDefault ? `Each installs its App version with winget from then on, and new versions go to the pilot groups first.` : 'Each installs with the winget command from then on (Settings: Winget apps install with).') + ` Their dependency on Winget-AutoUpdate is removed.` +
     (managedDefault && noV.length ? ` ${noV.length} have no App version yet - those in Intune install the newest until then, the others can't be sent until they have one (Pin newest in their side panel).` : '') +
-    (dep.length ? ` The ${dep.length} in Intune get the new commands pushed.` : ''), { ok: 'Switch them' }))) return;
+    (dep.length ? ` The ${dep.length} in Intune get the new commands sent.` : ''), { ok: 'Switch them' }))) return;
   const r = await api('/api/wau-switch', {});
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
@@ -470,7 +470,7 @@ async function wauSwitch() {
   // Nothing changed: nothing to undo.
   if (!r.changed.length) { toast(msg + ids, (r.byHand || []).length + (r.mismatch || []).length > 0); loadHome(); return; }
   if (r.deployed.length) {
-    const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Pushing ' });
+    const done = await runEach(r.deployed, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', startText: 'Sending settings for ' });
     toast(`${msg}${ids}${dropped} Pushed to Intune for ${done.length} of ${r.deployed.length}.`, done.length < r.deployed.length, [{ label: 'Undo', run: () => undoLast() }]);
   } else toast(msg + ids + dropped, (r.mismatch || []).length > 0, [{ label: 'Undo', run: () => undoLast() }]);
   loadHome();

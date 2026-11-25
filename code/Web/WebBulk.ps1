@@ -75,7 +75,7 @@ function Global:Invoke-WebUndo {
         $restored.Add($it.name)
     }
     $Global:App.LastUndo = $null
-    Write-Log "[OK] Undid '$($u.label)': $($restored.Count) app(s) restored$(if ($skipped.Count) { "; left alone: $($skipped -join ', ')" })."
+    Write-Log "[OK] Undid '$($u.label)': $(Format-Count ($restored.Count) 'app') restored$(if ($skipped.Count) { "; left alone: $($skipped -join ', ')" })."
     return @{ ok = $true; label = [string]$u.label; restored = $restored.ToArray(); skipped = $skipped.ToArray() }
 }
 
@@ -110,7 +110,7 @@ function Global:Invoke-WebReplaceGroup {
     $undo = New-WebUndo "Replace $old with $new"
     foreach ($n in $changed) { Write-WebAppFile -App ($apps | Where-Object { $_.appName -eq $n } | Select-Object -First 1) -Undo $undo }
     Save-WebUndo $undo
-    Write-Log "[OK] Replaced '$old' with '$new' in $($changed.Count) app(s) in the catalog: $($changed -join ', ')."
+    Write-Log "[OK] Replaced '$old' with '$new' in $(Format-Count ($changed.Count) 'app') in the catalog: $($changed -join ', ')."
     return @{ ok = $true; changed = $changed; deployed = @($apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
 }
 
@@ -270,7 +270,7 @@ function Global:Import-WebCatalogCsv {
         Write-WebAppFile -App $a -Undo $undo
     }
     Save-WebUndo $undo
-    Write-Log "[OK] CSV import: $($changes.Count) change(s) on $($pending.Count) app(s) in the catalog."
+    Write-Log "[OK] CSV import: $(Format-Count ($changes.Count) 'change') on $(Format-Count ($pending.Count) 'app') in the catalog."
     $result.deployed = @($pending | Where-Object { $_.App.appId } | ForEach-Object { $_.App.appName })
     return $result
 }

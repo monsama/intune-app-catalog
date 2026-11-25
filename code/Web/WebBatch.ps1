@@ -172,7 +172,7 @@ function Global:Invoke-WebBatchEdit {
         return @{ ok = $true; preview = $true; changes = $diffs.ToArray(); unchanged = @($apps | Where-Object { $touched -notcontains $_.appName } | ForEach-Object { $_.appName }) }
     }
     Save-WebUndo $undo
-    Write-Log "[OK] Batch edit: $(@($checked.Changes.Keys) -join ', ') changed on $($changed.Count) app(s)$(if ($kept.Count) { "; install commands edited by hand kept on $($kept -join ', ')" })."
+    Write-Log "[OK] Batch edit: $(@($checked.Changes.Keys) -join ', ') changed on $(Format-Count ($changed.Count) 'app')$(if ($kept.Count) { "; install commands edited by hand kept on $($kept -join ', ')" })."
     return @{ ok = $true; changed = $changed.ToArray(); kept = $kept.ToArray(); deployed = @($apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
 }
 
@@ -237,6 +237,6 @@ function Global:Invoke-WebBatchGroups {
         $changed.Add($a.appName)
     }
     Save-WebUndo $undo
-    Write-Log "[OK] Groups $(if ($mode -eq 'add') { 'added to' } else { 'removed from' }) $($changed.Count) app(s) in the catalog$(if ($changed.Count) { ': ' + ($changed -join ', ') })."
+    Write-Log "[OK] Groups $(if ($mode -eq 'add') { 'added to' } else { 'removed from' }) $(Format-Count ($changed.Count) 'app') in the catalog$(if ($changed.Count) { ': ' + ($changed -join ', ') })."
     return @{ ok = $true; changed = $changed.ToArray(); deployed = @($apps | Where-Object { $_.appId -and $changed -contains $_.appName } | ForEach-Object { $_.appName }) }
 }

@@ -282,7 +282,7 @@ function Global:Save-WebScriptCopies {
     $v = $read.value
     $everything = ($v.Failed.Count -eq 0)
     $saved = Save-ScriptsToFolder -Path (Get-WebScriptsFolder) -Scripts $v.Records -NoPrune:(-not $everything)
-    $msg = "Saved $($saved.Saved) of $($v.Total) script(s) locally$(if ($saved.Removed) { ", $($saved.Removed) no longer in Intune removed" })."
+    $msg = "Saved $($saved.Saved) of $(Format-Count ($v.Total) 'script') locally$(if ($saved.Removed) { ", $($saved.Removed) no longer in Intune removed" })."
     Write-Log "[OK] Platform scripts: $msg"
     foreach ($f in $v.Failed) { Write-Log "[WARN] Couldn't read platform script $f" }
     return @{ ok = $true; message = $msg; failed = @($v.Failed) + @($saved.Errors) }

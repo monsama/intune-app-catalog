@@ -124,6 +124,7 @@ $testableFunctionNames = @(
     "Get-MetadataWithoutOwnReleases",
     "Get-DeviceVersionCompareScript",
     "Set-ClearedFields",
+    "Format-Count",
     "Test-KnownSelfUpdatingApp",
     "Test-AppUpdatesItself",
     "Get-ManagedWingetDetectionV1",
@@ -743,6 +744,9 @@ $scNew.owner = 'Bob'; Set-ClearedFields -Old $scOld -New $scNew
 Assert-Equal 'notes' (@($scNew.clearedFields) -join ',') "Set-ClearedFields: ...and taken off once it has a value again"
 $mgKeep = Merge-CatalogMetadata -Remote ([pscustomobject]@{ description = 'r'; owner = 'Portal' }) -Local ([pscustomobject]@{ description = 'l'; owner = ''; clearedFields = @('owner') }) -KeepLocalFields @('Owner')
 Assert-True ([string]$mgKeep.owner -eq '' -and @($mgKeep.clearedFields) -contains 'owner') "Merge-CatalogMetadata: keeping the catalog's emptied field keeps it marked for the next send (2.38.34)" ($mgKeep | ConvertTo-Json -Compress)
+# 2.38.41: counts without "(s)"
+Assert-Equal '1 app' (Format-Count 1 'app') "Format-Count: one"
+Assert-Equal '0 apps|3 Winget IDs' ((Format-Count 0 'app') + '|' + (Format-Count 3 'Winget ID')) "Format-Count: none and many"
 # 2.38.40: apps that update themselves stay on winget's latest
 Assert-True ((Test-KnownSelfUpdatingApp 'Google.Chrome') -and (Test-KnownSelfUpdatingApp 'Mozilla.Firefox.de') -and -not (Test-KnownSelfUpdatingApp 'VideoLAN.VLC') -and -not (Test-KnownSelfUpdatingApp 'Google.ChromeRemoteDesktop')) "Test-KnownSelfUpdatingApp: browsers yes, VLC and look-alike IDs no"
 Assert-True ((Test-AppUpdatesItself ([pscustomobject]@{ wingetId = 'Google.Chrome'; selfUpdating = $null })) -and -not (Test-AppUpdatesItself ([pscustomobject]@{ wingetId = 'Google.Chrome'; selfUpdating = $false })) -and (Test-AppUpdatesItself ([pscustomobject]@{ wingetId = 'VideoLAN.VLC'; selfUpdating = $true }))) "Test-AppUpdatesItself: the app's own setting wins over the known list"
@@ -2777,7 +2781,7 @@ Assert-True ($detail[0].Catalog -like '*Publisher: Igor*' -and $detail[0].Intune
 Assert-Equal 'Pull,PushMetadata' ($detail[0].Actions -join ',') "Get-AppDetailFindings: metadata can be pulled or pushed"
 Assert-Equal 'Pull,PushGroups' ($detail[1].Actions -join ',') "Get-AppDetailFindings: groups can be pulled or pushed"
 $texts = Get-AuditSummaryTexts -CatalogApp $chkApps[0] -Result $chkResultDiff
-Assert-Equal '1 field(s) differ: Publisher' $texts.Metadata "Get-AuditSummaryTexts: the Last Audit wording is unchanged"
+Assert-Equal '1 field differs: Publisher' $texts.Metadata "Get-AuditSummaryTexts: the Last Audit wording is unchanged"
 Assert-Equal 'Catalog has: Runtime | Intune has: (none)' $texts.Dependencies "Get-AuditSummaryTexts: ...for dependencies too"
 $failedDetail = @(Get-AppDetailFindings -CatalogApp $chkApps[0] -Result ([pscustomobject]@{ Success = $false; Error = 'Forbidden' }))
 Assert-True ($failedDetail.Count -eq 1 -and $failedDetail[0].Failed) "Get-AppDetailFindings: a failed read is a row, marked failed"

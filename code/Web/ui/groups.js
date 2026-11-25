@@ -257,7 +257,7 @@ async function unassignGroups(names) {
   toast(`Removed from ${nWord(r.changed.length, 'app')} in the catalog.${r.deployed.length ? ` ${r.deployed.length} of them are in Intune - push their groups.` : ''}`);
   gSel.clear(); loadApps(); await loadGroups();
   if (group) openGroup(group.name);
-  if (r.deployed.length && await ask(`Send groups for the ${r.deployed.length} deployed app(s) now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
+  if (r.deployed.length && await ask(`Send groups for the ${nWord(r.deployed.length, 'deployed app')} now?\n\n${r.deployed.join('\n')}`, { ok: 'Send groups', danger: false })) openPushGroups(r.deployed);
 }
 
 // ---------------------------------------------------------------- one group
