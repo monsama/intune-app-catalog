@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.45
+
+- **Permissions say which "optional" they mean**: one that is there and fine
+  to keep shows "OK - optional" (green); one that isn't there and isn't needed
+  yet shows "Not set - optional". Before both read "Optional".
+
 ## 2.38.44
 
 - **Better tests**: a new suite, RoundTrip.Tests.ps1, runs against a fake

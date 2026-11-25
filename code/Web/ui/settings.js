@@ -597,7 +597,7 @@ $('btnPermCheck').addEventListener('click', async () => {
     const r = await api('/api/permission-check', { fresh: true });
     if (!r.ok) { $('permNote').textContent = r.error; return; }
     $('permNote').textContent = r.missing ? `${r.missing} to add, ${r.unused} you could remove. Just added one in Entra ID? It counts once "Grant admin consent" is done there.` : r.unused ? `Everything needed is there - ${r.unused} you could remove.` : 'Exactly what this catalog needs.';
-    const look = { ok: ['ok', 'OK'], missing: ['err', 'Add it'], partly: ['warn', 'Partly'], unused: ['warn', 'Not needed - remove'], optional: ['muted', 'Optional'] };
+    const look = { ok: ['ok', 'OK'], missing: ['err', 'Add it'], partly: ['warn', 'Partly'], unused: ['warn', 'Not needed - remove'], optional: ['ok', 'OK - optional'], notset: ['muted', 'Not set - optional'] };
     $('permRows').replaceChildren(...r.rows.map(x => el('tr', {}, el('td', { class: 'mono pname' }, ...x.name.split('.').flatMap((p, i, a) => i < a.length - 2 ? [p + '.', el('wbr')] : i < a.length - 1 ? [p + '.'] : [p]), el('div', { class: 'pstat-in' }, el('span', { class: 'pill ' + look[x.status][0], text: look[x.status][1] }))), el('td', { class: 'pstat' }, el('span', { class: 'pill ' + look[x.status][0], text: look[x.status][1] })), el('td', {}, x.for, x.why ? el('div', { class: 'why', text: x.why }) : ''))));
     $('permWrap').hidden = false;
   } finally { b.disabled = false; }
