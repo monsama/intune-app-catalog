@@ -1649,7 +1649,9 @@ $('btnPullApply').addEventListener('click', async () => {
   for (const box of document.querySelectorAll('#pullReview .pullapp')) keep[box.dataset.app] = [...box.querySelectorAll('tr[data-pick="catalog"]')].map(tr => tr.dataset.field);
   const r = await api('/api/pull-apply', { pending: pullPending, keep });
   if (!r.ok) { toast(r.error, true); return; }
-  $('dlgPull').close(); toast('Saved to the catalog.'); loadApps();
+  // Changed since the review (2.38.42): left as they are - their values in the review may be older than the catalog's.
+  const sk = r.skipped || [];
+  $('dlgPull').close(); toast(sk.length ? `Saved to the catalog - except ${sk.join(', ')}: changed since this review, so left as they are. Pull ${sk.length === 1 ? 'it' : 'them'} again.` : 'Saved to the catalog.', !!sk.length); loadApps();
   if (typeof checksRefresh === 'function') checksRefresh(Object.keys(keep));
 });
 

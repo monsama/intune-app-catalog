@@ -252,21 +252,17 @@ $('btnRelGo').addEventListener('click', async () => {
     if (!built.ok) { $('relErr').textContent = built.error || 'Building the package failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; return; }
   }
   const productCode = relInfo && relInfo.kind === 'package' && relInfo.installer ? relInfo.installer.productCode || '' : '';
-  const made = await releaseStep({ name, version, productCode, fastTrack: $('relFast').checked }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune...`);
-  if (!made.ok) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
-  if (relInfo && !relInfo.pilotGroups.length) {
-    // Straight to everyone: the app's groups on the new version, then off the old one (as Promote does).
-    const p1 = await releaseStep({ name, step: 'promote' }, '/api/release-assign', 'relLog', 'Giving it the app\'s groups...');
-    const p2 = p1.ok ? await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'relLog', 'Taking the groups off the old version...') : { ok: false };
-    const done = p1.ok ? await api('/api/release-promoted', { name }) : { ok: false };
-    $('btnRelClose').textContent = 'Close'; $('btnRelClose').hidden = true; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
-    toast(p1.ok && done.ok ? `${name} ${version} is released to everyone.${p2.ok ? '' : ' The old version still has its assignments - remove them in Intune.'}` : `${name} ${version} is in Intune, but giving it the app's groups failed - use Promote to try again, or Withdraw. ${p1.error || done.error || ''}`, !(p1.ok && done.ok && p2.ok));
-    loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
-    return;
-  }
-  const assigned = await releaseStep({ name, step: 'pilot' }, '/api/release-assign', 'relLog', 'Assigning it to the pilot groups...');
+  // One action on the server (2.38.42): the new app, then the pilot groups - or, with none, the app's groups and the
+  // old version's taken off. A reload in between no longer leaves it half done; the log shows each step.
+  const noPilot = relInfo && !relInfo.pilotGroups.length;
+  const made = await releaseStep({ name, version, productCode, fastTrack: $('relFast').checked }, '/api/release-start', 'relLog', `Creating ${name} ${version} in Intune${noPilot ? ', then giving it to everyone' : ', then assigning it to the pilot groups'}...`);
+  const a = made.after || {};
+  const created = made.ok || !!a.flow || !!a.nextError || !!a.chainedSteps;
+  if (!created) { $('relErr').textContent = made.error || 'The release failed - see the log.'; $('relErr').hidden = false; $('btnRelGo').disabled = false; loadApps(); return; }
   $('btnRelClose').textContent = 'Close'; $('btnRelClose').hidden = true; $('btnRelGo').textContent = 'Done'; $('btnRelGo').disabled = false;
-  toast(assigned.ok ? `${name} ${version} is released to the pilot groups.` : `${name} ${version} is in Intune, but assigning it to pilot failed - Release again isn't needed: use Promote or Withdraw.`, !assigned.ok);
+  const fine = made.ok && !a.nextError && a.flowDone;
+  if (noPilot) toast(fine ? `${name} ${version} is released to everyone.${a.retireFailed ? ' The old version still has its assignments - remove them in Intune.' : ''}` : `${name} ${version} is in Intune, but giving it the app's groups failed - use Promote to try again, or Withdraw. ${a.nextError || made.error || ''}`, !fine || !!a.retireFailed);
+  else toast(fine ? `${name} ${version} is released to the pilot groups.` : `${name} ${version} is in Intune, but assigning it to pilot failed - Release again isn't needed: the nightly run assigns it, or use Promote or Withdraw. ${a.nextError || made.error || ''}`, !fine);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 });
 async function promoteRelease(name) {
@@ -276,20 +272,19 @@ async function promoteRelease(name) {
   const verdict = st && st.ok ? `Pilot: ${st.reason}${st.action === 'promote' ? ' The release rule says it is ready.' : st.action === 'advance' ? ' The release rule says it is ready for the next ring - promoting now skips the remaining rings.' : st.action === 'hold' ? ' The release rule says: hold.' : ' The release rule says: wait.'}\n\n` : '';
   if (!(await ask(`Promote ${name} ${a.pilotVersion} to everyone?\n\n${verdict}The version in pilot gets the catalog's groups and becomes the current one (named "${name}" in Intune); ${a.version || 'the current version'} loses its assignments and is kept in Intune as superseded. Devices that have it are updated to ${a.pilotVersion}.\n\nCheck its install status on the pilot devices first (More > Install status...).`, { ok: 'Promote', danger: false }))) return;
   runDialog(`Promote ${name} ${a.pilotVersion}`, 'Assigning the new release to the catalog\'s groups, then taking them off the old one.');
-  const p1 = await releaseStep({ name, step: 'promote' }, '/api/release-assign', 'runLog', `Assigning ${a.pilotVersion} to the catalog's groups...`);
-  if (!p1.ok) { toast(`Promoting failed - nothing else was changed. ${p1.error || ''}`, true); return; }
-  const p2 = await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'runLog', `Taking the groups off ${a.version || 'the old release'}...`);
-  const r = await api('/api/release-promoted', { name });
-  toast(r.ok ? `${name} ${r.version} is the current release for everyone.${p2.ok ? '' : ' The old release still has its assignments - remove them in Intune.'}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, !r.ok || !p2.ok);
+  const p = await releaseStep({ name, flow: 'promote' }, '/api/release-flow', 'runLog', `Promoting ${name} ${a.pilotVersion}...`);
+  const r = p.after || {};
+  if (!r.flowDone) { toast(`Promoting failed - nothing else was changed. ${p.error || ''}`, true); loadApps(); return; }
+  toast(r.ok !== false ? `${name} ${r.version} is the current release for everyone.${r.retireFailed ? ' The old release still has its assignments - remove them in Intune.' : ''}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, r.ok === false || !!r.retireFailed);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
 async function withdrawRelease(name) {
   const a = apps.find(x => x.name === name);
   if (!(await ask(`Withdraw ${name} ${a.pilotVersion}?\n\nIts app is deleted from Intune. Pilot devices that installed it keep ${a.pilotVersion} (an uninstall isn't sent); everyone else stays on ${a.version || 'the current version'}.`, { ok: 'Withdraw', danger: true }))) return;
   runDialog(`Withdraw ${name} ${a.pilotVersion}`, '');
-  const w = await releaseStep({ name, step: 'withdraw' }, '/api/release-assign', 'runLog', 'Taking it off the pilot groups...');
-  if (!w.ok) { toast(`Withdrawing failed. ${w.error || ''}`, true); return; }
-  const r = await api('/api/release-withdrawn', { name });
+  const w = await releaseStep({ name, flow: 'withdraw' }, '/api/release-flow', 'runLog', 'Taking it off the pilot groups, then deleting it...');
+  const r = w.after || {};
+  if (!r.flowDone) { toast(`Withdrawing failed. ${w.error || ''}`, true); loadApps(); return; }
   toast(r.ok ? (r.deleted ? `${name} ${a.pilotVersion} withdrawn and deleted from Intune.` : `${name} ${a.pilotVersion} withdrawn, but not deleted from Intune: ${r.error}`) : r.error, !r.ok || !r.deleted);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
@@ -298,11 +293,10 @@ async function rollbackRelease(name) {
   const a = apps.find(x => x.name === name), back = (a.previousVersions || []).slice(-1)[0];
   if (!(await ask(`Roll ${name} back to ${back}?\n\nThe catalog's groups go back to ${back}, and ${a.version || 'the current version'} loses them (it stays in Intune as superseded). Devices that already have ${a.version || 'the newer version'} keep it - nothing is uninstalled; devices that don't have it yet get ${back}.`, { ok: 'Roll back', danger: false }))) return;
   runDialog(`Roll ${name} back to ${back}`, '');
-  const r1 = await releaseStep({ name, step: 'rollback' }, '/api/release-assign', 'runLog', `Assigning ${back} to the catalog's groups...`);
-  if (!r1.ok) { toast(`Rolling back failed - nothing else was changed. ${r1.error || ''}`, true); return; }
-  const r2 = await releaseStep({ name, step: 'retire' }, '/api/release-assign', 'runLog', `Taking the groups off ${a.version || 'the current release'}...`);
-  const r = await api('/api/release-rolledback', { name });
-  toast(r.ok ? `${name} is back on ${r.version}.${r2.ok ? '' : ' The newer release still has its assignments - remove them in Intune.'}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, !r.ok || !r2.ok);
+  const rb = await releaseStep({ name, flow: 'rollback' }, '/api/release-flow', 'runLog', `Rolling ${name} back to ${back}...`);
+  const r = rb.after || {};
+  if (!r.flowDone) { toast(`Rolling back failed - nothing else was changed. ${rb.error || ''}`, true); loadApps(); return; }
+  toast(r.ok !== false ? `${name} is back on ${r.version}.${r.retireFailed ? ' The newer release still has its assignments - remove them in Intune.' : ''}${(r.notes || []).length ? ' ' + r.notes.join(' ') : ''}` : r.error, r.ok === false || !!r.retireFailed);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }
 

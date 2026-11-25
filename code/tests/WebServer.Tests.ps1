@@ -30,6 +30,13 @@ $seedLogs = Join-Path ([IO.Path]::GetTempPath()) ("webtest-logs-" + [guid]::NewG
 [void](New-Item -ItemType Directory -Path $seedLogs -Force)
 Set-Content -LiteralPath $settingsPath -Value (@{ Folders = @{ Logs = $seedLogs } } | ConvertTo-Json -Compress) -Encoding UTF8
 
+# 2.38.42: a step the last run left behind with no result (the server stopped mid-step) - said at start, then forgotten.
+$jobDir = Join-Path ([System.IO.Path]::GetTempPath().TrimEnd('/', '\')) 'IntuneAppCatalog-jobs'
+[void](New-Item -ItemType Directory -Path $jobDir -Force)
+$staleId = [guid]::NewGuid().ToString('N')
+$staleRec = Join-Path $jobDir "$staleId.json"
+Set-Content -LiteralPath $staleRec -Value (@{ id = $staleId; mode = 'Create ZZ Stale Step'; step = 'createapp'; result = (Join-Path $jobDir "missing-$staleId.json"); log = ''; cleanup = @(); after = @{ Kind = 'deploy'; AppName = 'ZZ Stale Step' }; historyApps = @('ZZ Stale Step'); pid = 0; procStart = 0; owner = 0; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress) -Encoding UTF8
+
 $startArgs = @{
     FilePath               = $hostExe
     ArgumentList           = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$entry`"", '-Web', '-NoBrowser')
@@ -169,6 +176,7 @@ try {
     Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = '..\..\x'; store = 'CurrentUser' }).ok) 'certificates: a thumbprint that is not one is refused'
     Check (-not (Invoke-Api '/api/cert-delete-local' @{ thumbprint = ('A' * 40); store = 'Root' }).ok) 'certificates: only the two personal stores'
     $log = Invoke-Api '/api/log' @{ from = 0 }
+    Check (-not (Test-Path -LiteralPath $staleRec) -and (($log | ConvertTo-Json -Depth 4 -Compress) -like '*Create ZZ Stale Step was running when the app last stopped*')) 'a step left unfinished by the last run is said at start and forgotten' ($log | ConvertTo-Json -Depth 3 -Compress)
     Check ($log.ok -and (@($log.lines.Text) -join "`n") -like '*Web interface started*') 'log: the server''s own lines for the Activity box'
 
     # The app editor: add, rename, refuse a clash, remove - in the catalog
@@ -494,6 +502,9 @@ try {
     Check (-not (Invoke-Api '/api/release-start' @{ name = "$testName renamed"; version = '3.3' }).ok) 'release: refused without a connection'
     Check (-not (Invoke-Api '/api/release-assign' @{ name = "$testName renamed"; step = 'pilot' }).ok) 'release: assigning refused without a connection'
     Check (-not (Invoke-Api '/api/release-promoted' @{ name = "$testName renamed" }).ok) 'release: nothing to promote without a pilot release'
+    # 2.38.42: a flow is one call - an unknown one refused, a known one refused without a connection (nothing started).
+    Check ((Invoke-Api '/api/release-flow' @{ name = "$testName renamed"; flow = 'bogus' }).error -eq 'Unknown release flow.') 'release flow: an unknown flow is refused'
+    Check (-not (Invoke-Api '/api/release-flow' @{ name = "$testName renamed"; flow = 'promote' }).ok) 'release flow: refused without a connection'
     $ur = Invoke-Api '/api/update-runs'
     Check ($ur.ok -and $null -ne $ur.schedule) 'nightly run: its runs and schedule can be read' ($ur | ConvertTo-Json -Compress -Depth 3)
     Check (-not (Invoke-Api '/api/update-run' @{ planOnly = $true }).ok) 'nightly run: Run now refused without a connection'

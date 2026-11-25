@@ -179,6 +179,18 @@ function Global:Start-WebStepJob {
         HistorySource = [string]$Global:WebChangeSource
         BusyApp = $BusyApp
     }
+    # What a send sends, taken now (2.38.42): the "sent" record is made from it when it ends - from the file then, an
+    # edit saved while it ran counted as sent and dropped out of Changes to send.
+    if ($Name -in 'createapp', 'createstoreapp', 'createofficeapp', 'targetedassign', 'batchassign' -and $Kind -notmatch '^(Release|Promote|Advance|Withdraw|Retire|Finish|Delete|Roll|Assign .+ to pilot$|Give )') {
+        try {
+            $names = @($Global:App.WebJobs[$tag].HistoryApps)
+            $snap = @{}
+            foreach ($x in @((Read-WebCatalogRecords).Apps | Where-Object { $names -contains $_.appName })) { $snap[[string]$x.appName] = Get-WebAppSentValues $x }
+            $Global:App.WebJobs[$tag].SentSnap = $snap
+        }
+        catch { }
+    }
+    Save-WebJobRecord -Id $tag
     return @{ ok = $true; job = $tag }
 }
 
@@ -282,6 +294,87 @@ function Global:Update-WebCatalogAppHeld {
     return $app
 }
 
+function Global:Get-WebJobRecordFolder { return (Join-Path $env:TEMP 'IntuneAppCatalog-jobs') }
+
+function Global:Save-WebJobRecord {
+    <#
+      A running step written down (2.38.42) - what to do with its result, where the result goes, which process runs
+      it - so a restart of the app or the server (an update of the container) still finishes it: Resume-WebSavedJobs.
+      Before, its App ID or release was lost with the server, and a retry created a second app in Intune.
+    #>
+    param([string]$Id)
+    $j = $Global:App.WebJobs[$Id]
+    if (-not $j) { return }
+    try {
+        $dir = Get-WebJobRecordFolder
+        if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
+        $procStart = try { $j.Process.StartTime.ToUniversalTime().Ticks } catch { 0 }
+        $rec = [ordered]@{ id = $Id; mode = [string]$j.Mode; step = [string]$j.Step; result = [string]$j.Result; log = [string]$j.Log; cleanup = @($j.Cleanup)
+            after = $j.After; historyApps = @($j.HistoryApps); historySource = [string]$j.HistorySource; busyApp = [string]$j.BusyApp
+            pid = $(try { $j.Process.Id } catch { 0 }); procStart = $procStart
+            # Whose it is: the app that started it finishes it itself while it runs (the nightly run beside the app).
+            owner = $PID; ownerStart = $(try { (Get-Process -Id $PID).StartTime.ToUniversalTime().Ticks } catch { 0 }); started = ([datetime]$j.Started).ToString('o') }
+        [System.IO.File]::WriteAllText((Join-Path $dir "$Id.json"), (ConvertTo-Json -InputObject $rec -Depth 12 -Compress), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch { Write-Log "[WARN] Couldn't write down the running step $($j.Mode): $($_.Exception.Message)" }
+}
+
+function Global:Remove-WebJobRecord {
+    param([string]$Id)
+    Remove-Item -LiteralPath (Join-Path (Get-WebJobRecordFolder) "$Id.json") -Force -ErrorAction SilentlyContinue
+}
+
+function Global:ConvertTo-WebHashtable {
+    # The top level of a JSON object as a hashtable (a job's -After read back) - what lies below stays as read.
+    param($Object)
+    $h = @{}
+    if ($Object) { foreach ($p in $Object.PSObject.Properties) { $h[$p.Name] = $p.Value } }
+    return $h
+}
+
+function Global:Resume-WebSavedJobs {
+    <#
+      At start: the steps a previous run of the app (or the server) left running. One still running (the same
+      process) is followed again; one that ended is finished now as its page would have - App ID saved, release
+      recorded, what was sent noted. One whose result is gone is said in the log: check that app (Checks finds an
+      app created without its App ID).
+    #>
+    $dir = Get-WebJobRecordFolder
+    if (-not (Test-Path -LiteralPath $dir)) { return }
+    foreach ($f in @(Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        $rec = $null
+        try { $rec = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+        if (-not $rec -or -not ([string]$rec.id -match '^[0-9a-f]{32}$') -or $Global:App.WebJobs.ContainsKey([string]$rec.id)) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; continue }
+        # Still owned by a running app (the nightly run, a second window): left to it.
+        $ownerAlive = $false
+        if ([int]$rec.owner -gt 0 -and [int]$rec.owner -ne $PID) { try { $ownerAlive = ((Get-Process -Id ([int]$rec.owner) -ErrorAction Stop).StartTime.ToUniversalTime().Ticks -eq [int64]$rec.ownerStart) } catch { } }
+        if ($ownerAlive) { continue }
+        $proc = $null
+        if ([int]$rec.pid -gt 0) {
+            try { $p = [System.Diagnostics.Process]::GetProcessById([int]$rec.pid); if ($p.StartTime.ToUniversalTime().Ticks -eq [int64]$rec.procStart) { $proc = $p } } catch { }
+        }
+        $resultThere = [string]$rec.result -and (Test-Path -LiteralPath ([string]$rec.result))
+        if (-not $proc -and -not $resultThere) {
+            Write-Log "[WARN] $($rec.mode) was running when the app last stopped, and its result is gone - check $(if (@($rec.historyApps).Count) { @($rec.historyApps) -join ', ' } else { 'the app' }) in Intune (Checks finds an app created without its App ID)."
+            $left = @(@($rec.cleanup) + @([string]$rec.log) | Where-Object { $_ })
+            if ($left.Count) { Remove-Item -LiteralPath $left -Force -ErrorAction SilentlyContinue }
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+            continue
+        }
+        # Ended: a stand-in that has exited (its result file says how it went). Still running: that process.
+        if (-not $proc) { $proc = [pscustomobject]@{ HasExited = $true; ExitCode = 0; Id = 0 } }
+        if (-not (Test-Path -LiteralPath ([string]$rec.log))) { try { [System.IO.File]::WriteAllText([string]$rec.log, '') } catch { } }
+        # The app it held is held again until it is finished - the next step of a flow shares it.
+        if ($rec.busyApp) { [void](Enter-WebAppBusy -Name ([string]$rec.busyApp) -What ([string]$rec.mode)) }
+        $Global:App.WebJobs[[string]$rec.id] = @{
+            Process = $proc; Log = [string]$rec.log; Result = [string]$rec.result; Cleanup = @($rec.cleanup); Mode = [string]$rec.mode; Step = [string]$rec.step
+            Done = $false; After = (ConvertTo-WebHashtable $rec.after); LastPoll = (Get-Date).AddHours(-1); Started = $(try { [datetime]$rec.started } catch { Get-Date })
+            HistoryApps = @($rec.historyApps); HistorySource = [string]$rec.historySource; BusyApp = [string]$rec.busyApp
+        }
+        Write-Log "[INFO] Picked up $($rec.mode), left $(if ($proc.HasExited) { 'finished' } else { 'running' }) by the last run of the app - it is finished here."
+    }
+}
+
 function Global:Get-WebRunningJobs {
     # Steps the server knows about that haven't been completed yet, oldest first - for a page opened while they run.
     $list = foreach ($id in @($Global:App.WebJobs.Keys)) {
@@ -334,6 +427,7 @@ function Global:Complete-WebJobsAtExit {
                 try { $job.Process.Kill() } catch { }
                 Remove-Item -LiteralPath (@($job.Cleanup) + $job.Log + @($job.Result | Where-Object { $_ })) -Force -ErrorAction SilentlyContinue
                 if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
+                Remove-WebJobRecord -Id $id
                 Write-Log "[WARN] Stopped, still running at the end of the run: $($job.Mode) - check that app in Intune."
             }
             else { Write-Log "[WARN] Stopped without waiting for: $($job.Mode)." }
@@ -388,7 +482,20 @@ function Global:Complete-WebJob {
             Write-Log "$(if ($failed) { '[WARN]' } else { '[OK]' }) Packaging finished$(if ($failed) { " - $failed failed, see the log" })."
             return @{ ok = $true; failed = $failed }
         }
-        'release' { return (Complete-WebRelease -After $After -Result $Result) }
+        'release' {
+            $r = Complete-WebRelease -After $After -Result $Result
+            # What follows (2.38.42) is started here, not by the page: the pilot assignment - or, with no pilot groups,
+            # the app's groups and the old release's taken off - so a reload doesn't leave a pilot assigned to nobody.
+            if ($r.ok -and $After.Flow) {
+                $steps = @(Get-WebReleaseFlowSteps ([string]$After.Flow))
+                $cur = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$After.AppName } | Select-Object -First 1
+                $next = Start-WebReleaseAssign @{ name = [string]$After.AppName; step = $steps[0]; flow = [string]$After.Flow; then = @($steps | Select-Object -Skip 1); expectAppId = [string]$(if ($cur) { $cur.appId }); shared = $true }
+                if ($next.ok) { $r.nextJob = [string]$next.job; $r.nextStep = [string]$steps[0]; $r.assignPilot = $false }
+                else { $r.nextError = [string]$next.error; Write-Log "[WARN] $($After.AppName) $($After.Version) is in Intune, but its next step couldn't start: $($next.error)" }
+            }
+            return $r
+        }
+        'flow' { return (Complete-WebReleaseFlow -After $After) }
         'deploy' {
             $newId = [string]$Result.appId
             $defaults = $After.Defaults
@@ -478,14 +585,15 @@ function Global:Get-WebJobPoll {
     $response = [ordered]@{ ok = $true; text = (Protect-LogText $text); offset = $offset; done = $false }
     if ($exited) {
         $response.done = $true
-        $response.exitCode = $job.Process.ExitCode
+        $response.exitCode = $(try { $job.Process.ExitCode } catch { $null })
         $response.result = $null
         if ($job.Result -and (Test-Path -LiteralPath $job.Result)) {
             try { $response.result = Get-Content -LiteralPath $job.Result -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
         }
         elseif (-not $job.Result) {
             # A step without a result file (Package.ps1) - its exit code says it.
-            $response.result = [pscustomobject]@{ success = ($job.Process.ExitCode -eq 0); error = $(if ($job.Process.ExitCode -ne 0) { "Exit code $($job.Process.ExitCode) - see the log." } else { '' }) }
+            $code = $response.exitCode
+            $response.result = [pscustomobject]@{ success = ($code -eq 0); error = $(if ($code -ne 0) { "Exit code $code - see the log." } else { '' }) }
         }
         # Cleaned up only once the page has read everything (an empty read
         # after the exit); until then the log stays for the next poll.
@@ -500,10 +608,15 @@ function Global:Get-WebJobPoll {
                     try { $done = Complete-WebJob -After $job.After -Result $response.result -LogPath $job.Log }
                     catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
                 }
+                # A flow's 'retire' that failed still completes the flow (2.38.42) - the new release has the groups already.
+                elseif ($job.After -and [string]$job.After.Kind -eq 'flow' -and [string]$job.After.Step -eq 'retire') {
+                    try { $done = Complete-WebReleaseFlow -After $job.After -Failed -FailedError ([string]$(if ($response.result) { $response.result.error } else { 'it did not finish' })) }
+                    catch { $done = @{ ok = $false; error = $_.Exception.Message }; Write-Log "[WARN] $($_.Exception.Message)" }
+                }
                 # What was just sent becomes the "sent" fingerprint (settings, or groups) - a later catalog change shows as Changes to send.
                 if ($response.result -and $response.result.success -and [string]$job.Mode -notmatch '^(Release|Promote|Advance|Withdraw|Retire|Finish|Delete|Roll|Assign .+ to pilot$|Give )') {
                     $part = switch ([string]$job.Step) { 'createapp' { 's' } 'createstoreapp' { 's' } 'createofficeapp' { 's' } 'targetedassign' { 'g' } 'batchassign' { 'g' } default { '' } }
-                    if ($part) { try { Set-WebSentStamp -Names @($job.HistoryApps) -Part $part } catch { Write-Log "[WARN] Couldn't note what was sent: $($_.Exception.Message)" } }
+                    if ($part) { try { Set-WebSentStamp -Names @($job.HistoryApps) -Part $part -Snapshots $job.SentSnap } catch { Write-Log "[WARN] Couldn't note what was sent: $($_.Exception.Message)" } }
                 }
                 if ($response.result -and $response.result.success) {
                     foreach ($n in @($job.HistoryApps)) { Add-WebHistoryEntry -App $n -Kind 'intune' -Text ([string]$job.Mode) -Source $(if ($job.HistorySource) { [string]$job.HistorySource } else { 'This app' }) }
@@ -513,6 +626,7 @@ function Global:Get-WebJobPoll {
             # The catalog lock couldn't be had (Invoke-WithCatalogLock gave up): not finished yet - the next poll tries again.
             if ($after -and $after.ok -eq $false -and $null -eq $after.finished) { $response.done = $false }
             if ($after.finished) {
+                Remove-WebJobRecord -Id $id
                 if ($job.BusyApp) { Exit-WebAppBusy $job.BusyApp }
                 if ($null -ne $after.after) { $response.after = $after.after }
                 if (-not $Global:App.WebJobsDone) { $Global:App.WebJobsDone = [hashtable]::Synchronized(@{}) }
@@ -740,6 +854,7 @@ function Global:Invoke-WebApi {
         '/api/release-info'     { return (Get-WebReleaseInfo $Data) }
         '/api/release-start'    { return (Start-WebRelease $Data) }
         '/api/release-assign'   { return (Start-WebReleaseAssign $Data) }
+        '/api/release-flow'     { return (Start-WebReleaseFlow $Data) }
         '/api/release-promoted' { return (Invoke-WithCatalogLock { Complete-WebPromotion $Data }) }
         '/api/release-rolledback' { return (Invoke-WithCatalogLock { Complete-WebRollback $Data }) }
         '/api/release-cleanup'  { return (Remove-WebOldReleases $Data) }
@@ -895,7 +1010,9 @@ function Global:Read-WebSentStamps {
 
 function Global:Set-WebSentStamp {
     # After a send that worked: -Part s (settings) or g (groups) of these apps is what Intune has now.
-    param([string[]]$Names, [string]$Part)
+    param([string[]]$Names, [string]$Part,
+        # What each app's send sent, taken when it started (Start-WebStepJob) - recorded instead of the file as it is now.
+        [hashtable]$Snapshots)
     $names = @($Names | Where-Object { $_ })
     if (-not $names.Count) { return }
     $map = Read-WebSentStamps
@@ -906,6 +1023,18 @@ function Global:Set-WebSentStamp {
         $key = Get-SafeFileNameForApp -Name $a.appName
         $h = Get-WebAppSentHashes $a
         $v = Get-WebAppSentValues $a
+        $snap = if ($Snapshots -and $Snapshots.ContainsKey([string]$a.appName)) { $Snapshots[[string]$a.appName] } else { $null }
+        if ($snap) {
+            # Groups: as they were sent. Settings: likewise - unless the app had none of its own (the send's defaults are
+            # stored when it ends), and with the emptied fields as the end of the send left them (the ones sent are off).
+            $use = $null
+            if ($Part -eq 'g') { $use = $snap.g }
+            elseif (@($snap.s.Keys).Count -gt 1) { $use = [ordered]@{}; foreach ($k in @($snap.s.Keys)) { $use[$k] = $snap.s[$k] }; if ($v.s.Contains('clearedFields')) { $use['clearedFields'] = $v.s['clearedFields'] } elseif ($use.Contains('clearedFields')) { $use.Remove('clearedFields') } }
+            if ($null -ne $use) {
+                $v = @{ s = $v.s; g = $v.g }; $v[$Part] = $use
+                $h = @{ s = $h.s; g = $h.g }; $h[$Part] = (Get-WebTextSha256 (ConvertTo-Json -InputObject $use -Compress -Depth $(if ($Part -eq 'g') { 4 } else { 10 })))
+            }
+        }
         if (-not $map.ContainsKey($key)) { $map[$key] = @{ s = ''; g = ''; sv = ''; gv = '' } }
         $map[$key][$Part] = $h[$Part]
         # The values too - "Changes to send" shows them next to the catalog's.

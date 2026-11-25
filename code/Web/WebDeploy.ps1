@@ -115,11 +115,16 @@ function Global:Start-WebDeploy {
         }
         $resultPath = Join-Path $env:TEMP (".intunepkg_officeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
         $body = ConvertTo-OfficeSuiteBody -Name $a.appName -Description ([string]$(if ($a.metadata) { $a.metadata.description })) -Settings $a.office
+        # Owner, developer, notes and Featured too (2.38.42) - before they never left the catalog for Microsoft 365 Apps.
+        if ($a.metadata) {
+            foreach ($k in 'owner', 'developer', 'notes') { $v = [string]$a.metadata.$k; if ($v -or @($a.metadata.clearedFields) -contains $k) { $body[$k] = $v } }
+            if ($null -ne $a.metadata.isFeatured) { $body['isFeatured'] = [bool]$a.metadata.isFeatured }
+        }
         $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             AppName = $a.appName; AppId = [string]$a.appId; Body = $body; OutputResultPath = $resultPath }
         $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
         $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateOfficeAppScript -Name 'createofficeapp' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft 365 Apps)" `
-            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Office = $true; SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
+            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Office = $true; SentCleared = @(@($(if ($a.metadata) { $a.metadata.clearedFields })) | Where-Object { $_ -in 'owner', 'developer', 'notes' }); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
         if ($started.ok) { Write-Log "[INFO] Sending $name to Intune as Microsoft 365 Apps ($(Get-OfficeSettingsSummary $a.office))..." }
         return $started
     }
@@ -139,11 +144,12 @@ function Global:Start-WebDeploy {
         $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             AppName = $a.appName; AppId = [string]$a.appId; PackageIdentifier = [string]$a.wingetId
             Description = [string]$(if ($m) { $m.description }); Publisher = [string]$(if ($m) { $m.publisher }); InformationUrl = [string]$(if ($m) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m) { $m.privacyUrl }); ClearedFields = @($(if ($m) { $m.clearedFields }) | Where-Object { $_ })
+            owner = [string]$(if ($m) { $m.owner }); developer = [string]$(if ($m) { $m.developer }); notes = [string]$(if ($m) { $m.notes }); IsFeatured = $(if ($m -and $null -ne $m.isFeatured) { [bool]$m.isFeatured } else { $null })
             RunAsAccount = $(if ($m -and [string]$m.installContext -eq 'User') { 'user' } else { 'system' }); OutputResultPath = $resultPath }
         # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
         $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
         $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateStoreAppScript -Name 'createstoreapp' -ConfigJson ($config | ConvertTo-Json -Depth 4) -ResultPath $resultPath -Kind "$(if ($a.appId) { 'Update' } else { 'Create' }) $name (Microsoft Store app)" `
-            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Store = $true; SentCleared = @(@($config.ClearedFields) | Where-Object { $_ -in 'informationUrl', 'privacyUrl' }); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
+            -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $null; WasUpdate = [bool]$a.appId; Store = $true; SentCleared = @(@($config.ClearedFields) | Where-Object { $_ -in 'informationUrl', 'privacyUrl', 'owner', 'developer', 'notes' }); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }) }
         if ($started.ok) { Write-Log "[INFO] Sending $name to Intune as a Microsoft Store app ($($a.wingetId))..." }
         return $started
     }
@@ -344,8 +350,14 @@ function Global:Complete-WebPull {
         # @() around the whole if: one difference on its own would otherwise be
         # unrolled to a single object without .Count (Windows PowerShell 5.1).
         $groupDiffs = @(if ($r.GroupFetchOk) { Get-GroupFieldDiffs -LocalApp $app -RemoteResult $r })
+        # Microsoft 365 Apps' own settings (2.38.42): one more row to choose - Intune's, or the catalog's kept.
+        if ($app.office -and -not ([string]$app.wingetId).Trim()) {
+            $od = Get-WebOfficeDiff -App $app
+            if ($od) { $r | Add-Member -NotePropertyName OfficeFromIntune -NotePropertyValue $od.Office -Force; $groupDiffs += [pscustomobject]@{ Field = 'Microsoft 365 settings'; Local = $od.Local; Remote = $od.Remote } }
+        }
         if (($app.metadata -and $fieldDiffs.Count -gt 0) -or $groupDiffs.Count -gt 0) {
-            $pending[$r.AppName] = $r
+            # With the catalog entry as it was reviewed (2.38.42): applied later, a promote or send in between must not be undone.
+            $pending[$r.AppName] = @{ R = $r; AppId = [string]$app.appId; Stamp = (ConvertTo-Json -InputObject (Get-WebAppSentValues $app) -Compress -Depth 10) }
             $review.Add([ordered]@{ app = $r.AppName; diffs = @(@($fieldDiffs) + @($groupDiffs) | ForEach-Object { [ordered]@{ field = [string]$_.Field; local = (Get-CheckValueText $_.Local); intune = (Get-CheckValueText $_.Remote) } }) })
         }
         else {
@@ -378,8 +390,15 @@ function Global:Invoke-WebPullApply {
     if (-not $id -or -not $Global:App.WebPending.ContainsKey($id)) { return @{ ok = $false; error = 'Nothing waiting to be applied (run Pull again).' } }
     $pending = $Global:App.WebPending[$id]
     $done = New-Object System.Collections.Generic.List[string]
+    $skipped = New-Object System.Collections.Generic.List[string]
+    $now = @((Read-WebCatalogRecords).Apps)
     foreach ($name in @($pending.Keys)) {
-        $r = $pending[$name]
+        $p = $pending[$name]
+        $r = $p.R
+        # Changed since the review (a promotion, a send, an edit): Intune's values shown then may be older than the
+        # catalog's now - not applied; Pull again shows them as they are.
+        $cur = $now | Where-Object { $_.appName -eq $name } | Select-Object -First 1
+        if (-not $cur -or [string]$cur.appId -ne [string]$p.AppId -or (ConvertTo-Json -InputObject (Get-WebAppSentValues $cur) -Compress -Depth 10) -ne [string]$p.Stamp) { $skipped.Add($name); continue }
         $keep = @($Data.keep.$name | ForEach-Object { [string]$_ })
         [void](Update-WebCatalogApp -Name $name -Change {
             param($a)
@@ -388,6 +407,7 @@ function Global:Invoke-WebPullApply {
             # A Microsoft Store app in Intune: its Store product ID too (2.38.30).
             if (-not $a.wingetId -and -not $a.office -and (Get-StoreIdFromSync $r)) { $a.wingetId = Get-StoreIdFromSync $r; $a.managedUpdates = $false }
             $a.metadata = if ($a.metadata) { Merge-CatalogMetadata -Remote $r.Metadata -Local $a.metadata -KeepLocalFields $keep } else { $r.Metadata }
+            if ($r.PSObject.Properties['OfficeFromIntune'] -and $r.OfficeFromIntune -and $keep -notcontains 'Microsoft 365 settings') { $a.office = $r.OfficeFromIntune }
             if ($r.GroupFetchOk) {
                 if ($keep -notcontains 'Required for') { $a.requiredFor = @($r.RequiredGroupNames) }
                 if ($keep -notcontains 'Available for') { $a.availableFor = @($r.AvailableGroupNames) }
@@ -398,7 +418,8 @@ function Global:Invoke-WebPullApply {
     }
     [void]$Global:App.WebPending.Remove($id)
     Write-Log "[OK] Applied the pull for: $($done -join ', ')."
-    return @{ ok = $true; applied = $done.ToArray() }
+    if ($skipped.Count) { Write-Log "[WARN] Not applied - changed in the catalog since the review: $($skipped -join ', '). Pull them again." }
+    return @{ ok = $true; applied = $done.ToArray(); skipped = $skipped.ToArray() }
 }
 
 function Global:Start-WebDeleteFromIntune {
@@ -605,6 +626,16 @@ function Global:Get-WebOfficeFromIntune {
     if (-not $ty.ok) { return @{ ok = $false; error = $ty.error } }
     if ($ty.type -ne 'officeSuiteApp') { return @{ ok = $true; found = $false; type = (Get-FriendlyIntuneAppType -ODataType $ty.type) } }
     return @{ ok = $true; found = $true; office = (ConvertFrom-OfficeSuiteApp $ty.value) }
+}
+
+function Global:Get-WebOfficeDiff {
+    # Microsoft 365 Apps' settings in the catalog against Intune's, in words (2.38.42): $null when they match or can't be read.
+    param($App)
+    try { $o = Get-WebOfficeFromIntune @{ name = [string]$App.appName } } catch { return $null }
+    if (-not $o.ok -or -not $o.found) { return $null }
+    $l = [string](Get-OfficeSettingsSummary $App.office); $r = [string](Get-OfficeSettingsSummary $o.office)
+    if ($l -eq $r) { return $null }
+    return @{ Local = $l; Remote = $r; Office = $o.office }
 }
 
 function Global:Remove-WebReplacedLobApp {

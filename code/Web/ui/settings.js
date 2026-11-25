@@ -174,7 +174,7 @@ function followJob(job, onDone, opts = {}) {
   const extra = opts.log ? $(opts.log) : null;
   const both = t => { activity(t); if (extra) { extra.textContent += t.endsWith('\n') ? t : t + '\n'; extra.scrollTop = extra.scrollHeight; } };
   both(`${stamp()} ${opts.startText || 'Sign in in the window that opens...'}`);
-  let offset = 0, fails = 0;
+  let offset = 0, fails = 0, chained = 0;
   const tick = async () => {
     const r = await api('/api/job-poll', { job, offset });
     if (!r.ok) {
@@ -189,13 +189,20 @@ function followJob(job, onDone, opts = {}) {
     fails = 0;
     if (r.text) { both(r.text); offset = r.offset; }
     if (r.done && !r.text) {
+      // A flow the server carries on (2.38.42): the next step is followed in the same log - one action to the page.
+      if (r.result && r.result.success && r.after && r.after.nextJob) {
+        job = r.after.nextJob; offset = 0; fails = 0; chained++;
+        setTimeout(tick, 300); return;
+      }
       jobRunning = false; jobButtons(true);
       // What the server does after the step (saving the App ID, recording a release) can fail too (2.38.42) - then it didn't work.
       const afterErr = r.after && r.after.ok === false ? (r.after.error || 'Saving its result in the catalog failed - see Activity.') : '';
-      const ok = !!(r.result && r.result.success) && !afterErr;
+      // A flow finished even though its last step (taking the groups off the old release) failed: done, said by the caller.
+      const ok = (!!(r.result && r.result.success) || !!(r.after && r.after.flowDone && r.after.retireFailed)) && !afterErr;
       const result = afterErr ? { ...(r.result || {}), success: false, error: `It ran in Intune, but ${afterErr.charAt(0).toLowerCase()}${afterErr.slice(1)}` } : r.result;
       if (!ok) toast((result && result.error) || 'It did not finish - see Activity.', true);
-      if (onDone) onDone(ok, result, r.after);
+      // A later step of a flow failed: the caller learns that the earlier ones ran (chainedSteps).
+      if (onDone) onDone(ok, result, r.after || (chained ? { chainedSteps: chained } : r.after));
       return;
     }
     setTimeout(tick, r.done ? 50 : 700);

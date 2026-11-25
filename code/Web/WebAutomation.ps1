@@ -27,15 +27,15 @@
     current version (the Updates page's trend), and an alert goes to Teams
     and/or email when Settings > Alerts says so.
 
-    Steps run exactly as from the page (Start-WebRelease, Start-WebReleaseAssign,
-    Complete-WebPromotion), waited for here (Wait-WebStepJob).
+    Steps run exactly as from the page (Start-WebRelease, Start-WebReleaseFlow - the
+    server chains a flow's steps and completion), waited for here (Wait-WebStepJob).
 #>
 
 function Global:Wait-WebStepJob {
     # Runs a started step to its end, the way the page's polling does (completion included): @{ ok; error; after; log }.
     param($Started, [int]$TimeoutMinutes = 90)
-    if (-not $Started.ok) { return @{ ok = $false; error = [string]$Started.error; log = '' } }
-    $job = [string]$Started.job; $offset = 0
+    if (-not $Started.ok) { return @{ ok = $false; error = [string]$Started.error; log = ''; jobs = 0 } }
+    $job = [string]$Started.job; $offset = 0; $jobs = 1
     $log = New-Object System.Text.StringBuilder
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
     while ($true) {
@@ -43,8 +43,11 @@ function Global:Wait-WebStepJob {
         if (-not $r.ok) { return @{ ok = $false; error = [string]$r.error; log = $log.ToString() } }
         if ($r.text) { [void]$log.Append($r.text); $offset = $r.offset }
         if ($r.done -and -not $r.text) {
-            $ok = [bool]($r.result -and $r.result.success)
-            return @{ ok = $ok; error = $(if (-not $ok) { [string]$(if ($r.result) { $r.result.error } else { 'It did not finish.' }) } else { '' }); after = $r.after; log = $log.ToString() }
+            # A flow (2.38.42): the next step the completion started is followed too - -jobs says how many ran.
+            if ($r.result -and $r.result.success -and $r.after -and $r.after.nextJob) { $job = [string]$r.after.nextJob; $offset = 0; $jobs++; continue }
+            $ok = [bool](($r.result -and $r.result.success) -or ($r.after -and $r.after.flowDone -and $r.after.retireFailed)) -and -not ($r.after -and $r.after.ok -eq $false)
+            $err = if ($ok) { '' } elseif ($r.after -and $r.after.ok -eq $false) { [string]$r.after.error } elseif ($r.result) { [string]$r.result.error } else { 'It did not finish.' }
+            return @{ ok = $ok; error = $err; after = $r.after; log = $log.ToString(); jobs = $jobs }
         }
         if ((Get-Date) -gt $deadline) { return @{ ok = $false; error = "Still running after $TimeoutMinutes minutes - left to finish on its own."; log = $log.ToString() } }
         Start-Sleep -Milliseconds 700
@@ -120,15 +123,26 @@ function Global:Invoke-ManagedUpdateRun {
             # No pilot groups (2.38.40, every path since 2.38.42): a release goes straight to everyone - a pilot assigned
             # to nobody would wait for ever. Dot-sourced, so $failed counts here.
             $noPilot = -not @(Get-ReleaseRingGroups -Rings @(Get-WebReleaseRings) -Ring 0).Count
+            # A pilot left unassigned, given to everyone: the promote flow (the server runs its steps and completion).
             $toEveryone = {
                 param($App, [string]$Ver, [string]$Note)
-                $p1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $App.appName; step = 'promote' })
-                if (-not $p1.ok) { & $say $App.appName 'failed' "$Ver is in Intune, but giving it the app's groups failed: $($p1.error)"; $failed++; return }
                 $was = [string]$(if ($App.metadata) { $App.metadata.appVersion })
-                $p2 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $App.appName; step = 'retire' })
-                $done = Invoke-WithCatalogLock { Complete-WebPromotion @{ name = $App.appName } }
-                if ($done.ok) { & $say $App.appName 'promoted' "$Ver released to everyone - there are no pilot groups$Note$(if (-not $p2.ok) { " - but $was kept its assignments: $($p2.error)" })." }
-                else { & $say $App.appName 'failed' "Releasing $Ver to everyone: $($done.error)"; $failed++ }
+                $p = Wait-WebStepJob (Start-WebReleaseFlow @{ name = $App.appName; flow = 'promote' })
+                if ($p.ok) { & $say $App.appName 'promoted' "$Ver released to everyone - there are no pilot groups$Note$(if ($p.after.retireFailed) { " - but $was kept its assignments: $($p.after.retireError)" })." }
+                else { & $say $App.appName 'failed' "$Ver is in Intune, but giving it to everyone failed: $($p.error)"; $failed++ }
+            }
+            # A release is one flow now (2.38.42): created, then assigned to pilot - or given to everyone - by the server.
+            $released = {
+                param($App, [string]$Ver, $Made, [string]$Note)
+                $was = [string]$(if ($App.metadata) { $App.metadata.appVersion })
+                if (-not $Made.ok) {
+                    if ($Made.jobs -gt 1 -or ($Made.after -and $Made.after.nextError)) { & $say $App.appName 'failed' "$Ver is in Intune, but $(if ($noPilot) { 'giving it to everyone' } else { 'assigning it to pilot' }) failed: $(if ($Made.after -and $Made.after.nextError) { $Made.after.nextError } else { $Made.error })" }
+                    else { & $say $App.appName 'failed' "Releasing $Ver failed: $($Made.error)" }
+                    $failed++; return
+                }
+                if ($Made.after -and $Made.after.nextError) { & $say $App.appName 'failed' "$Ver is in Intune, but its next step couldn't start: $($Made.after.nextError)"; $failed++; return }
+                if ($noPilot) { & $say $App.appName 'promoted' "$Ver released to everyone - there are no pilot groups$Note$(if ($Made.after.retireFailed) { " - but $was kept its assignments: $($Made.after.retireError)" })." }
+                else { & $say $App.appName 'released' "$Ver released to the pilot groups (now $was for everyone else)$Note." }
             }
             foreach ($a in $managed) {
                 $pilot = Get-WebAppRelease $a
@@ -138,7 +152,7 @@ function Global:Invoke-ManagedUpdateRun {
                     if ($pilot.unassigned) {
                         if ($PlanOnly) { & $say $a.appName 'available' "$($pilot.version) is in Intune but not assigned to the pilot groups yet - this run would $(if ($noPilot) { 'give it to everyone (there are no pilot groups)' } else { 'assign it' })."; continue }
                         if ($noPilot) { . $toEveryone $a ([string]$pilot.version) ' (it was never assigned)'; continue }
-                        $re = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
+                        $re = Wait-WebStepJob (Start-WebReleaseFlow @{ name = $a.appName; flow = 'pilot' })
                         if ($re.ok) { & $say $a.appName 'released' "$($pilot.version) assigned to the pilot groups (the assignment had failed before)." } else { & $say $a.appName 'failed' "$($pilot.version) is still not assigned to pilot: $($re.error)"; $failed++ }
                         continue
                     }
@@ -148,9 +162,9 @@ function Global:Invoke-ManagedUpdateRun {
                     if (Test-AutoWithdraw -Counts $st.counts -Percent ([double]$policy.AutoWithdrawPercent)) {
                         $why = Get-WebHoldReason $pilot
                         if ($PlanOnly) { & $say $a.appName 'hold' "$($pilot.version) would be withdrawn: $($st.reason)$(if ($why) { " Why: $why" })"; continue }
-                        $w1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'withdraw' })
-                        if (-not $w1.ok) { & $say $a.appName 'failed' "Withdrawing $($pilot.version) failed: $($w1.error)"; $failed++; continue }
-                        $w2 = Invoke-WithCatalogLock { Complete-WebWithdrawal @{ name = $a.appName } }
+                        $w1 = Wait-WebStepJob (Start-WebReleaseFlow @{ name = $a.appName; flow = 'withdraw' })
+                        if (-not ($w1.after -and $w1.after.flowDone)) { & $say $a.appName 'failed' "Withdrawing $($pilot.version) failed: $($w1.error)"; $failed++; continue }
+                        $w2 = $w1.after
                         & $say $a.appName 'withdrawn' "$($pilot.version) withdrawn automatically - at least $($policy.AutoWithdrawPercent) % of devices failed ($($st.reason))$(if ($why) { " Why: $why" })$(if (-not $w2.deleted) { " It couldn't be deleted from Intune: $($w2.error)" })"
                         continue
                     }
@@ -161,19 +175,18 @@ function Global:Invoke-ManagedUpdateRun {
                     if ($auto -and -not $st.fastTrack -and -not $window.Open -and $st.action -in 'advance', 'promote') { & $say $a.appName 'ready' "$($pilot.version) is ready ($($st.reason)) - waiting for the release window: $($window.Reason)."; continue }
                     if ($st.action -eq 'advance') {
                         if ($PlanOnly -or -not $auto) { & $say $a.appName 'ready' "$($pilot.version) is ready for the next ring: $($st.reason)$(if (-not $auto) { ' Give it to the next ring (automatic promotion is off).' })"; continue }
-                        $adv = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'advance' })
+                        $adv = Wait-WebStepJob (Start-WebReleaseFlow @{ name = $a.appName; flow = 'advance' })
                         if (-not $adv.ok) { & $say $a.appName 'failed' "Giving $($pilot.version) to the next ring failed - nothing else changed: $($adv.error)"; $failed++; continue }
-                        $done = Invoke-WithCatalogLock { Complete-WebAdvance @{ name = $a.appName } }
+                        $done = $adv.after
                         & $say $a.appName 'advanced' "$($pilot.version) is in ring $([int]$done.ring + 1) ($($done.ringName)) now ($($st.reason))"
                         continue
                     }
                     if ($st.action -ne 'promote') { & $say $a.appName $st.action "$($pilot.version) in $(if ($st.ringCount -gt 1 -and -not $st.fastTrack) { "ring $($st.ring + 1) ($($st.ringName))" } else { 'pilot' }): $($st.reason)"; continue }
                     if ($PlanOnly -or -not $auto) { & $say $a.appName 'ready' "$($pilot.version) is ready for everyone: $($st.reason)$(if (-not $auto) { ' Promote it (automatic promotion is off).' })"; continue }
-                    $p1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'promote' })
-                    if (-not $p1.ok) { & $say $a.appName 'failed' "Promoting $($pilot.version) failed - nothing else changed: $($p1.error)"; $failed++; continue }
-                    $p2 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'retire' })
-                    $done = Invoke-WithCatalogLock { Complete-WebPromotion @{ name = $a.appName } }
-                    if ($done.ok) { & $say $a.appName 'promoted' "$($pilot.version) promoted to everyone ($($st.reason))$(if (-not $p2.ok) { " - but $current kept its assignments: $($p2.error)" })$(if (@($done.notes).Count) { ' ' + (@($done.notes) -join ' ') })" }
+                    $p1 = Wait-WebStepJob (Start-WebReleaseFlow @{ name = $a.appName; flow = 'promote' })
+                    $done = $p1.after
+                    if (-not ($done -and $done.flowDone)) { & $say $a.appName 'failed' "Promoting $($pilot.version) failed - nothing else changed: $($p1.error)"; $failed++; continue }
+                    if ($done.ok -ne $false) { & $say $a.appName 'promoted' "$($pilot.version) promoted to everyone ($($st.reason))$(if ($done.retireFailed) { " - but $current kept its assignments: $($done.retireError)" })$(if (@($done.notes).Count) { ' ' + (@($done.notes) -join ' ') })" }
                     else { & $say $a.appName 'failed' "Promoting $($pilot.version): $($done.error)"; $failed++ }
                     continue
                 }
@@ -194,11 +207,7 @@ function Global:Invoke-ManagedUpdateRun {
                     if (-not $policy.AutoRelease -and -not $urgent) { & $say $a.appName 'available' "winget offers $latest (now $current). Release it to pilot (automatic release is off)."; continue }
                     if (-not $window.Open -and -not $urgent) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
                     $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $latest })
-                    if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $latest failed: $($made.error)"; $failed++; continue }
-                    if ($noPilot) { . $toEveryone $a $latest $(if ($urgent) { "; $current could no longer be downloaded" } else { '' }); continue }
-                    $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
-                    if ($assigned.ok) { & $say $a.appName 'released' "$latest released to the pilot groups (now $current for everyone else)$(if ($urgent) { " - by itself because $current can no longer be downloaded: new devices couldn't install it" })." }
-                    else { & $say $a.appName 'failed' "$latest is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
+                    . $released $a $latest $made $(if ($urgent) { $(if ($noPilot) { "; $current could no longer be downloaded" } else { " - by itself because $current can no longer be downloaded: new devices couldn't install it" }) } else { '' })
                     continue
                 }
                 # Own packages: a newer installer - downloaded from the app's address, when it has one - released by itself when the app says so.
@@ -226,11 +235,7 @@ function Global:Invoke-ManagedUpdateRun {
                 $built = Wait-WebStepJob (Start-WebPackage @{ names = @($a.appName) })
                 if (-not $built.ok) { & $say $a.appName 'failed' "Building the package for $($inst.version) failed: $($built.error)"; $failed++; continue }
                 $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $inst.version; productCode = $inst.productCode })
-                if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $($inst.version) failed: $($made.error)"; $failed++; continue }
-                if ($noPilot) { . $toEveryone $a ([string]$inst.version) " ($($inst.file))$dl"; continue }
-                $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
-                if ($assigned.ok) { & $say $a.appName 'released' "$($inst.version) ($($inst.file)) released to the pilot groups (now $current for everyone else).$dl" }
-                else { & $say $a.appName 'failed' "$($inst.version) is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
+                . $released $a ([string]$inst.version) $made " ($($inst.file))$dl"
             }
         }
         # Superseded releases beyond the newest one (kept for rollback): deleted from Intune when the switch is on.

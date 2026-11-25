@@ -117,9 +117,14 @@ function Global:Start-WebRelease {
     $config = New-WebCreateAppConfig -Catalog $catalog -App $a -Metadata $next.metadata -Defaults $null -PackagePath $pkg.Path -ResultPath $resultPath
     $config.Mode = 'Create'; $config.ExistingAppId = ''
     $config.AppName = "$($a.appName) $version (pilot)"
-    # Supersedes exactly the current release (update: devices that have it get this one) - not the catalog's own supersedence list.
-    $config.Supersedence = @([pscustomobject]@{ appId = [string]$a.appId; type = 'update' })
-    $config.IsFeatured = $null
+    # Supersedes the current release (update: devices that have it get this one) - and, since 2.38.42, what the catalog's
+    # app supersedes and its own earlier releases, with its Featured flag: once promoted, this is the app, and before
+    # the promotion dropped both (Checks showed them, Changes to send didn't).
+    $sup = @([pscustomobject]@{ appId = [string]$a.appId; type = 'update' })
+    $catSup = if ($a.metadata) { Get-WebSupersedenceWithReleases -App $a -Supersedes $a.metadata.supersedes }
+    foreach ($x in @($catSup)) { if ($x -and $x.appId -and @($sup | Where-Object { ([string]$_.appId).ToLowerInvariant() -eq ([string]$x.appId).ToLowerInvariant() }).Count -eq 0) { $sup += [pscustomobject]@{ appId = [string]$x.appId; type = $(if ([string]$x.type) { [string]$x.type } else { 'update' }) } } }
+    $config.Supersedence = $sup
+    $config.IsFeatured = $(if ($a.metadata -and $null -ne $a.metadata.isFeatured) { [bool]$a.metadata.isFeatured } else { $null })
     $busy = Enter-WebAppBusy -Name $a.appName -What "releasing $version"
     if ($busy) { return @{ ok = $false; error = $busy } }
     # Asked again now that it is ours (2.38.42): the winget check above can take a while, and a release started
@@ -127,7 +132,10 @@ function Global:Start-WebRelease {
     $again = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name } | Select-Object -First 1
     if (-not $again -or (Get-WebAppRelease $again) -or [string]$again.appId -ne [string]$a.appId) { Exit-WebAppBusy $a.appName; return @{ ok = $false; error = "$name changed while this release was prepared (a version is in pilot now, or it was sent again) - open Release again." } }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" -BusyApp $a.appName `
-        -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; FastTrack = [bool]$Data.fastTrack; ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
+        -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; FastTrack = [bool]$Data.fastTrack
+            # What the server does next (2.38.42): the pilot groups - or, with none, everyone (promote and retire).
+            Flow = $(if (@(Get-ReleaseRingGroups -Rings @(Get-WebReleaseRings) -Ring 0).Count) { 'pilot' } else { 'promote' })
+            ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
     if ($started.ok) { Write-Log "[INFO] Releasing $name $version to pilot$(if ($Data.fastTrack) { ' on the fast track' }) (a new app superseding $current)..." }
     return $started
 }
@@ -179,7 +187,12 @@ function Global:Start-WebReleaseAssign {
             $id = $pilot.appId; $g = @{ Required = @(Get-ReleaseRingGroups -Rings $rings -Ring $nextRing); Available = @(); Uninstall = @(); Exclude = @($a.excludeFor) }; $label = "Give $($a.appName) $($pilot.version) to $($rings[$nextRing].Name)"
         }
         'promote' { if (-not $pilot) { return @{ ok = $false; error = "$($a.appName) has no pilot release." } }; $id = $pilot.appId; $g = @{ Required = @($a.requiredFor); Available = @($a.availableFor); Uninstall = @($a.uninstallFor); Exclude = @($a.excludeFor) }; $label = "Promote $($a.appName) $($pilot.version)" }
-        'retire' { if (-not $a.appId) { return @{ ok = $false; error = "$($a.appName) has no current release." } }; $id = $a.appId; $g = $none; $label = "Retire $($a.appName) $(if ($a.metadata) { $a.metadata.appVersion })" }
+        'retire' {
+            if (-not $a.appId) { return @{ ok = $false; error = "$($a.appName) has no current release." } }
+            # In a flow (2.38.42): only the release that was current when it started - another admin or the nightly run
+            # may have promoted meanwhile, and taking the groups off the new current one would leave it assigned to nobody.
+            if ($Data.expectAppId -and [string]$a.appId -ne [string]$Data.expectAppId) { return @{ ok = $false; error = "$($a.appName)'s current release changed while this ran - its groups were left as they are." } }
+            $id = $a.appId; $g = $none; $label = "Retire $($a.appName) $(if ($a.metadata) { $a.metadata.appVersion })" }
         'rollback' {
             if ($pilot) { return @{ ok = $false; error = "$($a.appName) has a version in pilot - promote or withdraw it first." } }
             $back = @(Get-WebPreviousReleases $a) | Select-Object -Last 1
@@ -208,9 +221,79 @@ function Global:Start-WebReleaseAssign {
     $gid = Add-WebGroupIdsToConfig $config; if ($gid) { return @{ ok = $false; error = $gid } }
     # The pilot assignment done: the release is no longer waiting for it.
     $after = if ($step -eq 'pilot') { @{ Kind = 'pilotassigned'; AppName = [string]$a.appName; AppId = [string]$id } } else { @{} }
-    $busy = Enter-WebAppBusy -Name $a.appName -What $label
+    # Part of a flow (2.38.42): the server starts the next step and the completion itself - see Complete-WebReleaseFlow.
+    if ($Data.flow) { $after = @{ Kind = 'flow'; Flow = [string]$Data.flow; AppName = [string]$a.appName; Step = $step; AppId = [string]$id; Then = @(@($Data.then) | Where-Object { $_ }); ExpectAppId = [string]$Data.expectAppId } }
+    # A flow's later steps share the hold its first step took - the app stays reserved for the whole flow.
+    $busy = Enter-WebAppBusy -Name $a.appName -What $label -Shared:([bool]$Data.shared)
     if ($busy) { return @{ ok = $false; error = $busy } }
     return (Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedTargetedAssignScript -Name 'targetedassign' -ConfigJson ($config | ConvertTo-Json -Depth 6) -ResultPath $resultPath -Kind $label -Apps @([string]$a.appName) -After $after)
+}
+
+function Global:Get-WebReleaseFlowSteps {
+    # Pure: the assignment steps of a release flow, in order. Its completion (Complete-WebReleaseFlow) follows the last.
+    param([string]$Flow)
+    switch ($Flow) {
+        'promote' { return @('promote', 'retire') }
+        'rollback' { return @('rollback', 'retire') }
+        'withdraw' { return @('withdraw') }
+        'advance' { return @('advance') }
+        'pilot' { return @('pilot') }
+    }
+    return @()
+}
+
+function Global:Start-WebReleaseFlow {
+    <#
+      A release flow as one thing the server runs to the end (2.38.42): its assignment steps one after the other, then
+      the catalog change (Complete-WebPromotion, -Withdrawal, -Advance, -Rollback). Before, the page started each step
+      and the completion - a reload or a closed tab in between left Intune changed and the catalog behind. The page
+      follows the steps (a poll's after.nextJob); with no page, the orphan completion carries it on.
+    #>
+    param($Data)
+    $flow = [string]$Data.flow
+    $steps = @(Get-WebReleaseFlowSteps $flow)
+    if (-not $steps.Count) { return @{ ok = $false; error = 'Unknown release flow.' } }
+    $a = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name } | Select-Object -First 1
+    if (-not $a) { return @{ ok = $false; error = "'$($Data.name)' is no longer in the catalog." } }
+    return (Start-WebReleaseAssign @{ name = $a.appName; step = $steps[0]; flow = $flow; then = @($steps | Select-Object -Skip 1); expectAppId = [string]$a.appId })
+}
+
+function Global:Complete-WebReleaseFlow {
+    <#
+      After one step of a flow: the next one started (sharing the app's hold), or - after the last - the catalog
+      change. -Failed: the step failed; only a failed 'retire' still completes (the old release keeps its groups,
+      said in the result), any other failure ends the flow with nothing else changed.
+    #>
+    param([hashtable]$After, [switch]$Failed, [string]$FailedError)
+    $name = [string]$After.AppName
+    $retireError = ''
+    if ($Failed) {
+        if ([string]$After.Step -ne 'retire') { return @{ ok = $false; error = $FailedError } }
+        $retireError = $(if ($FailedError) { $FailedError } else { 'the step failed' })
+    }
+    elseif ([string]$After.Step -eq 'pilot') {
+        $id = [string]$After.AppId
+        [void](Update-WebCatalogApp -Name $name -Change { param($app) foreach ($r in @($app.releases)) { if ($r -and [string]$r.appId -eq $id) { $r.unassigned = $false } } }.GetNewClosure())
+    }
+    $then = @(@($After.Then) | Where-Object { $_ })
+    if (-not $Failed -and $then.Count) {
+        $next = Start-WebReleaseAssign @{ name = $name; step = $then[0]; flow = [string]$After.Flow; then = @($then | Select-Object -Skip 1); expectAppId = [string]$After.ExpectAppId; shared = $true }
+        if ($next.ok) { return @{ ok = $true; nextJob = [string]$next.job; nextStep = [string]$then[0] } }
+        # Taking the groups off the old release is the one step a flow finishes without.
+        if ([string]$then[0] -ne 'retire') { Write-Log "[WARN] $($name): the next step ($($then[0])) couldn't start: $($next.error)"; return @{ ok = $false; error = [string]$next.error } }
+        $retireError = [string]$next.error
+    }
+    $done = switch ([string]$After.Flow) {
+        'promote' { Complete-WebPromotion @{ name = $name } }
+        'rollback' { Complete-WebRollback @{ name = $name } }
+        'withdraw' { Complete-WebWithdrawal @{ name = $name } }
+        'advance' { Complete-WebAdvance @{ name = $name } }
+        default { @{ ok = $true } }
+    }
+    if ($retireError) { Write-Log "[WARN] $($name): the old release kept its groups - $retireError" }
+    $out = @{ flowDone = $true; flow = [string]$After.Flow; retireFailed = [bool]$retireError; retireError = $retireError }
+    foreach ($k in @($done.Keys)) { $out[$k] = $done[$k] }
+    return $out
 }
 
 function Global:Complete-WebAdvance {
