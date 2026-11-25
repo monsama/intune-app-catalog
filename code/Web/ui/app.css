@@ -1186,6 +1186,8 @@ input[type="file"]::file-selector-button { font: inherit; font-weight: 500; heig
 .blk .blab { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .blk .bval { font: 12.5px/1.5 var(--mono); color: var(--fg); overflow-wrap: anywhere; grid-column: 2; }
 .blk.lock .bval { color: var(--muted); }
+/* Read-only values start where an input's text does (its 1px border + 8px padding) - one straight column (2.38.48). */
+.blk.lock .bval, .blk.link .bval, .blk.action .bval { padding-left: 11px; }
 .blk.edit, .blk.list { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .blk.edit .blab, .blk.list .blab { color: var(--accent); }
 .blk.edit .bval { grid-column: 2 / 4; }
@@ -1620,6 +1622,8 @@ body[data-view="home"] #setupBanner { display: none; }
 .pappid .idacts { display: inline-flex; gap: 6px; }
 
 /* 2.33.0: the installer uploaded right in the editor */
+/* Room between the Managed updates switch and the box under it (2.38.48). */
+#aManagedRow { margin-bottom: 12px; }
 #aPkgInfo .pkgacts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .apppanel .plob { display: grid; gap: 8px; margin: 8px 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--r-m); background: var(--warn-bg); font-size: 13px; }
 .apppanel .plob .btn { justify-self: start; }
