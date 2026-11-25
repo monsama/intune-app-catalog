@@ -82,6 +82,8 @@ if ($serverMode) {
 }
 # The shared Winget package: built now when it isn't there (it has nothing to choose, so it needs no button).
 try { [void](Initialize-SharedWingetPackage) } catch { Write-Log "[WARN] The shared Winget package couldn't be built: $($_.Exception.Message)" }
+# Steps the last run of the app left running or unfinished (2.38.42): finished now, not lost.
+try { Resume-WebSavedJobs } catch { Write-Log "[WARN] Couldn't pick up the steps the last run left: $($_.Exception.Message)" }
 
 # A fixed port keeps the page's origin - and with it what the browser
 # remembers for it (column widths, the last tab) - the same from one start

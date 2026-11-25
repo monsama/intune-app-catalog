@@ -110,7 +110,7 @@ async function api(path, body = {}) {
     // The server version: a page to open comes back as its address - this browser opens it.
     if (path === '/api/open' && j && j.ok && j.url) window.open(j.url, '_blank', 'noopener');
     // The server version: the session ended (taken over by a sign-in elsewhere, idle, signed out) - back to sign-in.
-    if (j && j.error === 'bad token') { if (j.reason) { goSignIn(j.reason); return j; } showDead(); }
+    if (j && j.error === 'bad token') { if (j.reason) { goSignIn(j.reason); return j; } if (SERVER) { goSignIn(''); return j; } showDead(); }
     // "deployed": the apps an answer offers to push to. One whose App ID the
     // connected tenant doesn't have (a copied catalog) would only fail there.
     if (j && Array.isArray(j.deployed) && typeof tenantState === 'function') j.deployed = j.deployed.filter(n => { const a = apps.find(x => x.name === n); return !a || tenantState(a) !== 'missing'; });
@@ -225,10 +225,16 @@ function toast(msg, isErr, actions) {
 
 // ---------------------------------------------------------------- liveness
 let pingFails = 0;
-function showDead() { $('deadNote').hidden = false; }
+// The server version (2.38.43): no script to start again - the container restarts (an update) and comes back, so the
+// note says that and goes by itself once the server answers again. The desktop app's server is gone for good.
+function showDead() {
+  $('deadNote').textContent = SERVER ? 'The server can\'t be reached right now - trying again (it may be restarting after an update).' : 'The app\'s server has stopped. Start IntuneDeployment.ps1 -Web again.';
+  $('deadNote').hidden = false;
+}
 setInterval(async () => {
   const r = await api('/api/ping');
-  if (r && r.ok) pingFails = 0; else if (++pingFails >= 2) showDead();
+  if (r && r.ok) { pingFails = 0; if (!$('deadNote').hidden) $('deadNote').hidden = true; }
+  else if (++pingFails >= 2) showDead();
 }, 5000);
 
 let logNext = 0;

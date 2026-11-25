@@ -75,9 +75,9 @@ function renderUpdates() {
 async function advanceRelease(name, p) {
   if (!(await ask(`Give ${name} ${p.version} to the next release ring?\n\nNow: ${p.ringName} (ring ${p.ring + 1} of ${p.ringCount}). ${p.reason || ''}\n\nThe next ring's groups get it Required, as an update of the current version; the rule's days count again from now.`, { ok: 'Next ring', danger: false }))) return;
   runDialog(`${name} ${p.version}: next ring`, '');
-  const a = await releaseStep({ name, step: 'advance' }, '/api/release-assign', 'runLog', 'Assigning it to the next ring\'s groups...');
-  if (!a.ok) { toast(`Giving it to the next ring failed - nothing else changed. ${a.error || ''}`, true); return; }
-  const r = await api('/api/release-advanced', { name });
+  const a = await releaseStep({ name, flow: 'advance' }, '/api/release-flow', 'runLog', 'Assigning it to the next ring\'s groups...');
+  const r = a.after || {};
+  if (!r.flowDone) { toast(`Giving it to the next ring failed - nothing else changed. ${a.error || ''}`, true); return; }
   toast(r.ok ? `${name} ${r.version} is in ${r.ringName} now.` : r.error, !r.ok);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }

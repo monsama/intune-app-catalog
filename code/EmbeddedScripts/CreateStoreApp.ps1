@@ -45,6 +45,9 @@ try {
         privacyInformationUrl = $(if ([string]$Config.PrivacyUrl) { [string]$Config.PrivacyUrl } else { $null })
         installExperience  = @{ '@odata.type' = 'microsoft.graph.winGetAppInstallExperience'; runAsAccount = $(if ([string]$Config.RunAsAccount -eq 'user') { 'user' } else { 'system' }) }
     }
+    # Owner, developer, notes and Featured (2.38.42) - every Intune app has them; before, a Store app's never left the catalog.
+    foreach ($k in 'owner', 'developer', 'notes') { $v = [string]$Config.$k; if ($v -or @($Config.ClearedFields) -contains $k) { $body[$k] = $v } }
+    if ($null -ne $Config.IsFeatured) { $body['isFeatured'] = [bool]$Config.IsFeatured }
     if ($Config.AppId) {
         # Into the PATCH address as is - only a GUID.
         $parsedAppId = [guid]::Empty

@@ -234,6 +234,15 @@ function Global:Complete-WebCheckDetails {
         # Store apps and Microsoft 365 Apps: their settings aren't compared (above) - the audit says OK for them too (2.38.31:
         # Home kept "differs" for fields Intune doesn't have on those types).
         if ($isStore) { $texts.Metadata = 'OK'; $texts.Dependencies = 'OK' }
+        # Microsoft 365 Apps' own settings (2.38.42): compared with what Intune has - a channel or app changed in the
+        # portal was neither seen nor pulled, and the next send put the catalog's back without a word.
+        if ($app.office -and -not ([string]$app.wingetId).Trim() -and $app.appId) {
+            $od = Get-WebOfficeDiff -App $app
+            if ($od) {
+                $new.Add((New-CheckFinding -Area 'Metadata' -App ([string]$app.appName) -CatalogName ([string]$app.appName) -AppId ([string]$app.appId) -Problem 'Microsoft 365 settings differ' -Catalog $od.Local -Intune $od.Remote -Actions @('PushMetadata', 'Pull')))
+                $texts.Metadata = 'Microsoft 365 settings differ'
+            }
+        }
         Set-LastAuditCacheEntry -AppName ([string]$one.AppName) -Metadata $texts.Metadata -Groups $texts.Groups -Dependencies $texts.Dependencies
     }
     Save-LastAuditCache

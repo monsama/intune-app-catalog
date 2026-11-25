@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.38.43
+
+The larger follow-ups from the 2.38.42 sweep:
+
+- **Release flows run on the server**: Release, Promote, Withdraw, Next ring
+  and Roll back are one action each - the server runs their steps one after
+  the other and records the result in the catalog. Before, the page started
+  each step; a reload or a closed tab in between left Intune changed and the
+  catalog behind. The app stays reserved for the whole flow, and taking the
+  groups off the old release only touches the release that was current when
+  the flow started.
+- **Steps survive a restart**: a running step is written down, so after a
+  restart of the app or the server (a container update) it is finished -
+  App ID saved, release recorded - instead of lost. One whose result is gone
+  is named in Activity.
+- **"Sent" is what was sent**: Changes to send records the values a send
+  started with - an edit saved while it ran stays a change to send.
+- **Store apps and Microsoft 365 Apps** send owner, developer, notes and the
+  Featured flag too. Microsoft 365 Apps' own settings (channel, apps left out,
+  ...) are compared in Checks and can be pulled.
+- **Promote keeps the app's Featured flag and supersedence**: a new release is
+  created with them, not only superseding the current version.
+- **Pull review**: an app changed since the review (a promotion, a send, an
+  edit) isn't overwritten with the older values - it is named, to pull again.
+- **Server version**: when the server can't be reached (it restarts after an
+  update) the page says so and carries on once it answers - instead of asking
+  to start a script that doesn't exist there.
+
 ## 2.38.42
 
 A sweep for "the page offers it, then it fails" and "sent, stored and compared
