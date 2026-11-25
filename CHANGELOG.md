@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38.49
+
+- **Script apps build on the server**: Package looked for "install.ps1" by that
+  exact name, but script apps write Install.ps1 - the same file on Windows, two
+  names on Linux (the server version): "The setup file install.ps1 isn't in
+  ...". The script's name is now taken as it is on disk (Uninstall.ps1 and
+  detect.ps1 too). A server test builds a script app now.
+
 ## 2.38.48
 
 - **Send to Intune can be hidden while it runs**: the window's button reads
