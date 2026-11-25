@@ -111,7 +111,7 @@ same way.
 | --- | --- |
 | Update | `sudo ./scripts/update-ica.sh` (git pull, backup, that version's image; goes back when it isn't healthy) |
 | Update to a release | `sudo ./scripts/update-ica.sh 2.28.1` |
-| Back up | `sudo ./scripts/backup-ica.sh` -> `backup/intune-app-catalog-<time>.tar.gz` (kept 14 days) - it holds the certificate's private key: keep it private |
+| Back up | `sudo ./scripts/backup-ica.sh` -> `backup/intune-app-catalog-<time>.tar.gz` (the newest 5 are kept - `ICA_BACKUP_KEEP` - none older than 14 days; built .intunewin packages are left out, the app builds them again) - it holds the certificate's private key: keep it private |
 | Logs | `docker compose logs -f app`; the app's own: `docker exec intune-app-catalog ls /app/data/logs` |
 | Test a build | `./scripts/docker-smoke.sh` (builds, starts, checks sign-in, takeover, names, winget's index) |
 

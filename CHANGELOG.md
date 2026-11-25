@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.38.50
+
+- **Server updates don't fill the disk**: every update backs the data up first,
+  and with many updates in a day (the packages folder holds the installers)
+  the backups filled the disk - "No space left on device" in the middle of an
+  update.
+  - backup-ica.sh keeps the newest 5 backups (`ICA_BACKUP_KEEP`), and none
+    older than 14 days; the oldest go before the new one is written.
+  - Built .intunewin packages are left out (the app builds them again) -
+    about half the size for apps with their own installer.
+  - It checks the free space first and says how much is needed; a backup that
+    couldn't be finished is removed instead of left behind.
+  - update-ica.sh removes older images of the app after a successful update,
+    keeping the one before (to go back to).
+
 ## 2.38.49
 
 - **Script apps build on the server**: Package looked for "install.ps1" by that
