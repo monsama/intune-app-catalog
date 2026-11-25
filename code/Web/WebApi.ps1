@@ -401,6 +401,9 @@ function Global:Complete-WebJob {
                 if ($After.ReplacesLobAppId -and $newId) { $app.lobToRetire = ([string]$After.ReplacesLobAppId).ToLowerInvariant() }
                 if (-not $app.metadata -and $defaults) { $app.metadata = $defaults }
                 if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
+                # A managed app is sent pinned (its commands, detection and return codes written for its version, as they
+                # are today) - the file takes that form too (2.38.38), or Checks compared the old form with Intune for good.
+                if ($app.managedUpdates -and $app.wingetId -and $app.metadata) { [void](Set-ManagedAppPin $app) }
                 # The emptied fields this send carried went to Intune as empty (2.38.34) - only those: one emptied while it ran
                 # still waits, and a Store app's Owner or Notes (its type has none to send) stays a difference to see.
                 $sentCleared = @($After.SentCleared)

@@ -457,11 +457,11 @@ async function runEach(names, body, opts) {
 async function pushSettings(names) {
   if (!names.length) return;
   if (!(await ask(`Send the catalog's settings for ${names.length === 1 ? `"${names[0]}"` : names.length + ' apps'} to Intune?\n\nDescription, commands, detection rule, requirements, return codes and dependencies are replaced with the catalog's. No package is uploaded; groups aren't touched.`))) return;
-  runDialog('Send settings to Intune', names.join(', '));
-  const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Pushing ' });
-  toast(`Settings pushed for ${done.length} of ${nWord(names.length, 'app')}.`, done.length < names.length);
-  for (const f of findings.filter(f => done.includes(f.catalogName) && (f.actions || []).includes('PushMetadata'))) dropFinding(f);
-  loadApps(); checksRefresh(done);
+  // Through the same queue as the Apps page (2.38.38): sent while another send runs, it waits instead of being refused.
+  queueSend('settings', names, done => {
+    for (const f of findings.filter(f => done.includes(f.catalogName) && (f.actions || []).includes('PushMetadata'))) dropFinding(f);
+    checksRefresh(done);
+  });
 }
 
 // ---------------------------------------------------------------- winget search (Find Winget ID, Add app)

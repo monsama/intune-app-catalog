@@ -214,6 +214,11 @@ function Global:Complete-WebCheckDetails {
         }
         # Its own earlier releases (2.38.33): a promotion leaves the new app superseding the old one in Intune, and apps that
         # depend on it still pointing at "<name> <version> (superseded)". Neither is a difference the catalog has to know.
+        # A managed app is compared as it would be sent (2.38.38): pinned to its version in today's form - a file written
+        # by an earlier version kept the old detection script and return codes, which were never what Intune gets.
+        if ($app.managedUpdates -and $app.wingetId -and $app.metadata) {
+            $app = $app.PSObject.Copy(); $app.metadata = $app.metadata.PSObject.Copy(); [void](Set-ManagedAppPin $app)
+        }
         # 2.38.34: on the catalog's side too - an earlier Pull may have stored the old release's ID or name there.
         if ($one.Metadata) {
             $catNames = @($catalog | ForEach-Object { [string]$_.appName })

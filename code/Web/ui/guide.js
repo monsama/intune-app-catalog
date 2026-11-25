@@ -527,15 +527,25 @@ const sendKinds = {
   settings: { title: 'Send settings to Intune', path: '/api/deploy-start', body: name => ({ name, metadataOnly: true }), start: 'Sending settings for ', what: 'Settings' },
   groups: { title: 'Send groups to Intune', path: '/api/push-start', body: name => ({ names: [name], mode: 'AfterDeploy' }), start: 'Sending groups for ', what: 'Groups' },
 };
-function queueSend(kind, names) {
+// -after(doneNames): called once the queue has sent these names (Checks drops their findings and checks them again).
+function queueSend(kind, names, after) {
   const fresh = names.filter(n => !sendQueue.some(q => q.kind === kind && q.name === n));
-  for (const n of fresh) sendQueue.push({ kind, name: n });
-  if (sendLoopRunning) { if (fresh.length) toast(`${fresh.join(', ')}: queued - ${sendKinds[kind].what.toLowerCase()} go after what is being sent now.`); return; }
+  for (const n of fresh) sendQueue.push({ kind, name: n, after });
+  if (sendLoopRunning) {
+    if (fresh.length) {
+      toast(`${fresh.join(', ')}: queued - ${sendKinds[kind].what.toLowerCase()} go after what is being sent now.`);
+      // The tray says what is still to come (2.38.38).
+      $('runText').textContent = `Now: ${sendNow || ''}${sendQueue.length ? ` · then: ${sendQueue.map(q => q.name).join(', ')}` : ''}`;
+      if (!$('dlgRun').open) $('dlgRun').show();
+    }
+    return;
+  }
   runSendQueue();
 }
+let sendNow = '';
 async function runSendQueue() {
   sendLoopRunning = true;
-  const done = { settings: [], groups: [] }, failed = [];
+  const done = { settings: [], groups: [] }, failed = [], afters = new Map();
   runDialog('Send to Intune', sendQueue.map(q => q.name).join(', '));
   try {
     while (sendQueue.length) {
@@ -543,11 +553,14 @@ async function runSendQueue() {
       while (jobRunning) await new Promise(r => setTimeout(r, 1000));
       const q = sendQueue.shift(); if (!q) break;
       const k = sendKinds[q.kind];
-      $('runTitle').textContent = k.title; $('runText').textContent = [q.name, ...sendQueue.map(x => x.name)].join(', ');
+      sendNow = q.name;
+      $('runTitle').textContent = k.title; $('runText').textContent = `Now: ${q.name}${sendQueue.length ? ` · then: ${sendQueue.map(x => x.name).join(', ')}` : ''}`;
       const ok = (await runEach([q.name], k.body, { path: k.path, log: 'runLog', startText: k.start })).length > 0;
       if (ok) done[q.kind].push(q.name); else failed.push(q.name);
+      if (q.after) { if (!afters.has(q.after)) afters.set(q.after, []); if (ok) afters.get(q.after).push(q.name); }
     }
-  } finally { sendLoopRunning = false; }
+  } finally { sendLoopRunning = false; sendNow = ''; }
+  for (const [fn, names] of afters) { try { fn(names); } catch (e) { /* a page's follow-up failing doesn't undo the sends */ } }
   const parts = [];
   if (done.settings.length) parts.push(`Settings sent for ${nWord(done.settings.length, 'app')}`);
   if (done.groups.length) parts.push(`Groups sent for ${nWord(done.groups.length, 'app')}`);
