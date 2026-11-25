@@ -379,6 +379,10 @@ try {
       await page.evaluate(`window.__api = api; api = (path, body) => path === '/api/unsent-diff' ? Promise.resolve({ ok: true, name: 'ZZ Unsent', fromHistory: false,
         rows: [{ part: 'settings', field: 'Description', sent: 'A file archiver', now: 'A file archiver with a high compression ratio' }] }) : window.__api(path, body);
         apps.push({ name: 'ZZ Unsent', hasAppId: true, unsent: 'settings', groups: ['SG-A'], version: '1.0' }); renderApps();`);
+      // 2.38.37: Send settings while another is being sent lines it up instead of refusing it.
+      const queued = await page.evaluate(async () => { const was = jobRunning, la = loadApps; loadApps = () => {}; jobRunning = true; sendSettingsNow(['ZZ Q1']); sendSettingsNow(['ZZ Q2']); sendSettingsNow(['ZZ Q2']);
+        const q = sendQueue.map(x => x.name).join(','); sendQueue.length = 0; jobRunning = was; await new Promise(r => setTimeout(r, 1200)); loadApps = la; const d = document.getElementById('dlgRun'); if (d.open) d.close(); return q; });
+      check(queued === 'ZZ Q1,ZZ Q2', `${label}: Send settings clicked again while one runs is queued (once per app), not refused`, queued);
       const unsentPill = page.locator('#grid tr', { hasText: 'ZZ Unsent' }).locator('button.pillbtn');
       check(await unsentPill.count() === 1 && /Changes to send/.test(await unsentPill.textContent()), `${label}: Changes to send is a pill that opens the changes`);
       await unsentPill.hover();

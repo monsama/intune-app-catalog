@@ -519,16 +519,43 @@ function multiPanel(sel) {
 }
 
 // Sending what changed since the last send (Changes to send): its settings, or its groups - then the list is read again.
-async function sendSettingsNow(names) {
-  runDialog('Send settings to Intune', names.join(', '));
-  const done = await runEach(names, name => ({ name, metadataOnly: true }), { path: '/api/deploy-start', log: 'runLog', startText: 'Sending settings for ' });
-  toast(`Settings sent for ${done.length} of ${nWord(names.length, 'app')}.`, done.length < names.length); loadApps();
+// One queue for Send settings / Send groups (2.38.37): a click while one is still being sent lines the app up behind it
+// instead of being refused - they go one after the other, each as its own step.
+const sendQueue = [];
+let sendLoopRunning = false;
+const sendKinds = {
+  settings: { title: 'Send settings to Intune', path: '/api/deploy-start', body: name => ({ name, metadataOnly: true }), start: 'Sending settings for ', what: 'Settings' },
+  groups: { title: 'Send groups to Intune', path: '/api/push-start', body: name => ({ names: [name], mode: 'AfterDeploy' }), start: 'Sending groups for ', what: 'Groups' },
+};
+function queueSend(kind, names) {
+  const fresh = names.filter(n => !sendQueue.some(q => q.kind === kind && q.name === n));
+  for (const n of fresh) sendQueue.push({ kind, name: n });
+  if (sendLoopRunning) { if (fresh.length) toast(`${fresh.join(', ')}: queued - ${sendKinds[kind].what.toLowerCase()} go after what is being sent now.`); return; }
+  runSendQueue();
 }
-async function sendGroupsNow(names) {
-  runDialog('Send groups to Intune', names.join(', '));
-  const done = await runEach(names, name => ({ names: [name], mode: 'AfterDeploy' }), { path: '/api/push-start', log: 'runLog', startText: 'Sending groups for ' });
-  toast(`Groups sent for ${done.length} of ${nWord(names.length, 'app')}.`, done.length < names.length); loadApps();
+async function runSendQueue() {
+  sendLoopRunning = true;
+  const done = { settings: [], groups: [] }, failed = [];
+  runDialog('Send to Intune', sendQueue.map(q => q.name).join(', '));
+  try {
+    while (sendQueue.length) {
+      // Another action (a deploy, a check) still running: wait for it rather than give up.
+      while (jobRunning) await new Promise(r => setTimeout(r, 1000));
+      const q = sendQueue.shift(); if (!q) break;
+      const k = sendKinds[q.kind];
+      $('runTitle').textContent = k.title; $('runText').textContent = [q.name, ...sendQueue.map(x => x.name)].join(', ');
+      const ok = (await runEach([q.name], k.body, { path: k.path, log: 'runLog', startText: k.start })).length > 0;
+      if (ok) done[q.kind].push(q.name); else failed.push(q.name);
+    }
+  } finally { sendLoopRunning = false; }
+  const parts = [];
+  if (done.settings.length) parts.push(`Settings sent for ${nWord(done.settings.length, 'app')}`);
+  if (done.groups.length) parts.push(`Groups sent for ${nWord(done.groups.length, 'app')}`);
+  if (failed.length) parts.push(`not sent: ${failed.join(', ')}`);
+  toast(parts.join('; ') + '.', failed.length > 0); loadApps();
 }
+function sendSettingsNow(names) { queueSend('settings', names); }
+function sendGroupsNow(names) { queueSend('groups', names); }
 
 // Retire the MSI line-of-business app a Win32 app replaced (2.33.0): asked first, checked again on the server.
 async function retireLobApp(name) {
