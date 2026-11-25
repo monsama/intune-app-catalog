@@ -417,7 +417,8 @@ async function makeManagedDefault() {
 }
 async function managedForAll() {
   // Not Store apps (the Store updates them) nor Winget-AutoUpdate itself (it's retired, not managed).
-  const names = apps.filter(a => a.wingetId && !a.managed && !isStoreId(a.wingetId) && !isWauApp(a)).map(a => a.name);
+  // Nor apps that update themselves (2.38.40) - winget's latest is their way.
+  const names = apps.filter(a => a.wingetId && !a.managed && !a.updatesItself && !isStoreId(a.wingetId) && !isWauApp(a)).map(a => a.name);
   if (!names.length) return;
   if (!(await ask(`Turn managed updates on for ${names.length} Winget app(s)?\n\n${names.slice(0, 12).join(', ')}${names.length > 12 ? ', ...' : ''}\n\nEach installs a fixed version from then on, and new versions go to the pilot groups first. Their install commands follow the App version - apps without one take winget's current version next (Home asks).`, { ok: 'Turn on', danger: false }))) return;
   const r = await api('/api/managed-updates', { names, on: true });

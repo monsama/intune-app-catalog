@@ -2748,6 +2748,26 @@ function Global:Get-MetadataWithoutOwnReleases {
     return $m
 }
 
+function Global:Test-KnownSelfUpdatingApp {
+    <#
+      Pure (2.38.40): a Winget ID whose app keeps itself up to date on the device (its own updater, often weekly) - a
+      browser, a meeting client. Pinning such an app's version gains little: winget drops old versions fast ("can no
+      longer be downloaded"), and the app is past the pin on its own by then. Winget's latest is the better fit.
+    #>
+    param([string]$WingetId)
+    $id = ([string]$WingetId).Trim()
+    if (-not $id) { return $false }
+    return $id -match '^(?i)(Google\.Chrome(\.EXE)?|Mozilla\.Firefox(\.[A-Za-z\-]+)?|Mozilla\.Firefox\.ESR(\.[A-Za-z\-]+)?|Microsoft\.Edge|Brave\.Brave|Opera\.Opera|Vivaldi\.Vivaldi|Zoom\.Zoom|Microsoft\.Teams|Cisco\.Webex|Cisco\.WebexTeams|Spotify\.Spotify|SlackTechnologies\.Slack|Discord\.Discord|Dropbox\.Dropbox|Google\.GoogleDrive)$'
+}
+
+function Global:Test-AppUpdatesItself {
+    # Pure (2.38.40): the app updates itself - set in its editor (selfUpdating), else known by its Winget ID.
+    param($App)
+    if (-not $App -or -not $App.wingetId -or (Test-StoreProductId ([string]$App.wingetId))) { return $false }
+    if ($App.PSObject.Properties['selfUpdating'] -and $null -ne $App.selfUpdating) { return [bool]$App.selfUpdating }
+    return (Test-KnownSelfUpdatingApp ([string]$App.wingetId))
+}
+
 function Global:Get-NonPackageAppHint {
     <#
       Pure: why an app without a Winget ID needs no package of its own ('' when

@@ -938,6 +938,8 @@
           <p class="muted small">The licence terms are accepted for the users, and Office installs without showing progress.</p>
         </fieldset>
         <label class="chk" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
+        <label class="chk" id="aSelfRow" hidden title="The app keeps itself up to date on the device (its own updater) - Intune installs winget's latest once, and Home doesn't suggest managed updates for it"><input type="checkbox" id="aSelfUpd">Updates itself <span class="muted">- winget's latest, no version pinned (browsers, meeting apps)</span></label>
+        <p class="hint" id="aSelfHint" hidden>This app updates itself on the devices - a pinned version falls behind within days and winget soon drops it. Turning managed updates off (winget's latest) usually fits it better.</p>
         <div class="methodrow" id="aMethodRow" hidden>
           <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest, not updated</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>

@@ -124,6 +124,8 @@ $testableFunctionNames = @(
     "Get-MetadataWithoutOwnReleases",
     "Get-DeviceVersionCompareScript",
     "Set-ClearedFields",
+    "Test-KnownSelfUpdatingApp",
+    "Test-AppUpdatesItself",
     "Get-ManagedWingetDetectionV1",
     "New-InstalledAppDetectionScriptV1",
     "Get-DependencyFindings",
@@ -741,6 +743,11 @@ $scNew.owner = 'Bob'; Set-ClearedFields -Old $scOld -New $scNew
 Assert-Equal 'notes' (@($scNew.clearedFields) -join ',') "Set-ClearedFields: ...and taken off once it has a value again"
 $mgKeep = Merge-CatalogMetadata -Remote ([pscustomobject]@{ description = 'r'; owner = 'Portal' }) -Local ([pscustomobject]@{ description = 'l'; owner = ''; clearedFields = @('owner') }) -KeepLocalFields @('Owner')
 Assert-True ([string]$mgKeep.owner -eq '' -and @($mgKeep.clearedFields) -contains 'owner') "Merge-CatalogMetadata: keeping the catalog's emptied field keeps it marked for the next send (2.38.34)" ($mgKeep | ConvertTo-Json -Compress)
+# 2.38.40: apps that update themselves stay on winget's latest
+Assert-True ((Test-KnownSelfUpdatingApp 'Google.Chrome') -and (Test-KnownSelfUpdatingApp 'Mozilla.Firefox.de') -and -not (Test-KnownSelfUpdatingApp 'VideoLAN.VLC') -and -not (Test-KnownSelfUpdatingApp 'Google.ChromeRemoteDesktop')) "Test-KnownSelfUpdatingApp: browsers yes, VLC and look-alike IDs no"
+Assert-True ((Test-AppUpdatesItself ([pscustomobject]@{ wingetId = 'Google.Chrome'; selfUpdating = $null })) -and -not (Test-AppUpdatesItself ([pscustomobject]@{ wingetId = 'Google.Chrome'; selfUpdating = $false })) -and (Test-AppUpdatesItself ([pscustomobject]@{ wingetId = 'VideoLAN.VLC'; selfUpdating = $true }))) "Test-AppUpdatesItself: the app's own setting wins over the known list"
+$suRec = ConvertTo-AppRecord -Raw ((ConvertTo-SingleAppJson -App (ConvertTo-AppRecord -Raw ([pscustomobject]@{ appName = 'S'; wingetId = 'VideoLAN.VLC'; selfUpdating = $true }))) | ConvertFrom-Json)
+Assert-True ($suRec.selfUpdating -eq $true) "ConvertTo-AppRecord: selfUpdating survives a save"
 $cfgJson = ConvertTo-CreateAppConfigJson -Config ([pscustomobject]@{ AppName = 'x'; ClearedFields = @('notes') })
 # A text check: a config this small isn't a whole one (Windows PowerShell's ConvertFrom-Json refuses its empty numbers).
 Assert-True ($cfgJson -match '"ClearedFields": \[\s*"notes"\s*\]') "ConvertTo-CreateAppConfigJson: the emptied fields go to the step (2.38.34)"
