@@ -657,6 +657,17 @@ try {
     $scDir = [string]$addS.folder
     Check ($addS.ok -and $scApp.deploy.detection.type -eq 'Registry' -and $scApp.deploy.detection.value -eq '2.0' -and $scApp.metadata.installCommand -like '*-File .\Install.ps1' -and (Test-Path -LiteralPath (Join-Path $scDir 'Install.ps1')) -and $scApp.managedUpdates) 'add apps: a script app - Install.ps1 in its folder, detected by its version marker, managed updates on' ($addS | ConvertTo-Json -Compress)
     Check (-not (Invoke-Api '/api/add-script' @{ name = $scName; version = '2.0'; install = $tpls.templates[1].install; uninstall = 'x' }).ok) 'add apps: a name already in the catalog is refused'
+    # 2.38.49: a script app builds - its Install.ps1 found by its name on disk (Linux tells Install.ps1 from install.ps1).
+    $scPkg = Invoke-Api '/api/package-start' @{ names = @($scName) }
+    $scLog = ''; $scDone = $false; $off = 0; $until = (Get-Date).AddSeconds(120)
+    while ($scPkg.ok -and -not $scDone -and (Get-Date) -lt $until) {
+        $pp = Invoke-Api '/api/job-poll' @{ job = $scPkg.job; offset = $off }
+        if (-not $pp.ok) { break }
+        $off = $pp.offset; $scLog += [string]$pp.text
+        if ($pp.done -and -not $pp.text) { $scDone = $true } else { Start-Sleep -Milliseconds 400 }
+    }
+    $scBuilt = @(Get-ChildItem -LiteralPath $scDir -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)
+    Check ($scDone -and $scBuilt.Count -eq 1 -and $scLog -cnotmatch '-> FAILED') 'script app: Package builds it' (($scLog -split "`n" | Select-Object -Last 8) -join ' | ')
     # A new version: the detection rule and the script's version marker move together.
     $scQ = Invoke-Api '/api/app-quick' @{ name = $scName; field = 'appVersion'; value = '2.5' }
     $scApp2 = (Invoke-Api '/api/app-get' @{ name = $scName }).app

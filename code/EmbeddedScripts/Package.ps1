@@ -419,7 +419,9 @@ if ($SetupFiles) {
 
 foreach ($Folder in $AllFolders) {
     # Check for PowerShell script (install.ps1)
-    $InstallScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "install.ps1" -ErrorAction SilentlyContinue
+    # Its name as it is on disk (2.38.49): Install.ps1 and install.ps1 are two names on Linux (the server version) -
+    # a fixed "install.ps1" left the build looking for a file that wasn't there.
+    $InstallScript = @(Get-ChildItem -LiteralPath $Folder.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq 'install.ps1' }) | Select-Object -First 1
     # A setup file chosen for this app (the catalog's setupFile - one in a subfolder too) comes first.
     $Chosen = Get-ChosenSetupFile -Folder $Folder -Map $SetupFileMap
 
@@ -448,8 +450,8 @@ foreach ($Folder in $AllFolders) {
         
         $Scope = Get-AppScope -InstallScriptPath $InstallScript.FullName
         
-        $UninstallScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "uninstall.ps1" -ErrorAction SilentlyContinue
-        $DetectScript = Get-ChildItem -LiteralPath $Folder.FullName -File -Filter "detect.ps1" -ErrorAction SilentlyContinue
+        $UninstallScript = @(Get-ChildItem -LiteralPath $Folder.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq 'uninstall.ps1' }) | Select-Object -First 1
+        $DetectScript = @(Get-ChildItem -LiteralPath $Folder.FullName -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq 'detect.ps1' }) | Select-Object -First 1
         
         $AppsToProcess += [PSCustomObject]@{
             Type             = "Script"
@@ -458,7 +460,7 @@ foreach ($Folder in $AllFolders) {
             AppName          = $AppName
             Scope            = $Scope
             SourceFile       = $InstallScript
-            SourceFileName   = "install.ps1"
+            SourceFileName   = $InstallScript.Name
             UninstallScript  = $UninstallScript
             DetectScript     = $DetectScript
             HasUninstall     = ($null -ne $UninstallScript)
