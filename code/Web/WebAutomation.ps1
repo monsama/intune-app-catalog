@@ -1033,9 +1033,12 @@ function Global:Invoke-WebHousekeeping {
     if (Test-Path -LiteralPath $sb) { foreach ($i in @(Get-ChildItem -LiteralPath $sb -Directory -ErrorAction SilentlyContinue)) { $n += & $drop $i }; Remove-Item -LiteralPath $sb -Force -ErrorAction SilentlyContinue }
     $bk = Get-AppFolder -Kind Backups
     if (Test-Path -LiteralPath $bk) { foreach ($i in @(Get-ChildItem -LiteralPath $bk -Directory -Filter 'app-edit_*' -ErrorAction SilentlyContinue)) { if ($i.Name -match '^app-edit_\d{4}-\d{2}-\d{2}$' -and (& $old $i 180)) { $n += & $drop $i } } }
+    # Packages folders of removed apps (2.38.47): kept 30 days to get one back, then gone.
+    $rp = Join-Path $bk 'removed-packages'
+    if (Test-Path -LiteralPath $rp) { foreach ($i in @(Get-ChildItem -LiteralPath $rp -Directory -ErrorAction SilentlyContinue)) { if ($i.Name -match '_\d{8}-\d{6}$' -and (& $old $i 30)) { $n += & $drop $i } } }
     $lg = Get-AppFolder -Kind Logs
     if (Test-Path -LiteralPath $lg) { foreach ($i in @(Get-ChildItem -LiteralPath $lg -File -Filter 'intune-deployment-*.log' -ErrorAction SilentlyContinue)) { if (& $old $i 90) { $n += & $drop $i } } }
-    if ($n) { Write-Log "[INFO] Housekeeping: $n old item(s) removed (temporary files, backups older than 180 days, logs older than 90 days)." }
+    if ($n) { Write-Log "[INFO] Housekeeping: $n old item(s) removed (temporary files, backups older than 180 days, removed apps' packages folders older than 30 days, logs older than 90 days)." }
 }
 
 function Global:Test-WebRunLockHeld {

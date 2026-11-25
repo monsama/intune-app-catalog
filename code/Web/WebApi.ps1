@@ -937,6 +937,7 @@ function Global:Invoke-WebApi {
         '/api/certs-all'        { return (Get-WebAllLocalCertificates) }
         '/api/cert-delete-local' { return (Remove-WebLocalCertificate $Data) }
         '/api/packaging'        { return (Get-WebPackaging) }
+        '/api/packages-cleanup' { return (Invoke-WithCatalogLock { Invoke-WebOrphanPackageCleanup }) }
         '/api/packaging-setup'  { return (Invoke-WebPackagingSetup $Data) }
         '/api/package-start'    { return (Start-WebPackage $Data) }
         '/api/pull-start'       { return (Start-WebPull $Data) }

@@ -179,6 +179,21 @@ try {
     Check (-not (Test-Path -LiteralPath $staleRec) -and (($log | ConvertTo-Json -Depth 4 -Compress) -like '*Create ZZ Stale Step was running when the app last stopped*')) 'a step left unfinished by the last run is said at start and forgotten' ($log | ConvertTo-Json -Depth 3 -Compress)
     Check ($log.ok -and (@($log.lines.Text) -join "`n") -like '*Web interface started*') 'log: the server''s own lines for the Activity box'
 
+    # 2.38.47: a packages folder no app uses is listed and moved to Backups; removing an own-installer app takes its folder along.
+    $pkgRoot = (Invoke-Api '/api/packaging').packagesFolder
+    $orphan = 'ZZ-Orphan-' + [guid]::NewGuid().ToString('N').Substring(0, 6)
+    [void](New-Item -ItemType Directory -Path (Join-Path $pkgRoot $orphan) -Force); Set-Content -LiteralPath (Join-Path (Join-Path $pkgRoot $orphan) 'setup.msi') -Value 'x'
+    $pk = Invoke-Api '/api/packaging'
+    Check (@($pk.orphans | Where-Object { $_.name -eq $orphan }).Count -eq 1) 'packages: a folder no app uses is listed' ($pk.orphans | ConvertTo-Json -Compress)
+    $cl = Invoke-Api '/api/packages-cleanup'
+    Check ($cl.ok -and @($cl.moved) -contains $orphan -and -not (Test-Path -LiteralPath (Join-Path $pkgRoot $orphan))) 'packages: Clean up moves it out of the packages folder' ($cl | ConvertTo-Json -Compress)
+    $ownName = 'ZZ Own Remove ' + [guid]::NewGuid().ToString('N').Substring(0, 6)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $ownName; wingetId = ''; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() } })
+    $ownDir = Join-Path $pkgRoot ($ownName.Replace(' ', '-'))
+    [void](New-Item -ItemType Directory -Path $ownDir -Force); Set-Content -LiteralPath (Join-Path $ownDir 'setup.msi') -Value 'x'
+    $rm = Invoke-Api '/api/app-remove' @{ name = $ownName }
+    Check ($rm.ok -and $rm.packagesMoved -and -not (Test-Path -LiteralPath $ownDir)) 'remove from catalog: an own installer''s packages folder goes to Backups with it' ($rm | ConvertTo-Json -Compress)
+
     # The app editor: add, rename, refuse a clash, remove - in the catalog
     # folder of this checkout (data\ is git-ignored, so nothing real is touched).
     $testName = 'Web Test App ' + [guid]::NewGuid().ToString('N').Substring(0, 6)

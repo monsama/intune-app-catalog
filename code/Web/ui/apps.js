@@ -784,7 +784,7 @@ async function compareVersion(name, b) {
   $('histCompare').scrollIntoView({ block: 'nearest' });
 }
 $('btnRemoveApp').addEventListener('click', async () => {
-  if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder.`))) return;
+  if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder${(apps.find(a => a.name === editingName) || {}).wingetId ? '' : ', and so does its packages folder'}.`))) return;
   const r = await api('/api/app-remove', { name: editingName });
   if (!r.ok) { toast(r.error, true); return; }
   $('dlgApp').close(); selected.delete(editingName); await loadApps();
@@ -1571,7 +1571,7 @@ async function menuAction(act) {
       break;
     }
     case 'remove': {
-      if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : `${names.length} apps`} from the catalog?\n\n${names.length > 1 ? names.slice(0, 15).join('\n') + (names.length > 15 ? `\n... and ${names.length - 15} more` : '') + '\n\n' : ''}Only the catalog changes - nothing in Intune. A copy of each file goes to the Backups folder.`))) return;
+      if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : `${names.length} apps`} from the catalog?\n\n${names.length > 1 ? names.slice(0, 15).join('\n') + (names.length > 15 ? `\n... and ${names.length - 15} more` : '') + '\n\n' : ''}Only the catalog changes - nothing in Intune. A copy of each file goes to the Backups folder (an own installer's packages folder too).`))) return;
       const failed = [];
       for (const n of names) { const r = await api('/api/app-remove', { name: n }); if (r.ok) selected.delete(n); else failed.push(`${n}: ${r.error}`); }
       toast(failed.length ? 'Not removed: ' + failed.join('; ') : `Removed ${nWord(names.length, 'app')} from the catalog.`, failed.length > 0); loadApps();
