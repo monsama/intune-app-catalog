@@ -816,7 +816,7 @@ function Global:Start-WebUpdateRun {
     param($Data)
     if (-not (Test-GraphCredentialsConfigured -Quiet)) { return @{ ok = $false; error = 'Set up the connection in Settings first.' } }
     $script = Join-Path $Global:App.RootPath 'IntuneDeployment.ps1'
-    $exe = (Get-Process -Id $PID).Path
+    $exe = (Get-OwnPowerShellPath)
     $runArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$script`"", '-RunUpdates')
     if ($Data.planOnly) { $runArgs += '-PlanOnly' }
     try {
@@ -888,7 +888,7 @@ function Global:Set-WebUpdateSchedule {
     $runAt = [string]$Data.runAt
     if ($runAt -notmatch '^([01]\d|2[0-3]):[0-5]\d$') { return @{ ok = $false; error = 'The time must be HH:mm (24 hours), e.g. 03:00.' } }
     $script = Join-Path $Global:App.RootPath 'IntuneDeployment.ps1'
-    $exe = (Get-Process -Id $PID).Path
+    $exe = (Get-OwnPowerShellPath)
     try {
         $action = New-ScheduledTaskAction -Execute $exe -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -RunUpdates" -WorkingDirectory $Global:App.RootPath
         $trigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::ParseExact($runAt, 'HH:mm', [Globalization.CultureInfo]::InvariantCulture))
