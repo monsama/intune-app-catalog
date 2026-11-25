@@ -21,7 +21,13 @@ sed -i "s#^ICA_IMAGE=.*#ICA_IMAGE=$NEW#" .env
 docker compose up -d app
 for _ in $(seq 1 60); do
     s="$(docker inspect -f '{{.State.Health.Status}}' intune-app-catalog 2>/dev/null || echo starting)"
-    [ "$s" = "healthy" ] && { info "Running $NEW."; exit 0; }
+    if [ "$s" = "healthy" ]; then
+        info "Running $NEW."
+        # Older images of the app take a few hundred MB each: all go but this one and the one before it (to go back to).
+        docker image ls ghcr.io/monsama/intune-app-catalog --format '{{.Repository}}:{{.Tag}}' | grep -vxF -e "$NEW" -e "$OLD" | xargs -r docker image rm >/dev/null 2>&1 || true
+        docker image prune -f >/dev/null 2>&1 || true
+        exit 0
+    fi
     [ "$s" = "unhealthy" ] && break
     sleep 3
 done
