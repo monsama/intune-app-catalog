@@ -256,7 +256,7 @@ function Global:Get-WebAttention {
     # Pinned versions whose download is gone (the last check): new devices can't install them.
     $dlChecks = Get-WebDownloadChecks
     $dlGone = @($apps | Where-Object { $_.managedUpdates -and $_.wingetId -and $_.metadata -and [string]$_.metadata.appVersion } | Where-Object { $dc = $dlChecks["$($_.wingetId)|$([string]$_.metadata.appVersion)"]; $dc -and [string]$dc.status -in 'gone', 'notinwinget' })
-    if ($dlGone.Count) { & $add 'err' "$($dlGone.Count) app(s) can't be installed on new devices" ((@($dlGone | Select-Object -First 5 | ForEach-Object { "$($_.appName) $([string]$_.metadata.appVersion)" }) -join ', ') + ' - winget no longer offers the version Intune installs (it keeps only recent ones). Release the current one on the Updates page: Release new version, then let it go through the pilot.') 'updates' }
+    if ($dlGone.Count) { & $add 'err' "$($dlGone.Count) app(s) can't be installed on new devices" ((@($dlGone | Select-Object -First 5 | ForEach-Object { "$($_.appName) $([string]$_.metadata.appVersion)" }) -join ', ') + ' - winget no longer offers the version Intune installs (it keeps only recent ones). The nightly run releases the current one to pilot by itself; to do it now, Release new version on the Updates page.') 'updates' }
     $managedWinget = @($apps | Where-Object { $_.wingetId -and $_.managedUpdates })
     if ($managedWinget.Count -and -not (Test-Path -LiteralPath (Get-SharedPackagePath))) { & $add 'warn' 'Shared Winget package missing' 'Build init.intunewin - Winget apps can''t be deployed without it.' 'settings:packaging' }
     $runs = Get-WebUpdateRuns

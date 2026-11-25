@@ -8,8 +8,10 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p backup; chmod 700 backup
 # tmp/ holds the running app's scratch files and sockets (tar can't store a socket and says so) - not data.
+# The folder itself is excluded, so tar doesn't go into it at all (2.38.36: only its contents were, and busybox tar
+# still reported the sockets in it as "socket ignored" - harmless, but it looked like an error).
 name="intune-app-catalog-$(date +%Y%m%d-%H%M%S).tar.gz"
-docker run --rm -v intune-app-catalog-data:/data:ro -v "$PWD/backup":/b alpine:3.20 tar -czf "/b/$name" --exclude './tmp/*' --exclude 'tmp/*' -C /data .
+docker run --rm -v intune-app-catalog-data:/data:ro -v "$PWD/backup":/b alpine:3.20 tar -czf "/b/$name" --exclude './tmp' --exclude 'tmp' --exclude './tmp/*' --exclude 'tmp/*' -C /data .
 ( cd backup && sha256sum "$name" > "$name.sha256" )
 find backup -name 'intune-app-catalog-*.tar.gz*' -mtime +14 -delete
 echo "[INFO]  backup/$name"

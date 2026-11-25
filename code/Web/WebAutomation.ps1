@@ -82,11 +82,14 @@ function Global:Invoke-ManagedUpdateRun {
                     elseif ($h.level -eq 'warn') { & $say '(health)' 'health' $h.text }
                 }
             }
-            # Pinned Winget versions whose download is gone: new devices can't install them.
+            # Pinned Winget versions whose download is gone: new devices can't install them. Such an app gets winget's
+            # current version released to pilot below even with automatic release off or outside the release window
+            # (2.38.37) - still through the pilot, never straight to everyone.
+            $dlGone = @{}
             if (-not $FastTrackOnly) {
                 foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { $_.managedUpdates -and $_.appId -and -not $_.retiringSince -and $_.wingetId -and -not (Test-StoreProductId $_.wingetId) -and $_.metadata -and [string]$_.metadata.appVersion })) {
                     $dl = Test-WebPinnedDownload -WingetId $a.wingetId -Version ([string]$a.metadata.appVersion)
-                    if ($dl.status -in 'gone', 'notinwinget') { & $say $a.appName 'health' $dl.text }
+                    if ($dl.status -in 'gone', 'notinwinget') { & $say $a.appName 'health' $dl.text; $dlGone[[string]$a.appName] = $true }
                 }
             }
             $window = Test-ReleaseWindow -Now (Get-Date) -Policy $policy
@@ -172,12 +175,14 @@ function Global:Invoke-ManagedUpdateRun {
                         # The test tenant's version may be one that was withdrawn or rolled back here.
                         if (@($a.blockedVersions) -contains $latest -or (Compare-AppVersionText $current $latest) -ne 1) { & $say $a.appName 'available' "The test tenant has $latest (now $current) - not released by itself: $(if (@($a.blockedVersions) -contains $latest) { 'it was withdrawn or rolled back here before' } else { 'not newer than the current one' })."; continue }
                     }
-                    if ($PlanOnly -or -not $policy.AutoRelease) { & $say $a.appName 'available' "winget offers $latest (now $current).$(if (-not $policy.AutoRelease) { ' Release it to pilot (automatic release is off).' })"; continue }
-                    if (-not $window.Open) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
+                    $urgent = $dlGone.ContainsKey([string]$a.appName)
+                    if ($PlanOnly) { & $say $a.appName 'available' "winget offers $latest (now $current).$(if ($urgent) { " $current can no longer be downloaded - this run would release $latest to pilot." })"; continue }
+                    if (-not $policy.AutoRelease -and -not $urgent) { & $say $a.appName 'available' "winget offers $latest (now $current). Release it to pilot (automatic release is off)."; continue }
+                    if (-not $window.Open -and -not $urgent) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
                     $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $latest })
                     if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $latest failed: $($made.error)"; $failed++; continue }
                     $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
-                    if ($assigned.ok) { & $say $a.appName 'released' "$latest released to the pilot groups (now $current for everyone else)." }
+                    if ($assigned.ok) { & $say $a.appName 'released' "$latest released to the pilot groups (now $current for everyone else)$(if ($urgent) { " - by itself because $current can no longer be downloaded: new devices couldn't install it" })." }
                     else { & $say $a.appName 'failed' "$latest is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
                     continue
                 }
