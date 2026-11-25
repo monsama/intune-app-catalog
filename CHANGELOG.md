@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.37
+
+- **Send settings / Send groups queue up**: clicking another app's "Send
+  settings" (or "Send groups") while one is still being sent lined nothing up -
+  it was refused with "Another action is still running". Now it is queued (once
+  per app) and sent right after, one app after the other; the toast at the end
+  says what was sent and what wasn't.
+- **Stage column**: the next-step buttons beside the stage (Send settings,
+  Checks, Edit, ...) are one width, so they line up like the stage labels.
+
 ## 2.38.36
 
 - **"Changes to send" no longer shows "(blank)" for what Intune does have**: an
