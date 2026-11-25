@@ -1,5 +1,28 @@
 # Changelog
 
+## 2.38.36
+
+- **"Changes to send" no longer shows "(blank)" for what Intune does have**: an
+  app sent while it had managed updates doesn't keep its version, commands,
+  detection and return codes in the send record (its releases carry them).
+  When managed updates are off later, the card showed those fields as blank in
+  Intune; it now says "(not kept at the last send)".
+- **A pinned version that can't be downloaded any more is replaced by itself**:
+  winget keeps only recent versions, so a managed app pinned to an older one
+  (e.g. Chrome) can't be installed on new devices. The nightly run now releases
+  winget's current version to pilot for such an app even when automatic release
+  is off or the release window is closed - through the pilot as always, never
+  straight to everyone; a version withdrawn before isn't used.
+- **Home**: the buttons in "Needs attention" are one width and line up. The
+  message for a pinned version winget no longer offers says the nightly run
+  replaces it, and how to do it now.
+- **Backups (server)**: backup-ica.sh (also run by update-ica.sh) no longer prints
+  "socket ignored" for the running app's scratch folder - it was harmless (the
+  sockets aren't data), the folder is now left out entirely.
+- **Settings > Packaging and Diagnostics**: one card per row, full width (the
+  Activity log reads better wide; on the server Packaging stood alone at half
+  width).
+
 ## 2.38.35
 
 - **The "what changed" card stays open to be read**: the card that opens when
