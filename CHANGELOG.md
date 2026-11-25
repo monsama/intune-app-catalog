@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.38.48
+
+- **Send to Intune can be hidden while it runs**: the window's button reads
+  Hide - the send goes on in the background, a note says so, Show brings the
+  window back. Before, Cancel and Escape were refused with a red message.
+- **Editor**:
+  - A managed app in Intune offers the installer upload again (allowed since
+    2.38.42) - only not while a version is in pilot, and then it says so.
+  - Room under the Managed updates switch.
+  - Read-only values in the command blocks (a script's name, fixed parts)
+    start in the same column as the text in the fields.
+
 ## 2.38.47
 
 - **Packages folders are cleaned up**:

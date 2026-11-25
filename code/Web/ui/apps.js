@@ -355,9 +355,11 @@ function showPkgInfo() {
   box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint) || editorSrc === 'office';
   if (box.hidden) return;
   const script = /\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value);
-  const managedLocked = !!(row && row.managed && row.appId && i && i.found);
+  // Managed and in Intune: a new installer is taken (2.38.42 - Release new version then sends it, pilot first) - only
+  // not while a version is in pilot, which uses the folder.
+  const managedLocked = !!(row && row.managed && row.appId && row.pilotVersion && i && i.found);
   // Upload: an installer or a .zip of its folder, or the folder itself (2.34.0) - works on the server too; drop it here as well.
-  const acts = managedLocked ? el('span', { class: 'pkgacts muted', text: 'A new installer of an app with managed updates goes through Release new version (Updates), pilot first.' })
+  const acts = managedLocked ? el('span', { class: 'pkgacts muted', text: `${row && row.pilotVersion} is in pilot - promote or withdraw it before uploading a new installer.` })
     : el('span', { class: 'pkgacts' },
       el('button', { type: 'button', class: 'btn small' + (i && i.found ? '' : ' primary'), id: 'btnAppInstaller', text: i && i.found ? 'Upload another...' : 'Upload an installer or .zip...', title: 'An .msi or .exe, or a .zip of its folder - it goes into the app\'s packages folder', onclick: () => $('aInstallerFile').click() }),
       el('button', { type: 'button', class: 'btn small', id: 'btnAppFolder', text: 'Upload a folder...', title: 'A whole folder - the installer with its other files (transforms, config files); all of it goes into the package', onclick: () => $('aInstallerFolder').click() }),
@@ -1209,6 +1211,8 @@ function deployOne(name) {
 // Runs the queue in plan order. An app whose dependency failed (or was skipped) is skipped, saying which.
 async function runDeployQueue(names) {
   deployRunning = true; deployStop = false;
+  // While it runs (2.38.48): Hide - the send goes on in the background, the finish says so; Show brings it back.
+  $('btnDeployClose').textContent = 'Hide'; $('btnDeployClose').title = 'Close this window - sending goes on; "Stop after this app" ends it';
   $('btnDeployGo').disabled = true; $('btnDeployRetry').hidden = true; $('btnDeployStop').hidden = false; $('btnDeployStop').disabled = false;
   for (const name of names) delete deployResults[name];
   for (const name of names) setDeployStatus(name, 'muted', 'Waiting');
@@ -1226,7 +1230,7 @@ async function runDeployQueue(names) {
     else setDeployStatus(name, r.groups === false ? 'warn' : 'ok', r.groups === true ? 'Done, groups sent' : r.groups === false ? 'Done, groups failed' : 'Done', r.groups === false ? 'Send groups again from the toolbar.' : '');
     deployProgress();
   }
-  deployRunning = false; $('btnDeployClose').textContent = 'Close';
+  deployRunning = false; $('btnDeployClose').textContent = 'Close'; $('btnDeployClose').title = '';
   $('btnDeployStop').hidden = true;
   const ready = deployPlan.filter(a => a.ready).map(a => a.name);
   const retry = ready.filter(n => ['failed', 'skipped', 'stopped'].includes(deployResults[n]));
@@ -1250,8 +1254,10 @@ $('btnDeployGo').addEventListener('click', () => {
 });
 $('btnDeployRetry').addEventListener('click', () => !deployRunning && runDeployQueue(deployPlan.filter(a => a.ready && ['failed', 'skipped', 'stopped'].includes(deployResults[a.name])).map(a => a.name)));
 $('btnDeployStop').addEventListener('click', () => { deployStop = true; $('btnDeployStop').disabled = true; toast('Stopping after the app that is running.'); });
-$('dlgDeploy').addEventListener('cancel', e => { if (deployRunning) { e.preventDefault(); toast('Deploying - use "Stop after this app" first, or wait.', true); } });
-$('btnDeployClose').addEventListener('click', e => { if (deployRunning) { e.stopImmediatePropagation(); toast('Deploying - use "Stop after this app" first, or wait.', true); } }, true);
+// Closed while it runs (Hide, Escape): the send goes on - said, with a way back to the window.
+function deployHidden() { toast('Sending goes on in the background - you get a note when it is done.', false, [{ label: 'Show', run: () => { if (!$('dlgDeploy').open) $('dlgDeploy').showModal(); } }]); }
+$('dlgDeploy').addEventListener('cancel', () => { if (deployRunning) deployHidden(); });
+$('btnDeployClose').addEventListener('click', () => { if (deployRunning) deployHidden(); }, true);
 
 // ---------------------------------------------------------------- send groups
 let pushNames = [];
