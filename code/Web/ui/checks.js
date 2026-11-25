@@ -20,7 +20,7 @@ function setCheckAreas() {
 function checkJob(path, body, label) {
   return new Promise(resolve => {
     // The log opens by itself only when a stage fails - otherwise it stays folded, and the findings get the room.
-    runJob(body, (ok, res, after) => { if (!(ok && after && after.ok)) $('checkLogBox').open = true; resolve(ok && after && after.ok ? after : null); }, { path, log: 'checkLog', startText: label }).then(started => { if (!started) resolve(null); });
+    runJob(body, (ok, res, after) => { if (!(ok && after && after.ok)) $('checkLogBox').open = true; resolve(ok && after && after.ok ? after : null); }, { path, log: 'checkLog', startText: label, wait: true }).then(started => { if (!started) resolve(null); });
   });
 }
 async function runChecks(names) {
@@ -451,7 +451,7 @@ async function runEach(names, body, opts) {
   const done = [];
   for (const name of names) {
     const ok = await new Promise(resolve => {
-      runJob(body(name), ok => resolve(ok), { ...opts, startText: (opts.startText || '') + name + '...' }).then(started => { if (!started) resolve(false); });
+      runJob(body(name), ok => resolve(ok), { ...opts, wait: true, startText: (opts.startText || '') + name + '...' }).then(started => { if (!started) resolve(false); });
     });
     if (ok) done.push(name);
   }

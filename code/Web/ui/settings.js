@@ -157,6 +157,9 @@ function jobButtons(on) {
 }
 async function runJob(body, onDone, opts = {}) {
   const busy = 'Another action is still running - wait for it to finish.';
+  // -wait (2.38.42): a step that follows others (each app of a batch send, a check stage) waits its turn - before,
+  // a send running meanwhile made every one of them fail ("sent for 0 of N").
+  if (opts.wait) while (jobRunning) await new Promise(r => setTimeout(r, 1000));
   if (jobRunning) { toast(busy, true); if (onDone) onDone(false, { error: busy }); return false; }
   // Taken before the request: two quick clicks must not start two steps.
   jobRunning = true;
@@ -178,7 +181,7 @@ function followJob(job, onDone, opts = {}) {
       // A missed answer is retried; a job the server no longer knows (or five misses in a row) ends here - and says so to whoever waits for it.
       if (r.error !== 'No such job.' && ++fails < 5) { setTimeout(tick, 1500); return; }
       jobRunning = false; jobButtons(true);
-      const error = r.error === 'No such job.' ? 'The page lost track of this step - the server finished it on its own; see Activity.' : r.error;
+      const error = r.error === 'No such job.' ? 'The page lost track of this step - whether it finished (and what was saved) is in Activity.' : r.error;
       toast(error, true);
       if (onDone) onDone(false, { error });
       return;
@@ -187,9 +190,12 @@ function followJob(job, onDone, opts = {}) {
     if (r.text) { both(r.text); offset = r.offset; }
     if (r.done && !r.text) {
       jobRunning = false; jobButtons(true);
-      const ok = r.result && r.result.success;
-      if (!ok) toast((r.result && r.result.error) || 'It did not finish - see Activity.', true);
-      if (onDone) onDone(ok, r.result, r.after);
+      // What the server does after the step (saving the App ID, recording a release) can fail too (2.38.42) - then it didn't work.
+      const afterErr = r.after && r.after.ok === false ? (r.after.error || 'Saving its result in the catalog failed - see Activity.') : '';
+      const ok = !!(r.result && r.result.success) && !afterErr;
+      const result = afterErr ? { ...(r.result || {}), success: false, error: `It ran in Intune, but ${afterErr.charAt(0).toLowerCase()}${afterErr.slice(1)}` } : r.result;
+      if (!ok) toast((result && result.error) || 'It did not finish - see Activity.', true);
+      if (onDone) onDone(ok, result, r.after);
       return;
     }
     setTimeout(tick, r.done ? 50 : 700);

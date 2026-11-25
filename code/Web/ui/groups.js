@@ -186,7 +186,7 @@ function openGroupMenu(x, y) {
   setEnabled(b('assign'), !!one, 'Select exactly one group.');
   setEnabled(b('create'), missing.length > 0, entra ? (sel.length > 1 ? 'Every selected group is in Entra ID already.' : 'This group is in Entra ID already.') : 'Entra ID not checked - connect first.');
   b('create').textContent = missing.length > 1 ? `Create ${missing.length} in Entra ID` : 'Create in Entra ID';
-  setEnabled(b('rename'), !!one && inEntra(one) !== false, one ? 'This group isn\'t in Entra ID - rename it in the apps instead (Batch edit).' : 'Select exactly one group.');
+  setEnabled(b('rename'), !!one && inEntra(one) !== false, one ? 'This group isn\'t in Entra ID - use Replace in all apps instead.' : 'Select exactly one group.');
   setEnabled(b('replace'), !!one && used.length > 0, one ? 'No app in the catalog uses this group.' : 'Select exactly one group.');
   setEnabled(b('unassign'), used.length > 0, 'No app in the catalog uses these groups.');
   b('unassign').textContent = used.length > 1 ? `Remove ${used.length} groups from all apps...` : 'Remove from all apps...';

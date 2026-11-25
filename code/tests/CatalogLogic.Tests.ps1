@@ -246,6 +246,8 @@ $testableFunctionNames = @(
     "ConvertFrom-WingetInstallerUrl",
     "Get-DownloadCheckVerdict",
     "Add-WingetRetryReturnCode",
+    "Get-DefaultReturnCodes",
+    "Get-MetadataCompareText",
     "Set-MarkerScriptVersion",
     "Test-ReleasePinned",
     "Test-ManagedAppEdit",
@@ -1078,6 +1080,18 @@ Assert-True (@($rt2.blockedVersions).Count -eq 1 -and $rt2.blockedVersions[0] -e
 $wPin = [pscustomobject]@{ installCommand = "x --version '2.0' y"; detectionRule = [pscustomobject]@{ Type = 'Script'; Script_Content = "`$Wanted = '2.0'" } }
 Assert-True ((Test-ReleasePinned -Metadata $wPin -Version '2.0' -Winget $true) -eq '' -and (Test-ReleasePinned -Metadata $wPin -Version '2.1' -Winget $true) -like '*edited by hand*') "Test-ReleasePinned: a Winget release must install and detect the new version"
 Assert-True ((Test-ReleasePinned -Metadata ([pscustomobject]@{ detectionRule = [pscustomobject]@{ Type = 'Msi'; Msi_Version = '3.0' } }) -Version '3.0' -Winget $false) -eq '' -and (Test-ReleasePinned -Metadata ([pscustomobject]@{ detectionRule = [pscustomobject]@{ Type = 'File'; File_DetectionValue = '2.9' } }) -Version '3.0' -Winget $false)) "Test-ReleasePinned: an own package's detection must check the new version"
+# 2.38.42: the Script rule an .exe gets (its $want) pins a release too - before, every such release was refused.
+$exeRule = [pscustomobject]@{ Type = 'Script'; Script_Content = "`$pattern = 'Foo*'; `$want = '1.0'`nWrite-Output 1" }
+$exeNext = (Set-DetectionRuleVersion -Rule $exeRule -Version '2.0').Rule
+Assert-True ((Test-ReleasePinned -Metadata ([pscustomobject]@{ detectionRule = $exeNext }) -Version '2.0' -Winget $false) -eq '' -and (Test-ReleasePinned -Metadata ([pscustomobject]@{ detectionRule = $exeRule }) -Version '2.0' -Winget $false) -like "*doesn't check for 2.0*") "Test-ReleasePinned: an own package's Script rule pins by its `$want"
+Assert-True ((Get-MetadataCompareText 'architecture' 'x64,x86') -eq 'x86,x64' -and (Get-MetadataCompareText 'installContext' 'System') -eq (Get-MetadataCompareText 'installContext' 'system') -and (Get-MetadataCompareText 'minOSKey' 'W10_21H2') -eq (Get-MetadataCompareText 'minOSKey' 'v10_21H2') -and (Get-MetadataCompareText 'minOSKey' 'W10_1607') -ne (Get-MetadataCompareText 'minOSKey' 'W10_21H2')) "Get-MetadataCompareText: architecture order, context case and min-OS spelling don't differ"
+$cmpL = [pscustomobject]@{ architecture = 'x64,x86'; installContext = 'System'; returnCodes = @($null) }
+$cmpR = [pscustomobject]@{ architecture = 'x86,x64'; installContext = 'system'; returnCodes = @(Get-DefaultReturnCodes) }
+Assert-True (@(Get-CatalogMetadataFieldDiffs -Local $cmpL -Remote $cmpR).Count -eq 0) "Get-CatalogMetadataFieldDiffs: x64,x86 vs x86,x64, System vs system and no return codes vs Intune's defaults are the same"
+$cmpR2 = [pscustomobject]@{ architecture = 'x86,x64'; installContext = 'user'; returnCodes = @(Get-DefaultReturnCodes) }
+Assert-True (@(Get-CatalogMetadataFieldDiffs -Local $cmpL -Remote $cmpR2 | Where-Object { $_.Field -eq 'Install context' }).Count -eq 1) "Get-CatalogMetadataFieldDiffs: an install context changed in the portal is a difference"
+$mg = Merge-CatalogMetadata -Remote ([pscustomobject]@{ owner = 'Old Team'; notes = '' }) -Local ([pscustomobject]@{ owner = ''; notes = ''; clearedFields = @() }) -KeepLocalFields @('Owner')
+Assert-True (@($mg.clearedFields) -contains 'owner' -and -not $mg.owner) "Merge-CatalogMetadata: a kept empty field Intune has a value for is marked cleared"
 $mx = [pscustomobject]@{ appName = 'M'; managedUpdates = $true; appId = 'x'; metadata = [pscustomobject]@{ appVersion = '1.0' }; releases = @() }
 Assert-True ((Test-ManagedAppEdit -Existing $mx -Record ([pscustomobject]@{ managedUpdates = $true; metadata = [pscustomobject]@{ appVersion = '2.0' } })) -like '*Release new version*' -and (Test-ManagedAppEdit -Existing $mx -Record ([pscustomobject]@{ managedUpdates = $true; metadata = [pscustomobject]@{ appVersion = '1.0' } })) -eq '' -and
     (Test-ManagedAppEdit -Existing ([pscustomobject]@{ managedUpdates = $true; appId = ''; metadata = [pscustomobject]@{ appVersion = '1.0' } }) -Record ([pscustomobject]@{ managedUpdates = $true; metadata = [pscustomobject]@{ appVersion = '2.0' } })) -eq '') "Test-ManagedAppEdit: a deployed managed app's version only through a release; not deployed yet - any version"

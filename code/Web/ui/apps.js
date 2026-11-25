@@ -445,7 +445,10 @@ async function editorUpload(pick) {
   const r = await api('/api/app-installer', { name, uploadId: f.uploadId, mode: choice.mode });
   if (!r.ok) { toast(r.error, true); api('/api/upload-cancel', { uploadId: f.uploadId }); showPkgInfo(); return; }
   if (!$('dlgApp').open || editingName !== name) return;
-  toast(`${f.folder ? `${nWord(r.files, 'file')} from ${r.fileName}` : r.fileName} in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}. Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
+  const what = `${f.folder ? `${nWord(r.files, 'file')} from ${r.fileName}` : r.fileName} in its packages folder${r.filled.length ? ' - filled in ' + r.filled.join(', ') : ''}.`;
+  // Managed and in Intune (2.38.42): the new installer goes out as a release - pilot first - not by Package and Send.
+  if (r.release) toast(`${what} Release new version builds and sends it.`, false, [{ label: 'Release new version', run: () => { $('dlgApp').close(); openRelease(name); } }]);
+  else toast(`${what} Package builds it next.`, false, [{ label: 'Package now', run: () => { $('dlgApp').close(); buildAdded(name); } }]);
   await loadApps(); $('dlgApp').close(); openEditor(name);
 }
 // The review of an upload for an app: what came, which file is the setup file (a folder), replace or add (files there already).
@@ -1005,7 +1008,7 @@ $('btnCatalog').addEventListener('click', async e => {
   const conn = !!(state && state.configured);
   setEnabled(catMenu.querySelector('[data-cact=tenantsetup]'), conn && apps.length > 0, conn ? 'The catalog is empty.' : 'Set up the connection in Settings first.');
   setEnabled(catMenu.querySelector('[data-cact=overview]'), conn && apps.some(a => a.hasAppId), conn ? 'No app in the catalog is in Intune yet.' : 'Set up the connection in Settings first.');
-  setEnabled(catMenu.querySelector('[data-cact=wingetcheck]'), apps.some(a => a.wingetId), 'No app in the catalog has a Winget ID.');
+  setEnabled(catMenu.querySelector('[data-cact=wingetcheck]'), apps.some(a => a.wingetId || a.watchWinget), 'No app in the catalog has a Winget ID or watches a winget package.');
   const r = $('btnCatalog').getBoundingClientRect();
   placeMenu(catMenu, r.right - 240, r.bottom + 4);
 });
@@ -1417,7 +1420,7 @@ function openMenu(x, y) {
     filldetails: sel.some(a => a.wingetId && !isStoreId(a.wingetId)),
     release: !!(one && one.managed && one.hasAppId && !one.pilotVersion), promote: !!(one && one.pilotVersion), withdraw: !!(one && one.pilotVersion),
     managed: any,
-    rollback: !!(one && one.managed && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && (one.previousVersions || []).length > 1) };
+    rollback: !!(one && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && ((one.previousVersions || []).length > 1 || (one.rolledBackVersions || []).length)) };
   const why = {
     edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
@@ -1432,19 +1435,21 @@ function openMenu(x, y) {
     promote: one ? 'No version of this app is in pilot.' : 'Select exactly one app.', withdraw: one ? 'No version of this app is in pilot.' : 'Select exactly one app.',
     managed: 'Select one or more apps first.',
     rollback: !one ? 'Select exactly one app.' : one.pilotVersion ? 'A version is in pilot - promote or withdraw it first.' : 'No earlier release of this app is kept in Intune.',
-    cleanup: !one ? 'Select exactly one app.' : 'Only one superseded version (or none) - it is kept for rollback.',
+    cleanup: !one ? 'Select exactly one app.' : 'Only one superseded version (or none) and nothing rolled back - it is kept for rollback.',
   };
   for (const b of menu.querySelectorAll('button')) setEnabled(b, !!enable[b.dataset.act], why[b.dataset.act]);
   // 2.37.0: what can never apply to the selected apps isn't listed at all - greyed out with a reason stays only
   // what could be made to apply (send it first, select one). A section with nothing left loses its heading too.
   if (any) {
-    const own = sel.some(a => !a.wingetId && !a.office), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
+    const own = sel.some(a => !a.wingetId && !a.office && !a.msHint), winget = sel.some(a => a.wingetId && !isStoreId(a.wingetId));
     // Store and Microsoft 365 apps (2.38.23): Microsoft or the Store updates them - no managed updates or releases.
     const versioned = sel.some(a => !(a.wingetId && isStoreId(a.wingetId)) && !(a.office && !a.wingetId) && !(a.msHint && !a.wingetId));
     const never = {
       package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget, managed: !versioned, release: !versioned,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
-      rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1),
+      rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1 || (a.rolledBackVersions || []).length),
+      // Intune's own non-Win32 types (2.38.42): nothing to package or to send settings to; Microsoft 365 is one per catalog.
+      pushsettings: sel.every(a => a.msHint && !a.wingetId), duplicate: sel.every(a => a.office && !a.wingetId),
     };
     for (const b of menu.querySelectorAll('button[data-act]')) b.hidden = !!never[b.dataset.act];
   } else for (const b of menu.querySelectorAll('button[data-act]')) b.hidden = false;
@@ -1522,15 +1527,16 @@ async function menuAction(act) {
     case 'withdraw': withdrawRelease(one.name); break;
     case 'rollback': rollbackRelease(one.name); break;
     case 'cleanup': {
-      const keep = one.previousVersions.slice(-1)[0], del = one.previousVersions.slice(0, -1);
-      if (!(await ask(`Delete ${del.length} superseded version${del.length === 1 ? '' : 's'} of ${one.name} from Intune?\n\n${del.join(', ')}\n\nThey have no assignments; devices keep what they have installed. ${keep} is kept so you can roll back.`))) return;
+      // Rolled-back releases go too (2.38.42) - the server deletes them, so the question names them.
+      const prev = one.previousVersions || [], keep = prev.slice(-1)[0], del = [...prev.slice(0, -1), ...(one.rolledBackVersions || []).map(v => `${v} (rolled back)`)];
+      if (!(await ask(`Delete ${nWord(del.length, 'old version')} of ${one.name} from Intune?\n\n${del.join(', ')}\n\nThey have no assignments; devices keep what they have installed.${keep ? ` ${keep} is kept so you can roll back.` : ''}`))) return;
       const r = await api('/api/release-cleanup', { name: one.name });
-      toast(r.ok ? `Deleted ${r.removed.join(', ')} from Intune; kept ${r.kept.join(', ')}.` : r.error, !r.ok); loadApps();
+      toast(r.ok ? `Deleted ${r.removed.join(', ') || 'nothing'} from Intune${r.kept.length ? `; kept ${r.kept.join(', ')}` : ''}.${(r.failed || []).length ? ` Not deleted: ${r.failed.join(', ')}.` : ''}` : r.error, !r.ok || !!(r.failed || []).length); loadApps();
       break;
     }
     case 'managed': {
       const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
-      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Take winget\'s version before the first deploy). Own packages: their detection rule must compare a version - a release updates it. Send settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
+      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Pin winget\'s newest version before the first send). Own packages: their detection rule must compare a version - a release updates it. Send settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
       const r = await api('/api/managed-updates', { names: ws, on });
       toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${nWord(r.changed.length, 'app')}.${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
       break;
@@ -1663,6 +1669,9 @@ async function openRetire(name) {
     $('retireGroups').textContent = g.length ? `Uninstalled from: ${g.join(', ')}.` : 'It has no groups - nothing to uninstall.';
     $('retireProgress').textContent = r.inIntune ? '' : 'It isn\'t in Intune.';
     $('btnRetireStart').hidden = !g.length || !r.inIntune; $('btnRetireFinish').hidden = !!g.length && r.inIntune;
+    // What the server would refuse (a pilot, apps that depend on it) is said here (2.38.42), not after the confirm.
+    setEnabled($('btnRetireStart'), !r.blocked, r.blocked);
+    if (r.blocked && !$('btnRetireStart').hidden) $('retireProgress').textContent = r.blocked;
     return;
   }
   $('retireGroups').textContent = `Being retired since ${r.retiringSince} - uninstalled from: ${g.join(', ') || 'no groups'}.`;

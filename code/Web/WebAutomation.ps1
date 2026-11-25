@@ -117,13 +117,27 @@ function Global:Invoke-ManagedUpdateRun {
                 }
                 else { & $say '(winget)' 'failed' 'Neither winget.exe nor winget''s package index can be asked here, so new Winget versions weren''t looked for.'; $failed++ }
             }
+            # No pilot groups (2.38.40, every path since 2.38.42): a release goes straight to everyone - a pilot assigned
+            # to nobody would wait for ever. Dot-sourced, so $failed counts here.
+            $noPilot = -not @(Get-ReleaseRingGroups -Rings @(Get-WebReleaseRings) -Ring 0).Count
+            $toEveryone = {
+                param($App, [string]$Ver, [string]$Note)
+                $p1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $App.appName; step = 'promote' })
+                if (-not $p1.ok) { & $say $App.appName 'failed' "$Ver is in Intune, but giving it the app's groups failed: $($p1.error)"; $failed++; return }
+                $was = [string]$(if ($App.metadata) { $App.metadata.appVersion })
+                $p2 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $App.appName; step = 'retire' })
+                $done = Invoke-WithCatalogLock { Complete-WebPromotion @{ name = $App.appName } }
+                if ($done.ok) { & $say $App.appName 'promoted' "$Ver released to everyone - there are no pilot groups$Note$(if (-not $p2.ok) { " - but $was kept its assignments: $($p2.error)" })." }
+                else { & $say $App.appName 'failed' "Releasing $Ver to everyone: $($done.error)"; $failed++ }
+            }
             foreach ($a in $managed) {
                 $pilot = Get-WebAppRelease $a
                 $current = [string]$(if ($a.metadata) { $a.metadata.appVersion })
                 if ($pilot) {
                     # Created, but its pilot groups never assigned (that step failed): assigned now, then judged from the next run on.
                     if ($pilot.unassigned) {
-                        if ($PlanOnly) { & $say $a.appName 'available' "$($pilot.version) is in Intune but not assigned to the pilot groups yet - this run would assign it."; continue }
+                        if ($PlanOnly) { & $say $a.appName 'available' "$($pilot.version) is in Intune but not assigned to the pilot groups yet - this run would $(if ($noPilot) { 'give it to everyone (there are no pilot groups)' } else { 'assign it' })."; continue }
+                        if ($noPilot) { . $toEveryone $a ([string]$pilot.version) ' (it was never assigned)'; continue }
                         $re = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
                         if ($re.ok) { & $say $a.appName 'released' "$($pilot.version) assigned to the pilot groups (the assignment had failed before)." } else { & $say $a.appName 'failed' "$($pilot.version) is still not assigned to pilot: $($re.error)"; $failed++ }
                         continue
@@ -181,16 +195,7 @@ function Global:Invoke-ManagedUpdateRun {
                     if (-not $window.Open -and -not $urgent) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
                     $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $latest })
                     if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $latest failed: $($made.error)"; $failed++; continue }
-                    # No pilot groups (2.38.40): straight to everyone - a pilot assigned to nobody would wait for ever.
-                    if (-not @($Global:App.PilotGroups | Where-Object { $_ }).Count) {
-                        $p1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'promote' })
-                        if (-not $p1.ok) { & $say $a.appName 'failed' "$latest is in Intune, but giving it the app's groups failed: $($p1.error)"; $failed++; continue }
-                        $p2 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'retire' })
-                        $done = Invoke-WithCatalogLock { Complete-WebPromotion @{ name = $a.appName } }
-                        if ($done.ok) { & $say $a.appName 'promoted' "$latest released to everyone - there are no pilot groups$(if ($urgent) { "; $current could no longer be downloaded" })$(if (-not $p2.ok) { " - but $current kept its assignments: $($p2.error)" })." }
-                        else { & $say $a.appName 'failed' "Releasing $latest to everyone: $($done.error)"; $failed++ }
-                        continue
-                    }
+                    if ($noPilot) { . $toEveryone $a $latest $(if ($urgent) { "; $current could no longer be downloaded" } else { '' }); continue }
                     $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
                     if ($assigned.ok) { & $say $a.appName 'released' "$latest released to the pilot groups (now $current for everyone else)$(if ($urgent) { " - by itself because $current can no longer be downloaded: new devices couldn't install it" })." }
                     else { & $say $a.appName 'failed' "$latest is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
@@ -222,6 +227,7 @@ function Global:Invoke-ManagedUpdateRun {
                 if (-not $built.ok) { & $say $a.appName 'failed' "Building the package for $($inst.version) failed: $($built.error)"; $failed++; continue }
                 $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $inst.version; productCode = $inst.productCode })
                 if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $($inst.version) failed: $($made.error)"; $failed++; continue }
+                if ($noPilot) { . $toEveryone $a ([string]$inst.version) " ($($inst.file))$dl"; continue }
                 $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
                 if ($assigned.ok) { & $say $a.appName 'released' "$($inst.version) ($($inst.file)) released to the pilot groups (now $current for everyone else).$dl" }
                 else { & $say $a.appName 'failed' "$($inst.version) is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }
@@ -636,9 +642,9 @@ function Global:Save-WebWatchedInstaller {
     $old = if ($w.file) { Join-Path $folder ($w.file -replace '[\\/]+', [System.IO.Path]::DirectorySeparatorChar) } else { '' }
     if ($old -and -not (Test-Path -LiteralPath $old -PathType Leaf)) { $old = '' }
     $ext = if ($old) { [System.IO.Path]::GetExtension($old).ToLowerInvariant() } else { $urlExt }
-    if ($ext -notin '.msi', '.exe') { return @{ ok = $false; error = "winget's installer for $($a.watchWinget) isn't an .msi or .exe ($(if ($urlExt) { $urlExt } else { 'no file type in its link' })) - get it by hand." } }
+    if ($ext -notin '.msi', '.exe') { return @{ ok = $false; error = "winget's installer for $($a.watchWinget) isn't an .msi or .exe ($(if ($urlExt) { $urlExt } else { 'no file type in its link' })) - upload it in the editor (Install & detection)." } }
     # A link to something else (.zip, .msix, ...) never replaces the folder's .exe or .msi (2.38.0).
-    if ($urlExt -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it by hand (the editor) and check the commands." } }
+    if ($urlExt -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it in the editor (Install & detection) and check the commands." } }
     $target = if ($old) { $old } else { Join-Path $folder ([System.IO.Path]::GetFileName(([Uri]$w.url).AbsolutePath)) }
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("intunecat-dl-" + [guid]::NewGuid().ToString('N') + $ext)
     try {
@@ -972,7 +978,7 @@ else { Write-Warning "The private key file wasn't found - in certlm.msc, right-c
 foreach (`$t in `$tasks) {
     if (Get-ScheduledTask -TaskName `$t -ErrorAction SilentlyContinue) { Set-ScheduledTask -TaskName `$t -Principal `$principal | Out-Null; Write-Host "Task '`$t': runs whether `$user is signed in or not." }
 }
-Write-Host 'Done. Check it once: sign out, wait for the next run (or start the task from Task Scheduler), then look at Settings > Managed updates.'
+Write-Host 'Done. Check it once: sign out, wait for the next run (or start the task from Task Scheduler), then look at Settings > Nightly run & alerts.'
 "@
     # In this user's own profile - not the Logs folder, which can be a share: an administrator runs this file.
     $dir = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [System.IO.Path]::GetTempPath() }) 'IntuneAppCatalog'

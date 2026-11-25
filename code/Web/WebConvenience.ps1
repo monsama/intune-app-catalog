@@ -287,7 +287,7 @@ function Global:Get-WebAttention {
     # The nightly task's own runs: not the fast-track checks (every 2 hours while a fix is in pilot) nor a plan-only click.
     $lastNightly = @($runs.runs | Where-Object { -not $_.fastTrack -and -not $_.planOnly }) | Select-Object -First 1
     if ($sch.exists -and $lastNightly -and [DateTimeOffset]::TryParse([string]$lastNightly.started, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$lastAt) -and ([DateTimeOffset]::Now - $lastAt).TotalHours -gt 36) {
-        & $add 'warn' 'The nightly run hasn''t run lately' "The last run started $(Format-Count ([int]([DateTimeOffset]::Now - $lastAt).TotalDays) 'day') ago, though it is scheduled every day - the computer may have been off, or the task couldn't start (Settings > Automation shows the schedule; Run now tries it)." 'settings:automation'
+        & $add 'warn' 'The nightly run hasn''t run lately' "The last run started $(Format-Count ([int]([DateTimeOffset]::Now - $lastAt).TotalDays) 'day') ago, though it is scheduled every day - the computer may have been off, or the task couldn't start (Settings > Nightly run & alerts shows the schedule; Run now tries it)." 'settings:automation'
     }
     if (@($apps | Where-Object { $_.managedUpdates }).Count -and -not $sch.exists -and $sch.supported) { & $add 'info' 'Nightly run not scheduled' 'Managed updates only move when someone clicks - schedule the nightly run.' 'settings:automation' }
     $summary = $null
