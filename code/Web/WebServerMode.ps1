@@ -381,7 +381,7 @@ function Global:Invoke-WebServerSchedule {
     }
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = (Get-Process -Id $PID).Path
+        $psi.FileName = (Get-OwnPowerShellPath)
         foreach ($a in @('-NoLogo', '-NoProfile', '-File', (Join-Path $Global:App.RootPath 'IntuneDeployment.ps1'), '-RunUpdates') + $extra) { $psi.ArgumentList.Add($a) }
         $psi.UseShellExecute = $false
         $State.Run = [System.Diagnostics.Process]::Start($psi)

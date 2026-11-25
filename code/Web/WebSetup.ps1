@@ -90,7 +90,7 @@ function Global:Start-WebWingetModuleInstall {
     #>
     if ($Global:App.TestGraph) { return @{ ok = $false; error = 'Not in test mode.' } }
     if (Test-WingetClientModule) { return @{ ok = $false; error = 'The WinGet module is installed already.' } }
-    $exe = (Get-Process -Id $PID).Path
+    $exe = (Get-OwnPowerShellPath)
     return (Start-WebStepJob -ScriptContent (Get-GraphModuleInstallScript -ModuleName 'Microsoft.WinGet.Client') -Name 'prereq' -ConfigJson '' -ResultPath '' -Parameters @{} -Exe $exe -Kind 'Install Microsoft.WinGet.Client' -After @{ Kind = 'wingetmodule' })
 }
 

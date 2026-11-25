@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38.46
+
+- **Steps start in every container**: the path of the PowerShell the app runs
+  in is taken from .NET first, then the process, then PowerShell's own folder.
+  Where a container refuses to read the process's main module, the path came
+  back empty and a step (Build package, after adding an installer) failed with
+  "Cannot start process because a file name has not been provided".
+
 ## 2.38.45
 
 - **Permissions say which "optional" they mean**: one that is there and fine

@@ -121,7 +121,7 @@ function Global:Get-GraphModuleStatus {
     $hereName = if ($isCore) { "PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor) - runs this app" } else { "Windows PowerShell $($PSVersionTable.PSVersion.Major).$($PSVersionTable.PSVersion.Minor) - runs this app and the deployment steps" }
     $rows.Add([pscustomobject]@{
         Name    = $hereName
-        Exe     = (Get-Process -Id $PID).Path
+        Exe     = (Get-OwnPowerShellPath)
         Version = if ($here) { [string]$here.Version } else { "" }
         Problem = ""
     })
