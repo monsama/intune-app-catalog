@@ -392,7 +392,7 @@ function Global:Set-WebAssignments {
         $problem = Test-WebGroupName ([string]$c.group) -Role ([string]$c.role); if ($problem) { return @{ ok = $false; error = $problem } }
         if ([string]$c.role -and -not $fields.ContainsKey([string]$c.role)) { return @{ ok = $false; error = "Unknown role '$($c.role)'." } }
     }
-    $undo = New-WebUndo "Assignments grid ($($changes.Count) change(s))"
+    $undo = New-WebUndo "Assignments grid ($($changes.Count) change$(if ($changes.Count -ne 1) { 's' }))"
     $byApp = $changes | Group-Object { [string]$_.name }
     $changed = New-Object System.Collections.Generic.List[string]
     foreach ($g in $byApp) {

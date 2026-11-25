@@ -181,6 +181,16 @@ function Global:Invoke-ManagedUpdateRun {
                     if (-not $window.Open -and -not $urgent) { & $say $a.appName 'available' "$latest is ready to release (now $current) - waiting for the release window: $($window.Reason)."; continue }
                     $made = Wait-WebStepJob (Start-WebRelease @{ name = $a.appName; version = $latest })
                     if (-not $made.ok) { & $say $a.appName 'failed' "Releasing $latest failed: $($made.error)"; $failed++; continue }
+                    # No pilot groups (2.38.40): straight to everyone - a pilot assigned to nobody would wait for ever.
+                    if (-not @($Global:App.PilotGroups | Where-Object { $_ }).Count) {
+                        $p1 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'promote' })
+                        if (-not $p1.ok) { & $say $a.appName 'failed' "$latest is in Intune, but giving it the app's groups failed: $($p1.error)"; $failed++; continue }
+                        $p2 = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'retire' })
+                        $done = Invoke-WithCatalogLock { Complete-WebPromotion @{ name = $a.appName } }
+                        if ($done.ok) { & $say $a.appName 'promoted' "$latest released to everyone - there are no pilot groups$(if ($urgent) { "; $current could no longer be downloaded" })$(if (-not $p2.ok) { " - but $current kept its assignments: $($p2.error)" })." }
+                        else { & $say $a.appName 'failed' "Releasing $latest to everyone: $($done.error)"; $failed++ }
+                        continue
+                    }
                     $assigned = Wait-WebStepJob (Start-WebReleaseAssign @{ name = $a.appName; step = 'pilot' })
                     if ($assigned.ok) { & $say $a.appName 'released' "$latest released to the pilot groups (now $current for everyone else)$(if ($urgent) { " - by itself because $current can no longer be downloaded: new devices couldn't install it" })." }
                     else { & $say $a.appName 'failed' "$latest is in Intune but not assigned to pilot: $($assigned.error)"; $failed++ }

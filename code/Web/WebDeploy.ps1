@@ -190,7 +190,7 @@ function Global:Start-WebDeploy {
     if ($a.appId -and $upload) { $config.ReplaceContent = $true }
     # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
     $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
-    $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Push settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
+    $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Send settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
         -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SentCleared = @($config.ClearedFields); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }); ReplacesLobAppId = $replacesLob }
     if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode)$(if ($a.appId -and $upload) { ', uploading the new package' }))" })..." }
     return $started
@@ -430,7 +430,7 @@ function Global:Clear-WebAppIds {
     if ($names.Count -eq 0) { return @{ ok = $false; error = 'Choose one or more apps first.' } }
     $cleared = New-Object System.Collections.Generic.List[string]
     $failed = New-Object System.Collections.Generic.List[string]
-    $undo = New-WebUndo "Clear $($names.Count) App ID(s)"
+    $undo = New-WebUndo "Clear $($names.Count) App ID$(if ($names.Count -ne 1) { 's' })"
     # Supersedence pointing at apps this tenant doesn't have came along with the copy too - dropped with the App IDs.
     $t = Get-WebIntuneApps @{}
     $tenantIds = $null
