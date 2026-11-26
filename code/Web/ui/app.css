@@ -1638,8 +1638,8 @@ body[data-view="home"] #setupBanner { display: none; }
 #aPkgInfo .pkgfiles li > :nth-child(2) { text-align: right; }
 #aPkgInfo .pkgfiles .bx { border: 0; background: none; color: inherit; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; border-radius: var(--r-s); }
 #aPkgInfo .pkgfiles .bx:hover { color: var(--err); background: var(--err-bg); }
-#dlgPkgUp fieldset.plain { border: 0; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
-#dlgPkgUp fieldset.plain legend { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+#dlgPkgUp fieldset.plain, #dlgLibImport fieldset.plain { border: 0; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+#dlgPkgUp fieldset.plain legend, #dlgLibImport fieldset.plain legend { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
 .dropalt { margin: 8px 0 0; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* 2.35.0: Add and send's summary */
@@ -1944,3 +1944,9 @@ body:has(#appPanel:not([hidden])) #grid td.name > .nm { max-width: min(40ch, 18v
 .policy input[type=number] { max-width: 160px; }
 /* The toolbar's Send buttons don't change width as the selection grows ("Send to Intune (2)"). */
 #btnDeploy { min-width: 150px; } #btnPush { min-width: 130px; }
+
+/* Export and import of apps (2.38.65) */
+#lxSummary { margin: 8px 0; }
+#liPreview td.state { white-space: nowrap; }
+#liPreview td select { width: auto; }
+#liPreview td .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }

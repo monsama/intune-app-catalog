@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.38.65
+
+- **Export and import apps** - to move a library to another instance, or one app with everything it has:
+  - **Catalog > Export library...** writes every app into one .zip; **More > Export...** writes only the selected
+    apps. The .zip holds each app's settings, groups (by name), icon, commands and detection, plus the files in its
+    packages folder (installer, scripts, other files). The .intunewin is left out because the other instance builds
+    it. The .zip is written in the background and saved in pieces. In Chrome and Edge you choose where it goes, and
+    it is written straight to that file, however large.
+  - **Catalog > Import library...** uploads the .zip and lists every app in it before anything changes:
+    - A new app is added; it can be skipped.
+    - An app already in the catalog is skipped unless you choose Replace. Replace moves its file and packages folder
+      to Backups first and keeps its link to Intune.
+    - An app that can't be added says why (a second Microsoft 365 Apps, a name that shares another app's folder, a
+      damaged package path).
+  - **Another tenant** (the default) leaves out what only means something in the tenant the apps came from: App
+    IDs, releases, supersedence, and the package last uploaded. Send creates the apps there and finds the groups by
+    name. **The same tenant** keeps the App IDs, but not one that another app in the catalog already has.
+  - Nothing is sent to Intune. Imported own packages are built first (Build package), then sent.
+  - Each .zip entry is checked as an upload is: no path out of its folder, no links, and only files under `apps/`
+    are read as apps.
+
 ## 2.38.64
 
 - **Files that differ only in capitals in a packages folder are named**: on the server (Linux) "Uninstall.ps1" and

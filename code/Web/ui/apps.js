@@ -1023,7 +1023,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.h
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, fillall: () => fillDetails([]), replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, libexport: () => openLibExport([]), libimport: openLibImport, fillall: () => fillDetails([]), replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -1434,7 +1434,7 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, duplicate: !!one, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, export: any, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
@@ -1443,7 +1443,7 @@ function openMenu(x, y) {
     managed: any,
     rollback: !!(one && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && ((one.previousVersions || []).length > 1 || (one.rolledBackVersions || []).length)) };
   const why = {
-    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', export: 'Select one or more apps first - Catalog > Export library exports all of them.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
     deploy: 'Select one or more apps first.', batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
@@ -1541,6 +1541,7 @@ async function menuAction(act) {
     case 'retire': openRetire(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'duplicate': duplicateApp(one.name); break;
+    case 'export': openLibExport(names); break;
     case 'watchfetch': fetchWatched(one.name); break;
     case 'pushgroups': openPushGroups(names); break;
     case 'replacegroup': openReplace({ names }); break;

@@ -203,8 +203,14 @@ function Global:Start-WebUpload {
     param($Data)
     $name = [System.IO.Path]::GetFileName(([string]$Data.fileName).Trim())
     $size = [long]0; [void][long]::TryParse([string]$Data.size, [ref]$size)
-    if ($name -notmatch '^[^<>:"/\\|?*\x00-\x1F]{1,150}\.(msi|exe|zip)$') { return @{ ok = $false; error = 'Choose an .msi or .exe installer, or a .zip of its folder (the file name may not hold < > : " / \ | ? *).' } }
-    if ($size -le 0 -or $size -gt 8GB) { return @{ ok = $false; error = 'The installer must be between 1 byte and 8 GB.' } }
+    # An export of apps to import (2.38.65): a .zip of up to 64 GB, kept as it is - Import reads it.
+    $library = [string]$Data.purpose -eq 'library'
+    if ($library) {
+        if ($name -notmatch '^[^<>:"/\\|?*\x00-\x1F]{1,150}\.zip$') { return @{ ok = $false; error = 'Choose the .zip an export made (the file name may not hold < > : " / \ | ? *).' } }
+        if ($size -le 0 -or $size -gt 64GB) { return @{ ok = $false; error = 'The .zip must be between 1 byte and 64 GB.' } }
+    }
+    elseif ($name -notmatch '^[^<>:"/\\|?*\x00-\x1F]{1,150}\.(msi|exe|zip)$') { return @{ ok = $false; error = 'Choose an .msi or .exe installer, or a .zip of its folder (the file name may not hold < > : " / \ | ? *).' } }
+    elseif ($size -le 0 -or $size -gt 8GB) { return @{ ok = $false; error = 'The installer must be between 1 byte and 8 GB.' } }
     $uploads = Get-WebUploads
     # Unfinished uploads older than a day go (a closed tab never finishes its own).
     Remove-WebStaleUploads $uploads
@@ -212,7 +218,7 @@ function Global:Start-WebUpload {
     $dir = Join-Path ([System.IO.Path]::GetTempPath()) "intunecat-upload-$id"
     [void](New-Item -ItemType Directory -Path $dir -Force)
     $uploads[$id] = @{ Path = (Join-Path $dir $name); FileName = $name; Size = $size; Received = [long]0; Started = (Get-Date); Info = $null
-        Kind = $(if ($name -match '(?i)\.zip$') { 'zip' } else { 'file' }); Root = (Join-Path $dir 'tree'); Setup = '' }
+        Kind = $(if ($library) { 'library' } elseif ($name -match '(?i)\.zip$') { 'zip' } else { 'file' }); Root = (Join-Path $dir 'tree'); Setup = '' }
     [System.IO.File]::WriteAllBytes($uploads[$id].Path, [byte[]]@())
     return @{ ok = $true; uploadId = $id }
 }
@@ -348,6 +354,8 @@ function Global:Complete-WebUpload {
     $u = (Get-WebUploads)[[string]$Data.uploadId]
     if (-not $u) { return @{ ok = $false; error = 'That upload is no longer known - start again.' } }
     if ($u.Received -ne $u.Size) { return @{ ok = $false; error = "Only $($u.Received) of $($u.Size) bytes arrived - start again." } }
+    # An export to import: kept as it is - /api/library-import-preview reads it.
+    if ($u.Kind -eq 'library') { return @{ ok = $true; uploadId = [string]$Data.uploadId } }
     if ($u.Kind -eq 'file') {
         $u.Info = Get-WebInstallerFacts $u.Path
         $u.Proposal = Get-InstallerProposal $u.Info

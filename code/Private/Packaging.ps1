@@ -377,8 +377,9 @@ function Global:Expand-ZipSafely {
       (Test-PackageRelativePath - no '..', no root, no drive), symbolic links are skipped, and the files and bytes
       written are counted as they are written (an entry's stated size can lie) - past -MaxFiles or -MaxBytes it
       stops and throws. Folders a Mac adds (__MACOSX, .DS_Store) are left out. @{ files; bytes; skipped }.
+      -Prefix (2.38.65): only the entries under that folder of the .zip ("packages/7-Zip/"), unpacked without it.
     #>
-    param([Parameter(Mandatory = $true)][string]$ZipPath, [Parameter(Mandatory = $true)][string]$Destination, [long]$MaxBytes = 8GB, [int]$MaxFiles = 5000)
+    param([Parameter(Mandatory = $true)][string]$ZipPath, [Parameter(Mandatory = $true)][string]$Destination, [long]$MaxBytes = 8GB, [int]$MaxFiles = 5000, [string]$Prefix = '')
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $sep = [System.IO.Path]::DirectorySeparatorChar
@@ -389,6 +390,12 @@ function Global:Expand-ZipSafely {
     try {
         foreach ($e in $zip.Entries) {
             $name = [string]$e.FullName
+            if ($Prefix) {
+                $name = $name -replace '\\', '/'
+                if (-not $name.StartsWith($Prefix, [System.StringComparison]::Ordinal)) { continue }
+                $name = $name.Substring($Prefix.Length)
+                if (-not $name) { continue }
+            }
             if ($name.EndsWith('/') -or $name.EndsWith('\')) { continue }   # a folder: made as its files need it
             if ($name -match '(?i)(^|[\\/])__MACOSX([\\/]|$)' -or $name -match '(?i)(^|[\\/])\.DS_Store$') { $skipped.Add($name); continue }
             # Unix symbolic link (mode 0xA000 in the high bits of the external attributes): not followed, not written.

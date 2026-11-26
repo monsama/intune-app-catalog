@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebConvenience.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebLibrary.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebConvenience.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -950,6 +950,12 @@ function Global:Invoke-WebApi {
         '/api/app-compare'      { return (Get-WebAppVersionCompare $Data) }
         '/api/undo-last'        { return (Invoke-WithCatalogLock { Invoke-WebUndo }) }
         '/api/csv-export'       { return (Export-WebCatalogCsv) }
+        '/api/library-export'   { return (Start-WebLibraryExport $Data) }
+        '/api/library-export-status' { return (Get-WebLibraryExportStatus $Data) }
+        '/api/library-export-chunk' { return (Get-WebLibraryExportChunk $Data) }
+        '/api/library-export-done' { return (Remove-WebLibraryExport $Data) }
+        '/api/library-import-preview' { return (Get-WebLibraryImportPreview $Data) }
+        '/api/library-import'   { return (Invoke-WithCatalogLock { Import-WebLibrary $Data }) }
         '/api/csv-import'       { return $(if ($Data.preview) { Import-WebCatalogCsv $Data } else { Invoke-WithCatalogLock { Import-WebCatalogCsv $Data } }) }
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
         '/api/about'            { return (Get-WebAbout $Data) }
