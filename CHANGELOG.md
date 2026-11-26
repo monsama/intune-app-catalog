@@ -7,6 +7,10 @@
   - A dialog's scrollbar used to sit at its very edge, further out than the close button.
   - The same look applies across the app, in light and dark, and in the dark logs. Firefox gets a thin bar in the
     same colours.
+- **The app editor scrolls only its parts**, between the tabs and the buttons.
+  - Its scrollbar sits inside the window, centred under the close button.
+  - The title, tabs and buttons stay put.
+  - The tabs, the parts and the buttons end on one line.
 
 ## 2.38.74
 
