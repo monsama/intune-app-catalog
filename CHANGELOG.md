@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.38.74
+
+- **Checks compares the assignments again.**
+  - A check of many apps could stop with "Collection was modified; enumeration operation may not execute." The
+    assignments were then not compared ("see the log").
+  - This happened when up to six apps signing in to Graph at the same moment tripped over each other inside the Graph
+    module. It had nothing to do with the apps themselves.
+  - Each one now signs in again a moment later, and a read that hits this is tried again.
+  - If it still fails, the app is checked once more on its own. Reading Intune's app settings does the same.
+- **Logs:** the ✓, ⚠ and ✕ marks no longer sit on the time at the start of a timed line.
+- **Package files** (editor > App > Files in its packages folder) are a proper table.
+  - Columns: name, size, when the file last changed, setup, Open, delete.
+  - The summary says when the package was built and how many files changed after it.
+  - A file changed after the build is in bold, marked "Not built yet": Intune's package doesn't have it until Build
+    package.
+  - Files whose names differ only in capitals are marked "Same name". Windows sees one file, as with uninstall.ps1 and
+    Uninstall.ps1.
+  - Subfolders are quieter than the file name.
+- **Review of 2.38.73 (Installs from):**
+  - The choice an app has now is always offered. Company Portal, in Intune as a Store app, had its chosen button
+    hidden, so nothing showed as chosen.
+  - An MSI line-of-business app offers Winget and Custom installer. Send to Intune makes a new Win32 app from it.
+  - Linking an App ID (from the list or typed) takes the linked app's own Intune type: Store, Microsoft 365, MSI or
+    Win32. Before, every link counted as a Win32 app.
+  - Back on Winget, the detection made for winget folds to its one line again.
+  - The Remove-from-catalog prompt says "custom installer" too.
+- **The package check says plainly what a same-name pair means.** It names which file the commands run and which to
+  delete, and where to delete it. Only files the commands name count; a name inside another, such as MyApp.msi for
+  App.msi, does not.
+
 ## 2.38.73
 
 - **Editor: Requirements is its own tab.**
