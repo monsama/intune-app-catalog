@@ -3474,6 +3474,10 @@ $hpGot = & $cleanTest 'HP' @((& $fake 'HP Support Assistant' 'HP Inc.' 'a'), (& 
 Assert-True (($hpGot -join '|') -eq 'HP Wolf Security|HP Wolf Security - Console|HP Sure Click|HP Connection Optimizer') "Clean-up HP: Wolf Security first, in its order, and the add-ons - Support Assistant, hotkeys and other apps stay" ($hpGot -join '|')
 $lnGot = & $cleanTest 'Lenovo' @((& $fake 'McAfee WebAdvisor' 'McAfee, LLC' 'a'), (& $fake 'Lenovo Vantage Service' 'Lenovo Group Ltd.' 'b'), (& $fake 'Smart Connect' 'Motorola Mobility LLC' 'c'), (& $fake 'Intel(R) Smart Connect Technology' 'Intel Corporation' 'd'), (& $fake 'Lenovo AI Now' 'Lenovo' 'e'), (& $fake 'Lenovo Now' 'Lenovo' 'f'), (& $fake 'Lenovo Smart Meeting Components' 'Lenovo' 'g'))
 Assert-True (($lnGot -join '|') -eq 'McAfee WebAdvisor|Lenovo Now|Lenovo AI Now|Lenovo Smart Meeting Components|Smart Connect') "Clean-up Lenovo: McAfee, Lenovo Now / AI Now / Smart Meeting, Motorola's Smart Connect - not Vantage, not Intel's Smart Connect" ($lnGot -join '|')
+# 2.38.63: McAfee's suite uninstaller only asks ("why do you uninstall McAfee?") - never started; WebAdvisor's is.
+$mcNo = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
+    @((Test-CleanupLike '"C:\Program Files\McAfee\MSC\mcuihost.exe" /body:misp://MSCJsRes.dll::uninstall.html /id:uninstall' $Targets.NoUninstaller), (Test-CleanupLike '"C:\Program Files\McAfee\WebAdvisor\Uninstaller.exe"' $Targets.NoUninstaller)) }
+Assert-True ($mcNo[0] -and -not $mcNo[1]) "Clean-up Lenovo: McAfee's asking suite uninstaller is never started, WebAdvisor's is" ($mcNo -join ',')
 $cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
 Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
 

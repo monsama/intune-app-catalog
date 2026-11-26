@@ -20,5 +20,7 @@ function Get-CleanupTargets {
         KeepPackages = @('*LenovoCompanion*', '*LenovoSettings*', '*LenovoCommercialVantage*')
         # McAfee's suite needs McAfee's removal tool (mccleanup.exe) in the packages folder - see the log.
         McAfeeTool = $true
+        # Uninstallers that only ask (McAfee's suite: "tell us why you uninstall McAfee") - never started.
+        NoUninstaller = @('*mcuihost.exe*', '*\McAfee\MSC\*')
     }
 }

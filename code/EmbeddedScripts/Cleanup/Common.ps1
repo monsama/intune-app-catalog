@@ -117,13 +117,9 @@ if ($DetectOnly) {
 # ---------------------------------------------------------------- removal
 Write-CleanupLog "---- Remove preinstalled apps ($($Targets.Name)) started"
 $restart = $false
-foreach ($e in @(Get-CleanupPrograms)) {
-    $code = Remove-CleanupProgram $e
-    Write-CleanupLog "  exit code $code"
-    if ($code -in 1641, 3010) { $restart = $true }
-}
-# McAfee's own suite has no quiet uninstaller: McAfee's removal tool (MCPR, its command-line mccleanup.exe) does it
-# when its files are put next to this script (the app's packages folder, then Build package).
+# McAfee's own suite has no quiet uninstaller - its own one only asks why (a survey nobody answers). McAfee's removal
+# tool (MCPR, its command-line mccleanup.exe) does it when its files are put next to this script (the app's packages
+# folder, then Build package) - first, so the suite is gone before the list below (2.38.63).
 if ($Targets.McAfeeTool -and @(Get-CleanupPrograms | Where-Object { $_.Name -like 'McAfee*' }).Count) {
     $tool = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'mccleanup.exe' -Recurse -File -ErrorAction SilentlyContinue) | Select-Object -First 1
     if ($tool) {
@@ -131,7 +127,14 @@ if ($Targets.McAfeeTool -and @(Get-CleanupPrograms | Where-Object { $_.Name -lik
         Write-CleanupLog "  McAfee removal tool: exit code $code"
         $restart = $true
     }
-    else { Write-CleanupLog 'McAfee is still installed: put McAfee''s removal tool (MCPR - mccleanup.exe and its files) in this app''s packages folder, then Build package and send it again.' }
+    else { Write-CleanupLog 'McAfee''s suite needs McAfee''s removal tool: put MCPR''s files (mccleanup.exe and the rest) in this app''s packages folder, then Build package and send it again.' }
+}
+foreach ($e in @(Get-CleanupPrograms)) {
+    # An uninstaller that can only ask (no quiet mode) is never started: it would wait for an answer nobody gives.
+    if (Test-CleanupLike $e.Uninstall $Targets.NoUninstaller) { Write-CleanupLog "Not starting $($e.Name)'s own uninstaller - it only asks, it can't run unattended."; continue }
+    $code = Remove-CleanupProgram $e
+    Write-CleanupLog "  exit code $code"
+    if ($code -in 1641, 3010) { $restart = $true }
 }
 foreach ($p in @(Get-CleanupPackages)) { Remove-CleanupPackage $p }
 
