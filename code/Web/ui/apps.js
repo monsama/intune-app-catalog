@@ -1443,6 +1443,7 @@ function openMenu(x, y) {
     managed: any,
     rollback: !!(one && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && ((one.previousVersions || []).length > 1 || (one.rolledBackVersions || []).length)) };
   const why = {
+    replacepkg: !one ? 'Select exactly one app.' : !one.hasAppId ? 'This app isn\'t in Intune yet - Send to Intune uploads its package.' : (one.wingetId || one.office) ? 'Only for an app with its own package.' : 'Build its package first (Build package).',
     edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', export: 'Select one or more apps first - Catalog > Export library exports all of them.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
@@ -1466,7 +1467,7 @@ function openMenu(x, y) {
     // Store and Microsoft 365 apps (2.38.23): Microsoft or the Store updates them - no managed updates or releases.
     const versioned = sel.some(a => !(a.wingetId && isStoreId(a.wingetId)) && !(a.office && !a.wingetId) && !(a.msHint && !a.wingetId));
     const never = {
-      package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget, managed: !versioned, release: !versioned,
+      package: !own, watchfetch: !own, replacepkg: !own, takeversion: !winget, filldetails: !winget, managed: !versioned, release: !versioned,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
       rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1 || (a.rolledBackVersions || []).length),
       // Intune's own non-Win32 types (2.38.42): nothing to package or to send settings to; Microsoft 365 is one per catalog.

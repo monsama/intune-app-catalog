@@ -20,6 +20,8 @@
   - Nothing is sent to Intune. Imported own packages are built first (Build package), then sent.
   - Each .zip entry is checked as an upload is: no path out of its folder, no links, and only files under `apps/`
     are read as apps.
+- **More > Replace package** says why it is greyed out, and it isn't listed for Winget, Store or Microsoft 365
+  apps.
 
 ## 2.38.64
 

@@ -1394,8 +1394,8 @@
 <dialog id="dlgLibExport">
   <h2 id="lxTitle">Export library</h2>
   <p class="sub">One .zip with each app's settings, groups (by name), icon, commands and detection, and the files in its packages folder - the installer and scripts. The .intunewin isn't in it: the other instance builds it. Import it there with <strong>Catalog &gt; Import library</strong>.</p>
-  <p id="lxSummary"></p>
-  <div class="progress" id="lxProgress" aria-live="polite" hidden><div class="bar"><span id="lxBar"></span></div><span id="lxNote"></span></div>
+  <p id="lxSummary" aria-live="polite"></p>
+  <div class="progress" id="lxProgress" hidden><div class="bar"><span id="lxBar"></span></div><span id="lxNote"></span></div>
   <p class="formerror" id="lxErr" hidden></p>
   <div class="actions end"><button class="btn" data-close id="btnLxClose">Cancel</button><button class="btn primary" id="btnLxGo" title="Write the .zip and save it">Export</button></div>
 </dialog>
@@ -1403,8 +1403,8 @@
 <dialog id="dlgLibImport" class="wide">
   <h2>Import library</h2>
   <p class="sub">Choose a .zip that <strong>Export library</strong> or <strong>More &gt; Export</strong> made. Every app in it is shown first; apps already in the catalog are skipped unless you choose Replace (its file and packages folder go to Backups first). Nothing is sent to Intune - Send does that afterwards.</p>
-  <div class="toolbar tight"><input type="file" id="liFile" accept=".zip,application/zip" aria-label="The export .zip to import"><span class="muted" id="liName"></span></div>
-  <div class="progress" id="liProgress" aria-live="polite" hidden><div class="bar"><span id="liBar"></span></div><span id="liProgressText"></span></div>
+  <div class="toolbar tight"><input type="file" id="liFile" accept=".zip,application/zip" aria-label="The export .zip to import"></div>
+  <div class="progress" id="liProgress" hidden><div class="bar"><span id="liBar"></span></div><span id="liProgressText"></span></div>
   <div class="preview" id="liPreview" hidden></div>
   <fieldset id="liModeRow" class="plain" hidden>
     <legend>Where do the apps go?</legend>
