@@ -2327,6 +2327,33 @@ function Global:Set-AppRecordFieldJson {
     return $true
 }
 
+function Global:Get-CleanupAppSet {
+    <#
+      Pure (2.38.58): the clean-up apps of the starter set - script apps that remove what PCs come with, unattended,
+      as Required apps. Their scripts are in code\EmbeddedScripts\Cleanup: Install.ps1 and the detection script are
+      the same text (the files below, in order), the detection one only looks. Found = nothing of the list is left,
+      so a PC that gets it back (a vendor tool reinstalling it) is cleaned again.
+    #>
+    return @(
+        [ordered]@{ id = 'IntuneAppCatalog.Cleanup.Lenovo'; name = 'Remove preinstalled vendor apps - Lenovo'; files = @('Lenovo.ps1', 'Common.ps1')
+            why = 'Removes McAfee (WebAdvisor and the suite), Lenovo Now, Lenovo AI Now, Lenovo Smart Meeting Components and Motorola Smart Connect - unattended. Lenovo Vantage and System Update stay.'
+            notes = 'Removes McAfee, Lenovo Now, Lenovo AI Now, Lenovo Smart Meeting Components and Motorola Smart Connect (the list is at the top of Install.ps1 and of the detection script - keep them the same). McAfee''s suite needs McAfee''s removal tool: put MCPR''s files (mccleanup.exe) in the packages folder and Build package. Test on one PC first; the log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Lenovo.log.' },
+        [ordered]@{ id = 'IntuneAppCatalog.Cleanup.HP'; name = 'Remove preinstalled vendor apps - HP'; files = @('HP.ps1', 'Common.ps1')
+            why = 'Removes HP Wolf Security (Sure Click, Sure Sense) and HP''s add-ons (myHP, Connection Optimizer, Notifications, ...) - unattended. HP Support Assistant and what keys, audio, docks and the BIOS need stay.'
+            notes = 'Removes HP Wolf Security and HP''s add-ons; HP Support Assistant stays (the list is at the top of Install.ps1 and of the detection script - keep them the same). Test on one PC first; the log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-HP.log.' },
+        [ordered]@{ id = 'IntuneAppCatalog.Cleanup.Office'; name = 'Remove preinstalled Office'; files = @('Office.ps1')
+            why = 'Removes the consumer Office PCs come with (Microsoft 365 Family/Personal, Home & Student, ...) in every language - Microsoft 365 Apps for enterprise, Visio and Project stay.'
+            notes = 'Removes the consumer Office a PC came with, in every language, with Office''s own uninstall commands (nothing downloaded). Microsoft 365 Apps for enterprise or business, Visio, Project and volume-licensed Office stay. If it runs while Microsoft 365 Apps installs, one of them fails and Intune tries again later. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log.' }
+    )
+}
+
+function Global:Get-CleanupStarterItem {
+    # Pure (2.38.58): one clean-up app as a starter set entry.
+    param([int]$Index)
+    $c = @(Get-CleanupAppSet)[$Index]
+    return [ordered]@{ id = $c.id; name = $c.name; category = 'Clean-up'; recommended = $true; why = $c.why }
+}
+
 function Global:Get-StarterAppSet {
     <#
       Pure (2.38.0, more in 2.38.1): a starter set of Winget apps organisations deploy, by category. "recommended"
@@ -2340,6 +2367,8 @@ function Global:Get-StarterAppSet {
     return @(
         [ordered]@{ id = (Get-OfficeStarterId); name = 'Microsoft 365 Apps'; category = 'Microsoft'; recommended = $true; why = 'Word, Excel, Outlook, PowerPoint, OneNote, Teams, OneDrive and Access - Intune''s own Office app: Monthly Enterprise Channel, 64-bit, the language of Windows, older Office removed (each changeable in the editor).' },
         [ordered]@{ id = '9WZDNCRFJ3PZ'; name = 'Company Portal'; category = 'Microsoft'; recommended = $true; why = 'Where users install the apps they are offered (Available) - the Microsoft Store app, kept up to date by the Store.' },
+        # 2.38.58: script apps that take what PCs come with off them - see Get-CleanupAppSet.
+        (Get-CleanupStarterItem 0), (Get-CleanupStarterItem 1), (Get-CleanupStarterItem 2),
         [ordered]@{ id = 'Mozilla.Firefox'; name = 'Mozilla Firefox'; category = 'Browsers'; recommended = $true; why = 'A second browser beside Edge - many sites and admins expect one.' },
         [ordered]@{ id = 'Google.Chrome'; name = 'Google Chrome'; category = 'Browsers'; recommended = $true; why = 'Chrome''s enterprise MSI - installs for all users, managed by policy.' },
         [ordered]@{ id = 'Mozilla.Firefox.ESR'; name = 'Mozilla Firefox ESR'; category = 'Browsers'; recommended = $false; why = 'Instead of Firefox: a release a year, security fixes only - fewer changes for users.' },

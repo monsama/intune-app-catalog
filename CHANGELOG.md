@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.38.58
+
+- **Clean-up apps in the starter set** (Add apps > Starter set, category Clean-up): script apps that take what PCs
+  come with off them, unattended, as SYSTEM - groups chosen as for any app.
+  - **Remove preinstalled vendor apps - Lenovo**: McAfee (WebAdvisor and the suite), Lenovo Now, Lenovo AI Now, Lenovo
+    Smart Meeting Components and Motorola Smart Connect. Lenovo Vantage and System Update stay. McAfee's suite needs
+    McAfee's removal tool (MCPR, mccleanup.exe) in the app's packages folder.
+  - **Remove preinstalled vendor apps - HP**: HP Wolf Security (Sure Click, Sure Sense, ...) and HP's add-ons (myHP,
+    Connection Optimizer, Notifications, ...). HP Support Assistant and what keys, audio, docks and the BIOS need stay.
+  - **Remove preinstalled Office**: the consumer Office (Microsoft 365 Family/Personal, Home & Student, ...) in every
+    language, with Office's own uninstall commands. Microsoft 365 Apps for enterprise, Visio and Project stay.
+  - Detected as "nothing of the list installed", so a PC that gets it back is cleaned again. Programs: MSI with
+    msiexec /qn, else the vendor's quiet command, Inno Setup with /VERYSILENT, others /S - 10 minutes each at most.
+    Store apps: for every user and from the image. A log in IntuneManagementExtension\Logs.
+
 ## 2.38.57
 
 - **Add groups suggests Entra ID's groups**: the "Other group name" fields are group chip boxes now, with the same

@@ -103,6 +103,8 @@ $testableFunctionNames = @(
     "ConvertTo-PlainJsonValue",
     "ConvertTo-WebJsonText",
     "Get-StarterAppSet",
+    "Get-CleanupAppSet",
+    "Get-CleanupStarterItem",
     "Test-InstallerFileHeader",
     "Get-ListedBaseName",
     # 2.36.0: what doesn't fit together in a package, winget's SHA256
@@ -3454,7 +3456,24 @@ $starter = @(Get-StarterAppSet)
 $sIds = @($starter | ForEach-Object { $_.id })
 Assert-True ($starter.Count -ge 20 -and @($sIds | Select-Object -Unique).Count -eq $sIds.Count -and -not @($starter | Where-Object { $_.id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$' -or -not $_.name -or -not $_.category -or -not $_.why }).Count) "Starter set: unique, valid Winget IDs, each with a name, category and why"
 Assert-True ($sIds[0] -eq (Get-OfficeStarterId) -and $sIds[1] -eq '9WZDNCRFJ3PZ' -and $starter[0].category -eq 'Microsoft' -and $starter[1].recommended) "Starter set (2.38.21): Microsoft 365 Apps and Company Portal first"
-Assert-True (@($starter | Where-Object recommended).Count -eq 10 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+Assert-True (@($starter | Where-Object recommended).Count -eq 13 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+# 2.38.58: the clean-up apps - Lenovo, HP and preinstalled Office, their scripts in EmbeddedScripts\Cleanup.
+$cleanDir = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'EmbeddedScripts') 'Cleanup'
+$cleanSet = @(Get-CleanupAppSet)
+Assert-True ($cleanSet.Count -eq 3 -and @($cleanSet | Where-Object { $sIds -contains $_.id }).Count -eq 3 -and -not @($cleanSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $cleanDir $_)) }).Count -and @($starter | Where-Object { $_.category -eq 'Clean-up' }).Count -eq 3) "Clean-up apps (2.38.58): three in the starter set, their script files there"
+# What the HP and Lenovo lists take and leave (the scripts' own matching, with Windows' list of programs made up here).
+$cleanTest = {
+    param([string]$Vendor, $Entries)
+    # Read by the dot-sourced scripts: load the functions only, and log nothing.
+    Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true
+    . (Join-Path $cleanDir "$Vendor.ps1"); . (Join-Path $cleanDir 'Common.ps1')
+    return @(Get-CleanupPrograms -Entries $Entries | ForEach-Object { $_.Name })
+}
+$fake = { param($n, $p, $k) [pscustomobject]@{ Name = $n; Publisher = $p; Key = $k; Uninstall = 'x.exe'; Quiet = ''; Msi = $false } }
+$hpGot = & $cleanTest 'HP' @((& $fake 'HP Support Assistant' 'HP Inc.' 'a'), (& $fake 'HP Sure Click' 'HP Inc.' 'b'), (& $fake 'HP Wolf Security' 'HP Inc.' 'c'), (& $fake 'HP Hotkey Support' 'HP Inc.' 'd'), (& $fake 'HP Wolf Security - Console' 'HP Inc.' 'e'), (& $fake 'HP Connection Optimizer' 'HP Inc.' 'f'), (& $fake '7-Zip' 'Igor Pavlov' 'g'))
+Assert-True (($hpGot -join '|') -eq 'HP Wolf Security|HP Wolf Security - Console|HP Sure Click|HP Connection Optimizer') "Clean-up HP: Wolf Security first, in its order, and the add-ons - Support Assistant, hotkeys and other apps stay" ($hpGot -join '|')
+$lnGot = & $cleanTest 'Lenovo' @((& $fake 'McAfee WebAdvisor' 'McAfee, LLC' 'a'), (& $fake 'Lenovo Vantage Service' 'Lenovo Group Ltd.' 'b'), (& $fake 'Smart Connect' 'Motorola Mobility LLC' 'c'), (& $fake 'Intel(R) Smart Connect Technology' 'Intel Corporation' 'd'), (& $fake 'Lenovo AI Now' 'Lenovo' 'e'), (& $fake 'Lenovo Now' 'Lenovo' 'f'), (& $fake 'Lenovo Smart Meeting Components' 'Lenovo' 'g'))
+Assert-True (($lnGot -join '|') -eq 'McAfee WebAdvisor|Lenovo Now|Lenovo AI Now|Lenovo Smart Meeting Components|Smart Connect') "Clean-up Lenovo: McAfee, Lenovo Now / AI Now / Smart Meeting, Motorola's Smart Connect - not Vantage, not Intel's Smart Connect" ($lnGot -join '|')
 $cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
 Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
 
