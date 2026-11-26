@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.60
+
+- **Settings > Packaging tidied**: the shared Winget package (init.intunewin) and the packages folders are parts of
+  their own, each with its own button - "Clean up folders" no longer sits beside "Rebuild init.intunewin". The packages
+  folders part always says how they stand ("Every folder belongs to an app in the catalog" when there's nothing to do).
+
 ## 2.38.59
 
 - **Packages folders on the server (Linux) with other capitals**: "APM-System2" beside "apm-system2" are two folders
