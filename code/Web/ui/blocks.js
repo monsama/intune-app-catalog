@@ -51,8 +51,9 @@ function inlineLink(b, card, tip, opts) {
     if (cur !== 'Managed' && cur !== 'Winget' && cur !== 'Self') return false;   // an own command: the method row explains it
     const sel = el('select', { 'data-bid': 'method', 'aria-label': 'Version - install with', onchange: e => setLinked('aMethod', e.target.value, opts) },
       el('option', { value: 'Managed', text: pinned ? b.text : 'pinned to the App version (managed updates)' }),
-      el('option', { value: 'Winget', text: 'the newest winget has' }));
-    sel.value = pinned ? 'Managed' : 'Winget';
+      el('option', { value: 'Winget', text: 'the newest winget has' }),
+      el('option', { value: 'Self', text: 'the newest winget has - the app keeps itself up to date' }));
+    sel.value = pinned ? 'Managed' : cur === 'Self' ? 'Self' : 'Winget';
     row(sel); return true;
   }
   if (b.link === 'xContext') {

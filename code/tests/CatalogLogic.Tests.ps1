@@ -108,6 +108,9 @@ $testableFunctionNames = @(
     "Get-DownloadAppSet",
     "Get-DownloadStarterItem",
     "Get-ScriptStarterAppSet",
+    # Who signed a file (Packaging.ps1, 2.38.71): the organisation read field by field
+    "Get-CertificateOrganization",
+    "Test-MicrosoftSignature",
     "Test-InstallerFileHeader",
     "Get-ListedBaseName",
     # 2.36.0: what doesn't fit together in a package, winget's SHA256
@@ -3476,6 +3479,14 @@ $dlTest = & { Set-Variable -Name DownloadLoadOnly -Value $true; Set-Variable -Na
         (Test-DownloadSigner 'CN=Evil, O=Not TeamViewer Germany GmbH Ltd, C=US'), (Test-DownloadSigner 'CN=TeamViewer Germany GmbH, O=Someone Else, C=US'),
         ('TeamViewer' -match '^TeamViewer( \d+)?$'), ('TeamViewer 15' -match '^TeamViewer( \d+)?$'), ('TeamViewer Host' -match '^TeamViewer( \d+)?$')) }
 Assert-True ($dlTest[0] -and $dlTest[1] -and -not $dlTest[2] -and -not $dlTest[3] -and $dlTest[4] -and $dlTest[5] -and -not $dlTest[6]) "TeamViewer download: only TeamViewer's own certificate (its organisation); the full app found by its name, not the Host" ($dlTest -join ',')
+# 2.38.71: the organisation is read field by field - a "O=TeamViewer..." inside another field's quoted value, a second
+# organisation or one with more after it don't pass (a self-signed certificate with such a subject matched before).
+$dlSpoof = & { Set-Variable -Name DownloadLoadOnly -Value $true; Set-Variable -Name Action -Value 'Detect'; . (Join-Path $dlDir 'TeamViewer.ps1'); . (Join-Path $dlDir 'Common.ps1')
+    @('CN="Evil, O=TeamViewer GmbH", O=Evil Ltd, C=US', 'OU="x, O=TeamViewer Germany GmbH", O=Evil', 'O="TeamViewer GmbH, Evil"', 'CN=x, O=TeamViewer GmbH, O=Evil', 'CN=x, O=TeamViewer GmbH + OU=y, O=Evil') | ForEach-Object { Test-DownloadSigner $_ }
+    Test-DownloadSigner 'CN=TeamViewer GmbH, O="TeamViewer GmbH", C=DE' }
+Assert-True (-not @($dlSpoof[0..4] | Where-Object { $_ }).Count -and $dlSpoof[5]) "TeamViewer download: a vendor name inside another field, a second organisation or extra text isn't TeamViewer's certificate" ($dlSpoof -join ',')
+$msSig = { param($s) [pscustomobject]@{ Status = 'Valid'; SignerCertificate = [pscustomobject]@{ Subject = $s } } }
+Assert-True ((Test-MicrosoftSignature (& $msSig 'CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US')) -and -not (Test-MicrosoftSignature (& $msSig 'CN=x, OU="a, O=Microsoft Corporation, b", O=Evil')) -and -not (Test-MicrosoftSignature (& $msSig 'CN=x, O="Microsoft Corporation, Evil"'))) "Test-MicrosoftSignature: Microsoft's own organisation only, not the name inside another field"
 foreach ($d in $dlSet) {
     $txt = (@($d.files) | ForEach-Object { Get-Content -LiteralPath (Join-Path $dlDir $_) -Raw }) -join "`n"
     $pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput("`$Action = 'Install'`n" + $txt, [ref]$null, [ref]$pe)

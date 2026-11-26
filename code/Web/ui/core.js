@@ -146,12 +146,15 @@ function activity(text) {
   const log = $('jobLog');
   if (!log) return;
   if (activityFresh) { log.textContent = ''; activityFresh = false; }
-  let t = log.textContent + (text.endsWith('\n') ? text : text + '\n');
+  const add = text.endsWith('\n') ? text : text + '\n';
   // A page left open for days: the newest ~2000 lines are kept.
-  if (t.length > 300000) { const cut = t.indexOf('\n', t.length - 200000); t = '...\n' + t.slice(cut + 1); }
-  log.textContent = t;
+  if (log.textContent.length + add.length > 300000) { const t = log.textContent + add, cut = t.indexOf('\n', t.length - 200000); log.textContent = '...\n' + t.slice(cut + 1); }
+  else logAppend(log, add);
   log.scrollTop = log.scrollHeight;
 }
+// Adds text at the end of a log (2.38.71): as a new text node, so the lines already shaped stay and only the new ones
+// are shaped (setting textContent again rebuilt the whole log on every line - slow once it is long).
+function logAppend(pre, text) { pre.append(document.createTextNode(text)); }
 const stamp = () => new Date().toTimeString().slice(0, 8);
 
 // 2.38.8: every log colours its lines - failures red, warnings amber, OK green - whoever writes to it (they all set
@@ -170,15 +173,18 @@ function logLine(line, prevBlank) {
   // Each line its own block; its line break kept in the text but not drawn (a block with a drawn break is two lines).
   const nl = line.endsWith('\n'), body = nl ? line.slice(0, -1) : line;
   const br = () => nl ? el('span', { class: 'lnl', text: '\n' }) : '';
-  const hide = t => el('span', { class: 'lx', text: t });
+  // Hidden marks stay in the text (Copy), not in what a screen reader reads - the mark's icon says it once (2.38.71).
+  const hide = t => el('span', { class: 'lx', 'aria-hidden': 'true', text: t });
   if (!body.trim()) return el('span', { class: 'ln lblank' + (prevBlank ? ' lgone' : '') }, body, br());
   if (LOG_RULE.test(body)) return el('span', { class: 'ln lgone', text: line });
   const h = LOG_HEAD.exec(body);
-  if (h) return el('span', { class: 'ln lhead' }, hide(h[1] + h[2] + ' '), h[3], h[4] ? hide(h[4]) : '', br());
+  // The exact text around the heading is hidden (2.38.71: a fixed "=== " dropped extra spaces, a tab, trailing blanks).
+  if (h) { const at = body.indexOf(h[3], h[1].length + h[2].length); return el('span', { class: 'ln lhead' }, hide(body.slice(0, at)), h[3], at + h[3].length < body.length ? hide(body.slice(at + h[3].length)) : '', br()); }
   const kind = logKind(body), parts = [];
   let rest = body;
   const t = LOG_TIME.exec(rest);
   if (t) { parts.push(el('span', { class: 'lts', text: t[1] }), t[2]); rest = rest.slice(t[0].length); }
+  const afterTime = rest;
   const g = LOG_TAG.exec(rest);
   if (g) {
     const k = /OK|\+/.test(g[2]) ? 'ok' : /WARN|!/.test(g[2]) ? 'warn' : /ERROR|FAILED/.test(g[2]) ? 'err' : 'info';
@@ -187,26 +193,42 @@ function logLine(line, prevBlank) {
   }
   parts.push(rest, br());
   // Graph's own request lines ([GRAPH] GET /... 200 in 9 ms) are detail: grey, unless one failed.
-  const graph = /^\s*\[GRAPH\]/.test(body) && kind !== 'lerr';
+  // After its time too (2.38.71: a timed line's [GRAPH] wasn't seen, so Graph's lines stayed bright).
+  const graph = /^\s*\[GRAPH\]/.test(afterTime) && kind !== 'lerr';
   return el('span', { class: 'ln' + (kind ? ' ' + kind : '') + (graph ? ' ldetail' : '') }, ...parts);
 }
 function colourLog(pre) {
-  const text = pre.textContent;
-  if (logSeen.get(pre) === text) return;
+  const text = pre.textContent, seen = logSeen.get(pre);
+  if (seen && seen.text === text) return;
   // A log with markup of its own (Diagnostics' headings and verdicts) is left as it is - only plain text is shaped.
-  if ([...pre.children].some(c => !c.classList.contains('ln'))) { logSeen.set(pre, text); return; }
+  if ([...pre.children].some(c => !c.classList.contains('ln'))) { logSeen.set(pre, { text }); return; }
+  // Emptied (2.38.71): no blank line left in it, so the box hides again (.log:empty) until the next step writes.
+  if (!text) { if (pre.firstChild) pre.replaceChildren(); pre.classList.remove('hasfail'); logSeen.set(pre, { text }); return; }
   const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
-  if (text.length > 400000) { logSeen.set(pre, text); return; }
-  const frag = document.createDocumentFragment();
-  let failed = false, prevBlank = true;
-  for (const line of text.split(/(?<=\n)/)) {
+  if (text.length > 400000) { logSeen.set(pre, { text }); return; }
+  // Only text added at the end (logAppend) - the lines shaped before are still there: shape just the new ones (from
+  // the last line, when that one wasn't finished). Anything else (textContent set) is shaped from the start.
+  let from = 0, prevBlank = true, failed = false;
+  const grew = seen && seen.text && seen.last && seen.last.parentNode === pre && pre.childElementCount === seen.count && text.startsWith(seen.text);
+  if (grew) {
+    while (pre.lastChild && pre.lastChild.nodeType !== 1) pre.lastChild.remove();
+    if (seen.partial) seen.last.remove();
+    from = seen.cut; prevBlank = seen.blankAtCut; failed = pre.classList.contains('hasfail');
+  }
+  const frag = document.createDocumentFragment(), lines = text.slice(from).split(/(?<=\n)/);
+  let cut = from, blankAtCut = prevBlank, last = null;
+  for (const line of lines) {
+    if (!line) continue;
+    if (line.endsWith('\n')) { cut += line.length; }
+    else blankAtCut = prevBlank;
     const span = logLine(line, prevBlank);
     if (span.classList.contains('lerr')) failed = true;
     prevBlank = span.classList.contains('lblank') || (span.classList.contains('lgone') && prevBlank);
-    frag.append(span);
+    if (line.endsWith('\n')) blankAtCut = prevBlank;
+    frag.append(span); last = span;
   }
-  logSeen.set(pre, text);
-  pre.replaceChildren(frag);
+  if (grew) pre.append(frag); else pre.replaceChildren(frag);
+  logSeen.set(pre, { text, cut, blankAtCut, partial: !text.endsWith('\n'), last: last || pre.lastElementChild, count: pre.childElementCount });
   pre.classList.toggle('hasfail', failed);
   if (failed) { const d = pre.closest('details'); if (d && !d.open) d.open = true; }
   if (atEnd) pre.scrollTop = pre.scrollHeight;

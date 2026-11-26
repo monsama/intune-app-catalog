@@ -548,7 +548,7 @@ async function applyMethod() {
   // The extra winget options in the commands stay (the server reads them back from the install command).
   const r = await api('/api/winget-commands', methodBody({ method: m }));
   if (!r.ok) { toast(r.error, true); refreshMethod(); return; }
-  $('aManaged').checked = m === 'Managed'; $('aSelfUpd').checked = choice === 'Self'; showManagedState();
+  $('aManaged').checked = m === 'Managed'; $('aSelfUpd').checked = choice === 'Self'; methodTouched = true; showManagedState();
   for (const [id, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); }
   refreshMethod();
 }
@@ -716,7 +716,8 @@ $('appForm').addEventListener('submit', async e => {
   if (deployTouched) app.deploy = readDeploy();
   app.iconChange = iconChange; if (iconChange === 'set') app.icon = editorIcon;
   app.managedUpdates = $('aManaged').checked;
-  if ($('aWinget').value.trim() && !isStoreId($('aWinget').value.trim()) && !$('aManaged').checked) app.updatesItself = $('aSelfUpd').checked;
+  // Also when Managed was picked (2.38.71): "updates itself" is then off - else turning managed off later brought it back.
+  if ($('aWinget').value.trim() && !isStoreId($('aWinget').value.trim()) && (!$('aManaged').checked || methodTouched)) app.updatesItself = $('aSelfUpd').checked;
   app.releaseRule = { days: $('arDays').value.trim(), maxFailedPercent: $('arFailed').value.trim(), minInstalled: $('arMin').value.trim() };
   app.detectedName = $('arDetected').value.trim();
   app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();
@@ -779,7 +780,8 @@ async function loadChanges(name) {
   // The same rows as Recent changes (2.38.67): when, where from, what - opened for its fields, Undo inside.
   $('histChanges').replaceChildren(...r.entries.map((e, n) => {
     const what = e.text || [...new Set(e.changes.map(c => histField(c.field)))].slice(0, 4).join(', ') || 'Changed';
-    const undo = e.canUndo ? el('button', { class: 'btn small ghost', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async () => {
+    const undo = e.canUndo ? el('button', { class: 'btn small ghost', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async ev => {
+      ev.preventDefault();   // in the row's summary (2.38.71): Undo doesn't fold the row too
       if (!(await ask(`Undo this change to ${name}?\n\n${e.changes.filter(c => c.revertable).map(c => `${histField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nOnly the catalog changes - Send to Intune sends it there.`, { ok: 'Undo' }))) return;
       const x = await api('/api/history-undo', { name, id: e.id });
       if (!x.ok) { toast(x.error, true); return; }
@@ -788,8 +790,8 @@ async function loadChanges(name) {
     } }) : '';
     const head = el('summary', {}, el('span', { class: 'rwhen', text: fmtWhen(e.at) }), el('span', { class: 'rsrc', text: e.source }),
       el('span', { class: 'rwhat' }, what, e.kind === 'intune' ? el('span', { class: 'pill info', text: 'Intune' }) : ''),
-      el('span', { class: 'rapps muted', text: e.app !== name ? `as ${e.app}` : '' }));
-    const body = el('div', { class: 'rbody' }, el('div', { class: 'ritem' }, undo ? el('div', { class: 'rapp' }, undo) : '',
+      el('span', { class: 'rapps muted' }, e.app !== name ? `as ${e.app} ` : '', undo));
+    const body = el('div', { class: 'rbody' }, el('div', { class: 'ritem' },
       e.changes.length ? el('ul', { class: 'rchanges' }, ...e.changes.map(c => el('li', {}, el('span', { class: 'f', text: histField(c.field) }),
         el('span', { class: 'v' }, el('span', { class: 'b', text: c.before || '(empty)' }), el('span', { class: 'arr', text: '→', 'aria-label': 'to' }), el('span', { class: 'a', text: c.after || '(empty)' }))))) : ''));
     return el('li', {}, el('details', { open: n < 3 }, head, body));
@@ -973,7 +975,8 @@ function foldIntoMenu(ids, opts = {}) {
     const r = more.getBoundingClientRect(); placeMenu(menu, r.right, r.bottom + 4, true); more.setAttribute('aria-expanded', 'true');
   });
   menu.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { close(); more.focus(); return; }
+    // Not on to the dialog it sits in (2.38.71): Escape closes the menu, not the editor.
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); more.focus(); return; }
     menuStep(e, menu);
   });
   document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) close(); });
@@ -1127,7 +1130,7 @@ function listKeys(e) {
 let cursor = null;
 
 // ---------------------------------------------------------------- editor: deploy settings
-let editorApps = [], editorMinOs = [], deployTouched = false;
+let editorApps = [], editorMinOs = [], deployTouched = false, methodTouched = false;
 function showDetFields() {
   const t = $('xType').value;
   for (const d of document.querySelectorAll('[data-det]')) d.hidden = !d.dataset.det.split(' ').includes(t);
@@ -1135,7 +1138,7 @@ function showDetFields() {
 }
 $('xType').addEventListener('change', showDetFields);
 function fillDeploy(d) {
-  deployTouched = false;
+  deployTouched = false; methodTouched = false;
   $('deploySec').open = false;
   if (!d) d = { detection: { type: '' }, architecture: ['x64'], installContext: 'System', minOSKey: 'W10_22H2', installTimeMinutes: 60, deviceRestartBehavior: 'basedOnReturnCode', returnCodes: [], dependencies: [] };
   const x = d.detection || { type: '' };
@@ -1639,7 +1642,7 @@ async function menuAction(act) {
         runDialog('Delete from Intune and catalog', inIntune.join(', '));
         deleted = await runEach(inIntune, name => ({ name }), { path: '/api/delete-intune', log: 'runLog', startText: 'Deleting ' });
       }
-      const failed = inIntune.filter(n => !deleted.includes(n)).map(n => `${n}: not deleted from Intune - kept in the catalog`);
+      const failed = inIntune.filter(n => !deleted.includes(n)).map(n => `${n}: kept in the catalog - deleting it in Intune (or saving that) failed, the log says which`);
       let gone = 0;
       for (const n of [...deleted, ...onlyHere]) { const r = await api('/api/app-remove', { name: n }); if (r.ok) { selected.delete(n); gone++; } else failed.push(`${n}: ${r.error}`); }
       toast(failed.length ? `Done for ${nWord(gone, 'app')}. Not done: ${failed.join('; ')}` : `Deleted ${nWord(gone, 'app')} from Intune and the catalog.`, failed.length > 0); loadApps();

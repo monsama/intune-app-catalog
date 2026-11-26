@@ -11,7 +11,7 @@ function Get-DownloadTarget {
         Url    = 'https://download.teamviewer.com/download/TeamViewer_Setup_x64.exe'
         File   = 'TeamViewer_Setup_x64.exe'
         # The publisher's certificate: TeamViewer Germany GmbH (TeamViewer GmbH on older ones).
-        Signer = '(^|,\s*)O="?TeamViewer (Germany )?GmbH"?(,|$)'
+        Signer = @('TeamViewer Germany GmbH', 'TeamViewer GmbH')
     }
 }
 
@@ -34,6 +34,8 @@ function Uninstall-App {
     if (-not $file -or -not (Test-Path -LiteralPath $file)) { Write-DownloadLog "  its uninstaller isn't there: $u"; return 1 }
     # _?= keeps the NSIS uninstaller in place, so its end is waited for (else it copies itself away and returns at once).
     $dir = $file.Substring(0, $file.LastIndexOfAny([char[]]'\/'))
-    Get-Process -Name 'TeamViewer', 'TeamViewer_Desktop', 'tv_w32', 'tv_x64' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    # Only the installed app's own processes - not QuickSupport's TeamViewer.exe in a user's TEMP (a live support session).
+    $own = $dir.TrimEnd('\') + '\'
+    Get-Process -Name 'TeamViewer', 'TeamViewer_Desktop', 'tv_w32', 'tv_x64' -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($own, [System.StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
     return (Invoke-DownloadProcess $file "/S _?=$dir" 30)
 }

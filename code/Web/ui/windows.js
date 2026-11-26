@@ -81,7 +81,8 @@ function wcMovable(d, head) {
     const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); };
     head.addEventListener('pointermove', move); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
   });
-  head.addEventListener('dblclick', e => { if (!e.target.closest('button, input, select, textarea, a, .wctl')) wcMax(d); });
+  // Only where Maximize is offered (2.38.71): a small dialog maximized by a double-click had no way shown back.
+  head.addEventListener('dblclick', e => { const mx = d.querySelector(':scope > .wctl .wc-max'); if (mx && !mx.hidden && !e.target.closest('button, input, select, textarea, a, .wctl')) wcMax(d); });
   // Each opening starts in the middle again, at its normal size.
   d.addEventListener('close', () => { if (!d.classList.contains('minimized')) { wcUnplace(d); wcMax(d, false); } });
 }

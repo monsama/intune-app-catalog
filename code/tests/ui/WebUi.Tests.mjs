@@ -396,7 +396,7 @@ try {
         sendQueue.length = 0; jobRunning = was; await new Promise(r => setTimeout(r, 1200)); loadApps = la; document.getElementById('sendStack').remove();
         return { q, cards: cards.join('|'), newestLeft: r.length === 2 && r[1] < r[0] }; });
       check(queued.q === 'ZZ Q1,ZZ Q2', `${label}: Send settings clicked again while one runs is queued (once per app), not refused`, JSON.stringify(queued));
-      check(queued.cards === 'ZZ Q1:Waiting|ZZ Q2:Waiting' && (size.width < 721 || queued.newestLeft), `${label}: each queued send has its own window, the newest left of the others`, JSON.stringify(queued));
+      check(queued.cards === 'ZZ Q1:Waiting|ZZ Q2:Waiting' && (size.width < 1001 || queued.newestLeft), `${label}: each queued send has its own window, the newest left of the others (one column below 1000 px)`, JSON.stringify(queued));
       const unsentPill = page.locator('#grid tr', { hasText: 'ZZ Unsent' }).locator('button.pillbtn');
       check(await unsentPill.count() === 1 && /Changes to send/.test(await unsentPill.textContent()), `${label}: Changes to send is a pill that opens the changes`);
       await unsentPill.hover();

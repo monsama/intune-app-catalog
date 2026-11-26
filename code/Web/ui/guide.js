@@ -610,14 +610,23 @@ function placeSendStack() {
   const top = [...document.querySelectorAll('dialog[open]')].filter(d => d.matches(':modal')).pop();
   const host = top || document.body;
   if (s.parentElement !== host) host.append(s);
+  // Above the dialog's footer (2.38.71): its buttons along the bottom (Save, Cancel, the ready chip) stay free.
+  s.style.bottom = '';
+  if (top) {
+    const r = top.getBoundingClientRect();
+    const foot = [...top.querySelectorAll('button, .readychip')].filter(b => b.offsetParent && !s.contains(b) && !b.closest('.wctl, .menu')).map(b => b.getBoundingClientRect()).filter(b => b.height && r.bottom - b.bottom < 48);
+    const edge = foot.length ? Math.min(...foot.map(b => b.top)) : r.bottom;
+    s.style.bottom = Math.max(16, Math.round(innerHeight - edge + 10)) + 'px';
+  }
 }
+window.addEventListener('resize', () => placeSendStack());
 window.addEventListener('close', () => setTimeout(placeSendStack, 0), true);
 { const sm = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { sm.call(this); placeSendStack(); }; }
 // 2.38.69: each send as a card like the dialogs - a status mark, what and for which app, a thin bar while it runs, the
 // log folded away (open when it failed, with Try again). A sent card folds to one line and goes by itself; at most
 // three cards are open, the rest waits as "+N waiting".
 const sendIcon = { waiting: '', sending: '', sent: '✓', failed: '!' };
-function sendCard(kind, name) {
+function sendCard(kind, name, after) {
   const id = 'sendLog' + (++sendSeq);
   const mark = el('span', { class: 'smark', 'aria-hidden': 'true' });
   const state = el('span', { class: 'sstate', text: 'Waiting' });
@@ -630,7 +639,8 @@ function sendCard(kind, name) {
     el('div', { class: 'shead' }, mark, el('div', { class: 'stitle' }, el('h2', { text: sendKinds[kind].title }), el('span', { class: 'sapp', text: name, title: name })), state, close),
     el('div', { class: 'sbar', 'aria-hidden': 'true' }, el('span')), el('div', { class: 'sfoot' }, logBox, retry));
   close.addEventListener('click', () => { const i = sendQueue.findIndex(q => q.card && q.card.id === id); if (i >= 0) sendQueue.splice(i, 1); card.remove(); tidySendStack(); });
-  retry.addEventListener('click', () => { card.remove(); queueSend(kind, [name]); });
+  // Try again keeps the follow-up (2.38.71): a retry started from Checks still drops the finding once it is sent.
+  retry.addEventListener('click', () => { card.remove(); tidySendStack(); queueSend(kind, [name], after); });
   // Sent: it goes by itself 20 s later - not while the pointer or focus is on it, but once they leave (2.38.41).
   let autoClose = null;
   const later = () => { clearTimeout(autoClose); autoClose = setTimeout(() => { if (!card.isConnected) return; if (card.matches(':hover, :focus-within')) later(); else { card.remove(); tidySendStack(); } }, 20000); };
@@ -649,27 +659,34 @@ function sendCard(kind, name) {
   tidySendStack();
   return { id, set };
 }
-// At most three cards in view: what runs or failed first, then the newest sent, then the waiting ones - the others as one chip.
+// At most three cards in view: what runs, then the newest sent, then the waiting ones - the others as one chip. A failed
+// card is never hidden (2.38.71): its log and Try again must stay reachable, as the "Not sent" toast says.
 function tidySendStack() {
   const s = $('sendStack'); if (!s) return;
   const cards = [...s.querySelectorAll('.sendcard')];
-  const rank = c => c.classList.contains('sending') ? 0 : c.classList.contains('failed') ? 1 : c.classList.contains('sent') ? 2 : 3;
-  const shown = new Set([...cards].sort((a, b) => rank(a) - rank(b)).slice(0, 3));
-  for (const c of cards) c.hidden = !shown.has(c);
-  const more = cards.length - shown.size;
+  const state = c => ['sending', 'failed', 'sent'].find(k => c.classList.contains(k)) || 'waiting';
+  const rank = { sending: 0, failed: 1, sent: 2, waiting: 3 };
+  // Cards are appended oldest first: among the sent ones the newest (later in the list) comes first.
+  const order = cards.map((c, i) => ({ c, i })).sort((a, b) => rank[state(a.c)] - rank[state(b.c)] || (state(a.c) === 'sent' ? b.i - a.i : a.i - b.i));
+  const shown = new Set(cards.filter(c => state(c) === 'failed'));
+  for (const { c } of order) if (shown.size < 3 || state(c) === 'failed') shown.add(c);
+  const hiddenBy = { waiting: 0, sent: 0, sending: 0 };
+  for (const c of cards) { c.hidden = !shown.has(c); if (c.hidden) hiddenBy[state(c)]++; }
+  const parts = [hiddenBy.waiting && `+${hiddenBy.waiting} waiting`, hiddenBy.sending && `+${hiddenBy.sending} sending`, hiddenBy.sent && `+${hiddenBy.sent} sent`].filter(Boolean);
   let chip = s.querySelector('.smore');
-  if (more > 0) { if (!chip) { chip = el('div', { class: 'smore', role: 'status' }); s.prepend(chip); } chip.textContent = `+${more} waiting`; }
+  if (parts.length) { if (!chip) { chip = el('div', { class: 'smore', role: 'status' }); s.prepend(chip); } chip.textContent = parts.join(' · '); }
   else if (chip) chip.remove();
 }
 // -after(doneNames): called once the queue has sent these names (Checks drops their findings and checks them again).
 function queueSend(kind, names, after) {
   const fresh = names.filter(n => !sendQueue.some(q => q.kind === kind && q.name === n));
-  for (const n of fresh) sendQueue.push({ kind, name: n, after, card: sendCard(kind, n) });
+  for (const n of fresh) sendQueue.push({ kind, name: n, after, card: sendCard(kind, n, after) });
   if (!sendLoopRunning) runSendQueue();
 }
 async function runSendQueue() {
   sendLoopRunning = true;
-  const done = { settings: [], groups: [] }, failed = [], afters = new Map();
+  // Failed by kind and name (2.38.71): a Try again that succeeds while this loop still runs takes it off the list again.
+  const failed = new Map(), afters = new Map();
   try {
     while (sendQueue.length) {
       // Another action (a deploy, a check) still running: wait for it rather than give up.
@@ -679,12 +696,13 @@ async function runSendQueue() {
       q.card.set('sending', 'Sending...', false);
       const ok = (await runEach([q.name], k.body, { path: k.path, log: q.card.id, startText: k.start })).length > 0;
       q.card.set(ok ? 'sent' : 'failed', ok ? 'Sent' : 'Failed', true);
-      if (ok) done[q.kind].push(q.name); else failed.push(q.name);
+      const key = q.kind + '\n' + q.name;
+      if (ok) failed.delete(key); else failed.set(key, q.name);
       if (q.after) { if (!afters.has(q.after)) afters.set(q.after, []); if (ok) afters.get(q.after).push(q.name); }
     }
   } finally { sendLoopRunning = false; }
   for (const [fn, names] of afters) { try { fn(names); } catch (e) { /* a page's follow-up failing doesn't undo the sends */ } }
-  if (failed.length) toast(`Not sent: ${failed.join(', ')} - its window has the log.`, true);
+  if (failed.size) toast(`Not sent: ${[...new Set(failed.values())].join(', ')} - its window has the log.`, true);
   loadApps();
 }
 function sendSettingsNow(names) { queueSend('settings', names); }

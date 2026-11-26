@@ -36,6 +36,8 @@ jobs:
             os: windows-latest
             shell: powershell
     runs-on: ${{ matrix.os }}
+    # About 2.5 minutes normally - a test that hangs (a server that never answers) fails the job instead of holding it for six hours.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # A step's shell can't come from an expression, hence one step per shell.
@@ -118,6 +120,7 @@ jobs:
     # what the tests happen to run.
     name: lint (PSScriptAnalyzer)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install PSScriptAnalyzer
@@ -139,6 +142,8 @@ jobs:
     # screenshots are kept, to look at what changed.
     name: UI (Chromium)
     runs-on: ubuntu-latest
+    # About 4 minutes normally.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Playwright and Chromium

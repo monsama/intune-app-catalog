@@ -174,7 +174,7 @@ let jobLogId = '';
 function followJob(job, onDone, opts = {}) {
   jobRunning = true; jobButtons(false); jobLogId = opts.log || '';
   const extra = opts.log ? $(opts.log) : null;
-  const both = t => { activity(t); if (extra) { extra.textContent += t.endsWith('\n') ? t : t + '\n'; extra.scrollTop = extra.scrollHeight; } };
+  const both = t => { activity(t); if (extra) { logAppend(extra, t.endsWith('\n') ? t : t + '\n'); extra.scrollTop = extra.scrollHeight; } };
   both(`${stamp()} ${opts.startText || 'Sign in in the window that opens...'}`);
   let offset = 0, fails = 0, chained = 0;
   const tick = async () => {
