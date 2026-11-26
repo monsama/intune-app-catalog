@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.38.74
+
+- **Checks compares the assignments again.**
+  - A check of many apps could stop with "Collection was modified; enumeration operation may not execute." The
+    assignments were then not compared ("see the log").
+  - This happened when up to six apps signing in to Graph at the same moment tripped over each other inside the Graph
+    module. It had nothing to do with the apps themselves.
+  - Each one now signs in again a moment later, and a read that hits this is tried again.
+  - If it still fails, the app is checked once more on its own. Reading Intune's app settings does the same.
+- **Logs:** the ✓, ⚠ and ✕ marks no longer sit on the time at the start of a timed line.
+
 ## 2.38.73
 
 - **Editor: Requirements is its own tab.**

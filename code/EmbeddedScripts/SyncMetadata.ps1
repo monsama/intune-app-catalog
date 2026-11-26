@@ -218,7 +218,9 @@ try {
                     $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
                     $isTransient = $_.Exception.Message -match '502|503|504|BadGateway|Bad Gateway|ServiceUnavailable|Service Unavailable|GatewayTimeout|Gateway Timeout'
                     $safeToRetryTransient = $isTransient -and $Method -ne "POST"
-                    if (($isThrottled -or $safeToRetryTransient) -and $attempt -lt $maxAttempts) {
+                    # The Graph module's own race between workers (2.38.74) - a read is safe to try again.
+                    $isRace = $_.Exception.Message -match 'Collection was modified' -and $Method -eq 'GET'
+                    if (($isThrottled -or $safeToRetryTransient -or $isRace) -and $attempt -lt $maxAttempts) {
                         Start-Sleep -Seconds ($attempt * $attempt * 3)
                         continue
                     }
@@ -245,10 +247,21 @@ try {
 
         $warnings = New-Object System.Collections.Generic.List[string]
 
-        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-        $ctx = Get-MgContext -ErrorAction SilentlyContinue
-        if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
-            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
+        # Several workers signing in at the same moment can trip over each other inside the Graph module ("Collection was
+        # modified; enumeration operation may not execute.") - nothing about the app: tried again a moment later (2.38.74).
+        for ($connTry = 1; ; $connTry++) {
+            try {
+                Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+                $ctx = Get-MgContext -ErrorAction SilentlyContinue
+                if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+                    Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
+                }
+                break
+            }
+            catch {
+                if ($connTry -ge 6 -or $_.Exception.Message -notmatch 'Collection was modified') { throw }
+                Start-Sleep -Milliseconds (250 * $connTry + (Get-Random -Maximum 500))
+            }
         }
 
         $app = Invoke-GraphRequestDetailed -Uri "https://graph.microsoft.com/beta/deviceAppManagement/mobileApps/$($AppEntry.AppId)" -Method GET -StepDescription "Fetch metadata"

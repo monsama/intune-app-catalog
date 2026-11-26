@@ -2561,8 +2561,16 @@ function Global:Get-PackageConsistencyWarnings {
     $hasFiles = $have.Count -gt 0
     # Files whose names differ only in capitals (2.38.64): two files on the server (Linux), one on a PC - which one the
     # device gets is chance ("Uninstall.ps1" beside "uninstall.ps1").
+    # 2.38.74: said plainly - what the folder holds, why it matters, which one the commands run, and where to delete.
+    $cmdText = "$([string]$Metadata.installCommand) $([string]$Metadata.uninstallCommand)"
     foreach ($grp in @(@($Files | Where-Object { $_ } | ForEach-Object { [string]$_ -replace '/', '\' }) | Group-Object { $_.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) {
-        $w.Add("$((@($grp.Group) | Sort-Object) -join ' and ') differ only in capitals - on a PC they are one file, and which one it gets is chance. Delete the one you don't use.")
+        $names = @($grp.Group | Sort-Object)
+        $used = @($names | Where-Object { $cmdText.Contains(($_ -split '\\')[-1]) })
+        $keep = if ($used.Count -eq 1) { $used[0] } else { '' }
+        $drop = @($names | Where-Object { $_ -cne $keep })
+        $w.Add("Its packages folder has $($names.Count) files with the same name in different capitals: $($names -join ', '). Windows treats them as one file, so the package can hold only one of them - which one the device gets is chance. " +
+            $(if ($keep) { "The commands run $keep - delete $($drop -join ', ') (editor > App > Files in its packages folder, the x beside it), then build the package again." }
+              else { "Keep the one the commands should run and delete the other (editor > App > Files in its packages folder, the x beside it), then build the package again." }))
     }
     if ($hasFiles) {
         foreach ($k in 'installCommand', 'uninstallCommand') {

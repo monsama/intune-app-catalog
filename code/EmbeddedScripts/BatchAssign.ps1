@@ -255,7 +255,9 @@ try {
                         $isThrottled = $_.Exception.Message -match '429|TooManyRequests|Too Many Requests'
                         $isTransient = $_.Exception.Message -match '502|503|504|BadGateway|Bad Gateway|ServiceUnavailable|Service Unavailable|GatewayTimeout|Gateway Timeout'
                         $safeToRetryTransient = $isTransient -and $Method -ne "POST"
-                        if (($isThrottled -or $safeToRetryTransient) -and $attempt -lt $maxAttempts) {
+                        # The Graph module's own race between workers (2.38.74) - a read is safe to try again.
+                        $isRace = $_.Exception.Message -match 'Collection was modified' -and $Method -eq 'GET'
+                        if (($isThrottled -or $safeToRetryTransient -or $isRace) -and $attempt -lt $maxAttempts) {
                             Start-Sleep -Seconds ($attempt * $attempt * 3)
                             continue
                         }
@@ -268,10 +270,21 @@ try {
                 }
             }
 
-            Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
-            $ctx = Get-MgContext -ErrorAction SilentlyContinue
-            if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
-                Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
+            # Several workers signing in at the same moment can trip over each other inside the Graph module ("Collection was
+            # modified; enumeration operation may not execute.") - nothing about the app: tried again a moment later (2.38.74).
+            for ($connTry = 1; ; $connTry++) {
+                try {
+                    Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+                    $ctx = Get-MgContext -ErrorAction SilentlyContinue
+                    if ($null -eq $ctx -or $ctx.AuthType -ne 'AppOnly' -or $ctx.ClientId -ne $ClientId) {
+                        Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertThumbprint -NoWelcome -ErrorAction Stop
+                    }
+                    break
+                }
+                catch {
+                    if ($connTry -ge 6 -or $_.Exception.Message -notmatch 'Collection was modified') { throw }
+                    Start-Sleep -Milliseconds (250 * $connTry + (Get-Random -Maximum 500))
+                }
             }
 
             # Every page (2.38.34): a list Graph splits would otherwise be read in part - and sending it back replaces the whole list.
@@ -351,6 +364,18 @@ try {
                 # returning partial results, so this rethrows on the main
                 # thread instead of silently degrading (the pool is closed
                 # in the finally below either way).
+                # Still the Graph module's race between workers (2.38.74, as SyncMetadata): this app once more, on its own,
+                # a moment later - a check of 24 apps stopped at "Collection was modified" and compared no assignments.
+                if ($workerError -and $workerError -match 'Collection was modified') {
+                    $job.Ps.Dispose()
+                    $retry = [powershell]::Create(); $retry.RunspacePool = $pool
+                    [void]$retry.AddScript($perAppPreview).AddParameter('App', $job.App).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint).AddParameter('AssignmentHelperText', $assignmentHelperText).AddParameter('FilterNameById', $filterNameById)
+                    Start-Sleep -Seconds 2; $workerError = $null; $output = $null
+                    try { $output = $retry.Invoke() } catch { $workerError = $_.Exception.Message }
+                    if (Get-Command Write-GraphLogFromInformation -ErrorAction SilentlyContinue) { Write-GraphLogFromInformation $retry.Streams.Information }
+                    if (-not $workerError -and $retry.Streams.Error.Count -gt 0) { $workerError = [string]$retry.Streams.Error[0] }
+                    $job.Ps = $retry
+                }
                 if ($workerError) {
                     $job.Ps.Dispose()
                     throw $workerError

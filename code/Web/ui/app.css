@@ -2089,3 +2089,5 @@ pre.log .ln:has(> .lts) { padding-left: 9ch; text-indent: -9ch; }
 .srcpick button.slast { border-radius: 0 var(--r-m) var(--r-m) 0; }
 .srcpick button.sfirst.slast { border-radius: var(--r-m); }
 .srcpick button:not(.sfirst):not(.slast) { border-radius: 0; }
+/* 2.38.74: the mark's icon is a block of its own - it took the line's hanging indent (-9ch) and sat on the time. */
+pre.log .ltag::before { text-indent: 0; }
