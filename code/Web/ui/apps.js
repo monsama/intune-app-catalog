@@ -1395,15 +1395,22 @@ function openGroupsBatch(mode, names) {
     const choices = mode === 'add' ? favs : [...new Set(sel.flatMap(a => a[field] || []))].sort();
     return el('fieldset', { class: 'gbrole' }, el('legend', { text: label }),
       ...(choices.length ? choices.map(g => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-gbr': field, value: g }), g)) : [el('span', { class: 'muted', text: mode === 'add' ? 'No favourites yet.' : 'None of these apps has one.' })]),
-      mode === 'add' ? el('input', { 'data-gbx': field, placeholder: 'Other group name', spellcheck: 'false' }) : null);
+      mode === 'add' ? el('input', { id: 'gbx' + field, 'data-gbx': field, 'aria-label': { requiredFor: 'Required for', availableFor: 'Available for', uninstallFor: 'Uninstall for', excludeFor: 'Excluded' }[field], spellcheck: 'false' }) : null);
   }));
+  // Other groups as chips, with the group picker's suggestions - favourites, the catalog's and Entra ID's groups (2.38.56):
+  // a plain text box before, so a name had to be typed exactly.
+  for (const t of document.querySelectorAll('#gbRoles [data-gbx]')) chipify(t);
   $('gbErr').hidden = true; $('gbLog').hidden = true; $('gbLog').textContent = ''; $('btnGbGo').disabled = false;
   $('dlgGroupsBatch').showModal();
 }
 $('btnGbGo').addEventListener('click', async () => {
   const roles = {};
   for (const c of document.querySelectorAll('[data-gbr]:checked')) (roles[c.dataset.gbr] = roles[c.dataset.gbr] || []).push(c.value);
-  for (const t of document.querySelectorAll('[data-gbx]')) if (t.value.trim()) (roles[t.dataset.gbx] = roles[t.dataset.gbx] || []).push(t.value.trim());
+  // A name typed but not yet turned into a chip counts too.
+  for (const t of document.querySelectorAll('#gbRoles [data-gbx]')) {
+    const typed = $(t.id + 'Chips'), extra = typed && typed.value.trim() ? [typed.value.trim()] : [];
+    for (const g of [...t.value.split(/\n|, /).map(x => x.trim()).filter(Boolean), ...extra]) (roles[t.dataset.gbx] = roles[t.dataset.gbx] || []).push(g);
+  }
   const r = await api('/api/batch-groups', { mode: gbMode, names: gbNames, roles });
   if (!r.ok) { $('gbErr').textContent = r.error; $('gbErr').hidden = false; return; }
   loadApps();

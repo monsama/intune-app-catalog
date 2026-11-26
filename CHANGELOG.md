@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.57
+
+- **Add groups suggests Entra ID's groups**: the "Other group name" fields are group chip boxes now, with the same
+  suggestions as the app editor - favourites, the catalog's groups and Entra ID's - as you type. Several groups per
+  role, and a name typed but not picked still counts.
+
 ## 2.38.56
 
 - **Working... goes to the running step**: clicking it now shows where that step writes its progress - the Checks page

@@ -681,7 +681,9 @@ try {
         await page.click('[data-act="addgroups"]');
         await page.waitForSelector('#dlgGroupsBatch[open]');
         await unnamed('Add groups'); await a11y('Add groups');
-        await page.fill('[data-gbx="requiredFor"]', 'SG-ZZ-UI');
+        // 2.38.56: other groups as chips, with the group picker's suggestions (favourites, the catalog's, Entra ID's).
+        check(await page.evaluate(() => document.getElementById('gbxrequiredForChips')?.getAttribute('aria-controls') === 'gpList'), `${label}: Add groups suggests group names as they are typed`);
+        await page.fill('#gbxrequiredForChips', 'SG-ZZ-UI');
         await page.uncheck('#gbPush');
         await page.click('#btnGbGo');
         await page.waitForFunction(() => !document.getElementById('dlgGroupsBatch').open);
