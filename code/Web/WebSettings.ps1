@@ -277,17 +277,29 @@ function Global:Get-WebPackaging {
         packager = $(if ([string]$Global:App.Packager -in 'builtin', 'tool') { [string]$Global:App.Packager } else { 'auto' }); packagerInUse = (Get-PackagerChoice) }
 }
 
+function Global:Test-WebCaseSensitiveFolder {
+    # Whether this folder's file system tells "A" from "a" (Linux: yes; Windows, macOS: no) - asked of the folder itself.
+    param([string]$Path)
+    $upper = $Path.ToUpperInvariant(); $lower = $Path.ToLowerInvariant()
+    if ($upper -ceq $lower) { return $false }
+    return -not ((Test-Path -LiteralPath $upper) -and (Test-Path -LiteralPath $lower))
+}
+
 function Global:Get-WebOrphanPackageFolders {
     # Folders in the packages folder no app in the catalog uses (2.38.47) - left by an app removed before its folder went with it.
     $root = Get-AppFolder -Kind Packages
     if (-not (Test-Path -LiteralPath $root -PathType Container)) { return @() }
     $apps = @((Read-WebCatalogRecords).Apps)
-    $used = @{}
+    # A folder name as the file system tells names apart (2.38.59): on Linux (the server) "APM-System2" and
+    # "apm-system2" are two folders, and the app uses only the one spelled like its name - the other was listed as used.
+    $key = if (Test-WebCaseSensitiveFolder $root) { { param($n) [string]$n } } else { { param($n) ([string]$n).ToLowerInvariant() } }
+    # Exact keys: a plain @{} ignores capitals by itself.
+    $used = New-Object System.Collections.Hashtable ([System.StringComparer]::Ordinal)
     foreach ($a in $apps) {
-        $used[(Get-SafeFileNameForApp -Name $a.appName).ToLowerInvariant()] = $true
-        if ($a.packagePath) { $used[(Split-Path ([string]$a.packagePath) -Leaf).ToLowerInvariant()] = $true; $used[(Split-Path (Split-Path ([string]$a.packagePath) -Parent) -Leaf).ToLowerInvariant()] = $true }
+        $used[(& $key (Get-SafeFileNameForApp -Name $a.appName))] = $true
+        if ($a.packagePath) { $used[(& $key (Split-Path ([string]$a.packagePath) -Leaf))] = $true; $used[(& $key (Split-Path (Split-Path ([string]$a.packagePath) -Parent) -Leaf))] = $true }
     }
-    return @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.Name.StartsWith('.') -and -not $used.ContainsKey($_.Name.ToLowerInvariant()) } | ForEach-Object {
+    return @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.Name.StartsWith('.') -and -not $used.ContainsKey((& $key $_.Name)) } | ForEach-Object {
             [pscustomobject]@{ Name = $_.Name; Size = [long](@(Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force -ErrorAction SilentlyContinue) | Measure-Object Length -Sum).Sum }
         })
 }

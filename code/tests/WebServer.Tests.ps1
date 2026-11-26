@@ -187,6 +187,26 @@ try {
     Check (@($pk.orphans | Where-Object { $_.name -eq $orphan }).Count -eq 1) 'packages: a folder no app uses is listed' ($pk.orphans | ConvertTo-Json -Compress)
     $cl = Invoke-Api '/api/packages-cleanup'
     Check ($cl.ok -and @($cl.moved) -contains $orphan -and -not (Test-Path -LiteralPath (Join-Path $pkgRoot $orphan))) 'packages: Clean up moves it out of the packages folder' ($cl | ConvertTo-Json -Compress)
+    # 2.38.59: on a file system that tells capitals apart (Linux), a folder spelled like an app's but with other capitals
+    # is not that app's - it is listed, and the app's own one isn't.
+    $caseName = 'zz case ' + [guid]::NewGuid().ToString('N').Substring(0, 6)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $caseName; wingetId = ''; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() } })
+    $caseOwn = Join-Path $pkgRoot ($caseName.Replace(' ', '-')); $caseOther = Join-Path $pkgRoot ($caseName.Replace(' ', '-').ToUpperInvariant())
+    [void](New-Item -ItemType Directory -Path $caseOwn -Force); Set-Content -LiteralPath (Join-Path $caseOwn 'setup.msi') -Value 'x'
+    [void](New-Item -ItemType Directory -Path $caseOther -Force); Set-Content -LiteralPath (Join-Path $caseOther 'old.msi') -Value 'x'
+    $caseSensitive = @(Get-ChildItem -LiteralPath $pkgRoot -Directory | Where-Object { $_.Name -ieq (Split-Path $caseOwn -Leaf) }).Count -eq 2
+    $pkC = Invoke-Api '/api/packaging'
+    if ($caseSensitive) { Check (@($pkC.orphans | Where-Object { $_.name -ceq (Split-Path $caseOther -Leaf) }).Count -eq 1 -and -not @($pkC.orphans | Where-Object { $_.name -ceq (Split-Path $caseOwn -Leaf) }).Count) 'packages: a folder with other capitals than the app''s is listed (Linux), the app''s own is not' ($pkC.orphans | ConvertTo-Json -Compress) }
+    else { Check (-not @($pkC.orphans | Where-Object { $_.name -ieq (Split-Path $caseOwn -Leaf) }).Count) 'packages: the app''s folder is not listed, whatever its capitals (Windows)' ($pkC.orphans | ConvertTo-Json -Compress) }
+    # Renamed with other capitals only: on Linux its folder follows (it stayed behind, and a second one was made).
+    Remove-Item -LiteralPath $caseOther -Recurse -Force -ErrorAction SilentlyContinue
+    $caseNew = $caseName.ToUpperInvariant()
+    $caseGet = Invoke-Api '/api/app-get' @{ name = $caseName }
+    $caseApp = $caseGet.app; $caseApp.appName = $caseNew
+    $caseRen = Invoke-Api '/api/app-save' @{ originalName = $caseName; version = $caseGet.version; app = $caseApp }
+    $caseNewDir = Join-Path $pkgRoot ($caseNew.Replace(' ', '-'))
+    if ($caseSensitive) { Check ($caseRen.ok -and @(Get-ChildItem -LiteralPath $pkgRoot -Directory | Where-Object { $_.Name -ceq (Split-Path $caseNewDir -Leaf) }).Count -eq 1 -and -not @(Get-ChildItem -LiteralPath $pkgRoot -Directory | Where-Object { $_.Name -ceq (Split-Path $caseOwn -Leaf) }).Count) 'rename with other capitals only: its packages folder follows (Linux)' ($caseRen | ConvertTo-Json -Compress) }
+    [void](Invoke-Api '/api/app-remove' @{ name = $(if ($caseRen.ok) { $caseNew } else { $caseName }) })
     $ownName = 'ZZ Own Remove ' + [guid]::NewGuid().ToString('N').Substring(0, 6)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $ownName; wingetId = ''; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() } })
     $ownDir = Join-Path $pkgRoot ($ownName.Replace(' ', '-'))
