@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.38.73
+
+- **Editor: Requirements is its own tab.**
+  - Requirements, dependencies and supersedence moved out of Install & detection, onto the sixth tab, Requirements.
+  - The fields show right away there; no line with Change to open first.
+  - Install & detection now holds only the commands and the detection rule, and fits without scrolling.
+- **The commands show every part.**
+  - The fixed parts (PowerShell, Find winget, the uninstall) are always in view, greyed. They used to be folded into
+    "3 fixed parts".
+  - Install and Uninstall each have a heading.
+- **Alignment:**
+  - Every value in the commands starts on one line, also plain text such as "winget install --id" or "none".
+  - The headings line up with the row labels.
+- **Return codes:** shown as a compact list, with long codes such as -1978335135 now readable in full.
+
 ## 2.38.72
 
 - **The uninstall command shows again in the editor for Winget apps** (Install & detection). All of its parts are

@@ -437,7 +437,8 @@ function renderWhere() {
   const [left, right] = form.querySelectorAll(':scope > .formgrid > section');
   const [dLeft, dRight] = dsec.querySelectorAll(':scope > .formgrid > section');
   // 2.38.67: five parts - what the app is, how its versions reach devices, who gets it, what Intune shows, how it installs.
-  const names = ['App', 'Updates', 'Who gets it', 'Details', 'Install & detection'];
+  // 2.38.73: and a sixth - when and in which order (requirements, dependencies, supersedence), out of Install & detection.
+  const names = ['App', 'Updates', 'Who gets it', 'Details', 'Install & detection', 'Requirements'];
   const pageOf = new Map();
   // Install & detection holds all of how it installs: the commands, the detection rule, the requirements, then the
   // dependencies and supersedence (moved under the requirements - one column, in the order they are looked at).
@@ -487,7 +488,7 @@ function renderWhere() {
   window.edRevealFor = msg => {
     const m = String(msg || ''), hit = [[/supersed|depend/i, 'dep'], [/detection|product code|registry|file detection/i, 'det'],
       [/install time|architecture|return code|disk|memory|processor|cpu|operating system|minimum os|restart/i, 'req']].find(([re]) => re.test(m));
-    if (hit) { unfold(hit[1]); setPage(4); }
+    if (hit) { unfold(hit[1]); setPage(hit[1] === 'det' ? 4 : 5); }
   };
   // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
   // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
@@ -502,11 +503,11 @@ function renderWhere() {
       // By Intune's own app type only (2.38.23): an app named like Office but packaged by hand (an Office Deployment Tool
       // package without its detection yet) needs this tab to get its commands and detection.
       const special = st || !!(!$('aWinget').value.trim() && row && row.msHint && row.hasAppId);
-      bar.children[4].hidden = special;
+      bar.children[4].hidden = special; bar.children[5].hidden = special;
       // Microsoft 365 and Store apps: Microsoft or the Store updates them - no Updates part either (2.38.67).
       bar.children[1].hidden = st;
       $('dlgApp').classList.toggle('is-special', special);
-      if ((special && cur === 4) || (st && cur === 1)) setPage(0);
+      if ((special && cur >= 4) || (st && cur === 1)) setPage(0);
     } catch (e) { }
     return st;
   };
@@ -530,7 +531,9 @@ function renderWhere() {
   const assign = (section, start, switches) => { let p = start; for (const c of section.children) { const sw = switches.find(([test]) => test(c)); if (sw) p = sw[1]; pageOf.set(c, p); } };
   assign(left, 0, [[c => c.id === 'aUpdHead', 1], [c => c.matches('h3.withtool'), 2]]);
   assign(right, 3, []);
-  for (const c of [...dLeft.children, ...dRight.children]) pageOf.set(c, 4);
+  for (const c of dLeft.children) pageOf.set(c, 4);
+  // Requirements and dependencies: their own part (2.38.73).
+  for (const c of dRight.children) pageOf.set(c, 5);
   // The install and uninstall commands belong with the detection rule.
   pageOf.set($('instRaw'), 4);
   pageOf.set($('instBlocks'), 4);
@@ -558,6 +561,8 @@ function renderWhere() {
     dsec.classList.toggle('offpage', i < 4);
     form.dataset.pg = String(i);
     if (i >= 4) dsec.open = true;
+    // Its own part (2.38.73): the requirements and dependencies show as fields at once - no line with Change to open first.
+    if (i === 5) { unfold('req'); unfold('dep'); }
     mark(i); dlg.scrollTop = 0;
   }
   // The page a field is on, brought up - for "go to the field" links and a required field left empty.
