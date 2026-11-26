@@ -582,6 +582,12 @@ try {
           jobLogId = was; chip.hidden = true; showView('apps'); return r;
         });
         check(chipGo, `${label}: Working... shows the running step's own log (Checks), not the empty run tray`);
+        // 2.38.62: Reload starts from nothing ticked.
+        await page.click(`#gridBody tr[data-name="${testApp}"]`);
+        const hadTick = await page.evaluate(() => selected.size);
+        await page.click('#btnAppsReload');
+        await page.waitForFunction(() => !document.getElementById('btnAppsReload').disabled, null, { timeout: 15000 }).catch(() => {});
+        check(hadTick === 1 && await page.evaluate(() => selected.size === 0 && !document.querySelector('#gridBody input:checked')), `${label}: Reload unticks the ticked apps`, String(hadTick));
         // Duplicate app: a copy to start from, under a new name.
         await page.evaluate(() => { selected.clear(); renderApps(); });
         await page.click(`#gridBody tr[data-name="${testApp}"]`);

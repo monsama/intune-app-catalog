@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.62
+
+- **Reload unticks the apps**: the Apps list's Reload button (and F5) start from nothing selected - an action right
+  after it no longer hits apps ticked before.
+
 ## 2.38.61
 
 A sweep of everything since 2.38.42 - security, bugs, GUI and usability.
