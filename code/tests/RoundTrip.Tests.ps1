@@ -201,6 +201,8 @@ try {
     $storePatch = @(& $calls | Where-Object { $_.method -eq 'PATCH' -and $_.uri -like "*/mobileApps/$idStore" }) | Select-Object -Last 1
     $sb = if ($storePatch) { $storePatch.body | ConvertFrom-Json } else { $null }
     Check ($sb -and $sb.owner -eq 'Team ZZ' -and $sb.developer -eq 'Dev ZZ' -and $sb.notes -eq 'store notes' -and $sb.isFeatured -eq $true) 'send: a Store app gets its owner, developer, notes and Featured flag' ($storePatch.body)
+    # 2.38.52: the Store's own description and publisher aren't sent on an update unless changed in the catalog.
+    Check ($sb -and -not ($sb.PSObject.Properties.Name -contains 'description') -and -not ($sb.PSObject.Properties.Name -contains 'publisher')) 'send: a Store app''s description and publisher stay the Store''s (not changed in the catalog)' ($storePatch.body)
 
     # Microsoft 365 Apps changed in the portal: Checks sees it, Pull takes it.
     $mem = Get-Content -LiteralPath "$answersFile.memory.json" -Raw | ConvertFrom-Json

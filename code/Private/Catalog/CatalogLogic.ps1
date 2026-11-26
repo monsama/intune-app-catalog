@@ -509,6 +509,31 @@ function Global:Set-ClearedFields {
         elseif ($was.Trim() -and -not $cleared.Contains($f)) { $cleared.Add($f) }
     }
     if ($New.PSObject.Properties['clearedFields']) { $New.clearedFields = @($cleared) } else { $New | Add-Member -NotePropertyName clearedFields -NotePropertyValue @($cleared) }
+    # The content a Microsoft Store app or Microsoft 365 Apps gets from Microsoft (2.38.52): taken over in Intune only
+    # once changed here (Get-OwnContentFields) - a description changed or emptied now is one of them from now on.
+    $own = New-Object System.Collections.Generic.List[string]
+    foreach ($c in @($(if ($null -ne $New.ownFields) { $New.ownFields } elseif ($Old) { $Old.ownFields }))) { if ($c -and -not $own.Contains([string]$c)) { $own.Add([string]$c) } }
+    if ($Old) { foreach ($f in (Get-OwnContentFieldNames)) { if ((ConvertTo-CanonicalLineEndings ([string]$Old.$f)).Trim() -cne (ConvertTo-CanonicalLineEndings ([string]$New.$f)).Trim() -and -not $own.Contains($f)) { $own.Add($f) } } }
+    if ($New.PSObject.Properties['ownFields']) { $New.ownFields = @($own) } else { $New | Add-Member -NotePropertyName ownFields -NotePropertyValue @($own) }
+}
+
+function Global:Get-OwnContentFieldNames {
+    # Pure: the fields Microsoft fills in for its own app types (Store apps, Microsoft 365 Apps) - see Test-OwnContentField.
+    return @('description', 'publisher', 'informationUrl', 'privacyUrl')
+}
+
+function Global:Test-OwnContentField {
+    <#
+      Pure (2.38.52): whether the catalog's -Field of -App goes to Intune and is compared with it. Always for Win32 apps;
+      for a Microsoft Store app and Microsoft 365 Apps, the description, publisher and links come from Microsoft and
+      are kept up there - only one changed in the catalog (metadata.ownFields) is taken over. Owner, developer,
+      notes and Featured are the organisation's own and always go.
+    #>
+    param($App, [string]$Field)
+    if ((Get-OwnContentFieldNames) -notcontains $Field) { return $true }
+    $msOwn = [bool]$App.office -and -not ([string]$App.wingetId).Trim()
+    if (-not $msOwn -and -not (Test-StoreProductId ([string]$App.wingetId))) { return $true }
+    return (@($(if ($App.metadata) { $App.metadata.ownFields })) -contains $Field)
 }
 
 function Global:Merge-CatalogMetadata {

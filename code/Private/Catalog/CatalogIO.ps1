@@ -18,6 +18,8 @@ function Global:ConvertTo-AppRecord {
             # Fields emptied in the catalog on purpose (2.38.34): sent to Intune as empty once, so its value goes too.
             # A field the catalog never had stays out - what was set in the portal is kept.
             clearedFields    = @(@($Raw.metadata.clearedFields) | Where-Object { [string]$_ -in 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion' } | ForEach-Object { [string]$_ } | Select-Object -Unique)
+            # A Store app's or Microsoft 365 Apps' description, publisher or links changed here (2.38.52) - see Test-OwnContentField.
+            ownFields        = @(@($Raw.metadata.ownFields) | Where-Object { [string]$_ -in 'description', 'publisher', 'informationUrl', 'privacyUrl' } | ForEach-Object { [string]$_ } | Select-Object -Unique)
             # Intune's "App version" (displayVersion) and "Show this as a
             # featured app in the Company Portal" (isFeatured) - the value
             # to push, not the version Intune last reported (that is the
@@ -422,6 +424,7 @@ function Global:ConvertTo-SingleAppJson {
         $metaFields.Add("    `"privacyUrl`": $(ConvertTo-JsonStringLiteral $m.privacyUrl)")
         $metaFields.Add("    `"notes`": $(ConvertTo-JsonStringLiteral $m.notes)")
         if (@($m.clearedFields | Where-Object { $_ }).Count) { $metaFields.Add("    `"clearedFields`": $(ConvertTo-JsonStringArray -Items @($m.clearedFields | Where-Object { $_ }) -IndentLevel 2)") }
+        if (@($m.ownFields | Where-Object { $_ }).Count) { $metaFields.Add("    `"ownFields`": $(ConvertTo-JsonStringArray -Items @($m.ownFields | Where-Object { $_ }) -IndentLevel 2)") }
         # null stays null - see ConvertTo-AppRecord
         $metaFields.Add("    `"appVersion`": $(if ($null -ne $m.appVersion) { ConvertTo-JsonStringLiteral ([string]$m.appVersion) } else { 'null' })")
         $metaFields.Add("    `"isFeatured`": $(if ($null -eq $m.isFeatured) { 'null' } elseif ($m.isFeatured) { 'true' } else { 'false' })")

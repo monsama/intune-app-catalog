@@ -124,6 +124,8 @@ $testableFunctionNames = @(
     "Get-MetadataWithoutOwnReleases",
     "Get-DeviceVersionCompareScript",
     "Set-ClearedFields",
+    "Get-OwnContentFieldNames",
+    "Test-OwnContentField",
     "Format-Count",
     "Test-KnownSelfUpdatingApp",
     "Test-AppUpdatesItself",
@@ -744,6 +746,15 @@ Set-ClearedFields -Old $scOld -New $scNew
 Assert-Equal 'notes,owner' (@($scNew.clearedFields | Sort-Object) -join ',') "Set-ClearedFields: a field emptied is added, one already waiting stays (2.38.34)"
 $scNew.owner = 'Bob'; Set-ClearedFields -Old $scOld -New $scNew
 Assert-Equal 'notes' (@($scNew.clearedFields) -join ',') "Set-ClearedFields: ...and taken off once it has a value again"
+# 2.38.52: a Store app's or Microsoft 365 Apps' text and links go to Intune only once changed in the catalog.
+$ocOld = [pscustomobject]@{ description = "From the Store`r`nline two"; publisher = 'Microsoft'; informationUrl = 'https://a'; privacyUrl = '' ; owner = ''; developer = ''; notes = ''; appVersion = '' }
+$ocNew = [pscustomobject]@{ description = "From the Store`nline two"; publisher = 'Microsoft'; informationUrl = 'https://b'; privacyUrl = ''; owner = ''; developer = ''; notes = ''; appVersion = '' }
+Set-ClearedFields -Old $ocOld -New $ocNew
+Assert-Equal 'informationUrl' (@($ocNew.ownFields) -join ',') "Set-ClearedFields (2.38.52): a link changed here becomes the catalog's own; a line-ending-only difference doesn't"
+$storeApp = [pscustomobject]@{ wingetId = '9WZDNCRFJ3PZ'; office = $null; metadata = $ocNew }
+$officeApp = [pscustomobject]@{ wingetId = ''; office = @{ channel = 'current' }; metadata = [pscustomobject]@{ ownFields = @() } }
+$win32App = [pscustomobject]@{ wingetId = 'Vendor.App'; office = $null; metadata = [pscustomobject]@{ ownFields = @() } }
+Assert-True ((Test-OwnContentField $storeApp 'informationUrl') -and -not (Test-OwnContentField $storeApp 'description') -and (Test-OwnContentField $storeApp 'owner') -and -not (Test-OwnContentField $officeApp 'description') -and (Test-OwnContentField $win32App 'description')) "Test-OwnContentField (2.38.52): Store and Microsoft 365 text from Microsoft unless changed here; owner always; Win32 always"
 $mgKeep = Merge-CatalogMetadata -Remote ([pscustomobject]@{ description = 'r'; owner = 'Portal' }) -Local ([pscustomobject]@{ description = 'l'; owner = ''; clearedFields = @('owner') }) -KeepLocalFields @('Owner')
 Assert-True ([string]$mgKeep.owner -eq '' -and @($mgKeep.clearedFields) -contains 'owner') "Merge-CatalogMetadata: keeping the catalog's emptied field keeps it marked for the next send (2.38.34)" ($mgKeep | ConvertTo-Json -Compress)
 # 2.38.41: counts without "(s)"

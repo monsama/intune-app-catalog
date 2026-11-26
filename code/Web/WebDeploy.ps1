@@ -115,6 +115,8 @@ function Global:Start-WebDeploy {
         }
         $resultPath = Join-Path $env:TEMP (".intunepkg_officeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
         $body = ConvertTo-OfficeSuiteBody -Name $a.appName -Description ([string]$(if ($a.metadata) { $a.metadata.description })) -Settings $a.office
+        # Microsoft's description stays in Intune on an update unless changed in the catalog (2.38.52, Test-OwnContentField).
+        if ($a.appId -and -not (Test-OwnContentField $a 'description')) { $body.Remove('description') }
         # Owner, developer, notes and Featured too (2.38.42) - before they never left the catalog for Microsoft 365 Apps.
         if ($a.metadata) {
             foreach ($k in 'owner', 'developer', 'notes') { $v = [string]$a.metadata.$k; if ($v -or @($a.metadata.clearedFields) -contains $k) { $body[$k] = $v } }
@@ -143,7 +145,11 @@ function Global:Start-WebDeploy {
         $resultPath = Join-Path $env:TEMP (".intunepkg_storeapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
         $config = @{ TenantId = $Global:App.GraphTenantId; ClientId = $Global:App.GraphClientId; CertificateThumbprint = $Global:App.GraphCertificateThumbprint
             AppName = $a.appName; AppId = [string]$a.appId; PackageIdentifier = [string]$a.wingetId
-            Description = [string]$(if ($m) { $m.description }); Publisher = [string]$(if ($m) { $m.publisher }); InformationUrl = [string]$(if ($m) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m) { $m.privacyUrl }); ClearedFields = @($(if ($m) { $m.clearedFields }) | Where-Object { $_ })
+            # The Store's own text and links (2.38.52): sent when the app is created, afterwards only those changed in the
+            # catalog (Test-OwnContentField) - an empty value leaves Intune's as it is (CreateStoreApp).
+            Description = [string]$(if ($m -and (-not $a.appId -or (Test-OwnContentField $a 'description'))) { $m.description }); Publisher = [string]$(if ($m -and (-not $a.appId -or (Test-OwnContentField $a 'publisher'))) { $m.publisher })
+            InformationUrl = [string]$(if ($m -and (-not $a.appId -or (Test-OwnContentField $a 'informationUrl'))) { $m.informationUrl }); PrivacyUrl = [string]$(if ($m -and (-not $a.appId -or (Test-OwnContentField $a 'privacyUrl'))) { $m.privacyUrl })
+            ClearedFields = @($(if ($m) { $m.clearedFields }) | Where-Object { $_ -and ($_ -notin 'informationUrl', 'privacyUrl' -or -not $a.appId -or (Test-OwnContentField $a $_)) })
             owner = [string]$(if ($m) { $m.owner }); developer = [string]$(if ($m) { $m.developer }); notes = [string]$(if ($m) { $m.notes }); IsFeatured = $(if ($m -and $null -ne $m.isFeatured) { [bool]$m.isFeatured } else { $null })
             RunAsAccount = $(if ($m -and [string]$m.installContext -eq 'User') { 'user' } else { 'system' }); OutputResultPath = $resultPath }
         # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
@@ -347,6 +353,10 @@ function Global:Complete-WebPull {
         $r.Metadata = Get-MetadataWithoutOwnReleases -Metadata $r.Metadata -App $app -CatalogNames @($all | ForEach-Object { [string]$_.appName }) -LocalMetadata $app.metadata -NoRelations:$noRel
         if ($noRel) { Write-Log "[WARN] $($r.AppName): Intune's dependencies and supersedence couldn't be read - the catalog's are kept." }
         $fieldDiffs = @(Get-CatalogMetadataFieldDiffs -Local $app.metadata -Remote $r.Metadata -OdataType $r.OdataType)
+        # A Store app's or Microsoft 365 Apps' text and links from Microsoft, not changed here (2.38.52): Intune's are
+        # simply taken - nothing to ask about (Test-OwnContentField).
+        $labelKey = @{ 'Description' = 'description'; 'Publisher' = 'publisher'; 'Information URL' = 'informationUrl'; 'Privacy URL' = 'privacyUrl' }
+        $fieldDiffs = @($fieldDiffs | Where-Object { -not $labelKey.ContainsKey([string]$_.Field) -or (Test-OwnContentField $app $labelKey[[string]$_.Field]) })
         # @() around the whole if: one difference on its own would otherwise be
         # unrolled to a single object without .Count (Windows PowerShell 5.1).
         $groupDiffs = @(if ($r.GroupFetchOk) { Get-GroupFieldDiffs -LocalApp $app -RemoteResult $r })
