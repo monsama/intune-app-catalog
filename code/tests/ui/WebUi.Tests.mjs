@@ -724,9 +724,9 @@ try {
         await page.waitForSelector('#instBlocks:not([hidden]) .bfixed', { timeout: 8000 });
         check(await page.evaluate(() => document.getElementById('mInstallCommand').readOnly && document.querySelectorAll('#instBlocks .blk.lock').length >= 3), `${label}: the commands show as blocks, the text read-only`);
         // 2.29.1: the fixed parts fold into one line, the raw commands under the blocks; both open on request.
-        check(await page.evaluate(() => !document.getElementById('instRaw').open && [...document.querySelectorAll('#instBlocks .blk.lock')].every(b => !b.offsetParent)), `${label}: the fixed parts and the raw commands are folded away`);
+        check(await page.evaluate(() => !document.getElementById('instRaw').open && [...document.querySelectorAll('#instBlocks .blk.lock:not(.usum)')].every(b => !b.offsetParent) && !!document.querySelector('#instBlocks .blk.usum')?.offsetParent), `${label}: the fixed parts and the raw commands are folded away - the uninstall still shows as one line (2.38.72)`);
         await page.click('#instBlocks .bfixed');
-        check(await page.evaluate(() => [...document.querySelectorAll('#instBlocks .blk.lock')].every(b => !!b.offsetParent)), `${label}: the fixed parts show on a click`);
+        check(await page.evaluate(() => [...document.querySelectorAll('#instBlocks .blk.lock:not(.usum)')].every(b => !!b.offsetParent) && !document.querySelector('#instBlocks .blk.usum')?.offsetParent), `${label}: the fixed parts show on a click (the uninstall line then in its parts)`);
         await page.click('#instBlocks .bfixed');
         await page.evaluate(() => { try { localStorage.removeItem('blocksShowFixed'); } catch (e) { } });
         await unnamed('the blocks'); await shot('blocks');

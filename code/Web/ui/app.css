@@ -2080,3 +2080,7 @@ pre.log .ln:has(> .lts) { padding-left: 9ch; text-indent: -9ch; }
 .readychip { height: 34px; }
 /* The starter set's sticky header covers the rows scrolled under it. */
 #alGrid thead th { background: var(--surface); box-shadow: 0 1px 0 var(--bd); }
+/* A winget app's uninstall: one line, shown also while the fixed parts are folded (2.38.72); folded away when they show. */
+.brec:not(.showfixed) .blk.lock.usum { display: grid; }
+.brec.showfixed .blk.usum { display: none; }
+.brec .blk.usum .bval { padding-left: 0; }
