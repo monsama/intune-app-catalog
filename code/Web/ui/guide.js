@@ -157,7 +157,7 @@ async function fillPanel(a) {
     a.lobToRetire ? el('div', { class: 'plob' }, el('span', { text: 'The MSI line-of-business app this one replaces is still in Intune. Once this Win32 app has its groups, retire it: devices keep the software - this app finds it by the same MSI product code.' }),
       btn('Retire the MSI app...', 'Delete the old MSI line-of-business app from Intune', () => retireLobApp(a.name))) : '',
     // An MSI line-of-business app in Intune, not moved yet: what to do.
-    !a.lobToRetire && a.hasAppId && isLobMsi(a) ? el('div', { class: 'plob' }, el('span', { text: "In Intune it is an MSI line-of-business app - it can't be updated as Win32, and Intune never gives the .msi back. Upload the .msi in the editor (Basics), Package it, then Send to Intune creates it as a Win32 app with its groups." })) : '',
+    !a.lobToRetire && a.hasAppId && isLobMsi(a) ? el('div', { class: 'plob' }, el('span', { text: "In Intune it is an MSI line-of-business app - it can't be updated as Win32, and Intune never gives the .msi back. Upload the .msi in the editor (App), Package it, then Send to Intune creates it as a Win32 app with its groups." })) : '',
     app.managedUpdates ? releaseTimeline(pilot ? pilot.ring : (a.hasAppId ? 99 : -1), !!(pilot && pilot.fastTrack)) : '',
     el('div', { class: 'pfacts' },
       // No version to pick for an app Microsoft or the Store keeps up to date - the row isn't shown at all.
@@ -278,12 +278,41 @@ function updateReady() {
   ].filter(Boolean);
   const done = items.filter(i => i[0]).length;
   $('readyBox').querySelector('h3').textContent = done === items.length ? 'Ready to send to Intune' : `Ready to send? ${done} of ${items.length}`;
+  // The footer's chip (2.38.67): on every part of the editor - what is still missing, the list a click away.
+  const first = items.find(i => !i[0]);
+  $('readyChip').textContent = done === items.length ? '✓ Ready to send' : `${done} of ${items.length} · ${String(first[1]).replace(/ \(.*$/, '').replace(/ - .*$/, '')}`;
+  $('readyChip').classList.toggle('allok', done === items.length);
   $('readyBox').classList.toggle('allok', done === items.length);
   $('readyList').replaceChildren(...items.map(([ok, text, field, act]) => el('li', { class: ok ? 'ok' : 'todo' },
     el('span', { class: 'mark', 'aria-hidden': 'true', text: ok ? '✓' : '!' }),
     act && !ok ? el('span', {}, text, ' ', el('button', { type: 'button', class: 'btn small', text: act.label, onclick: () => { act.run(); updateReady(); } }))
-    : field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text }))));
+    : field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { readyPopShow(false); const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text }))));
 }
+// The list behind the chip: opened and closed by it, closed by Escape, a click elsewhere or going to a field.
+function readyPopShow(on) { $('readyPop').hidden = !on; $('readyChip').setAttribute('aria-expanded', String(on)); }
+$('readyChip').addEventListener('click', e => { e.stopPropagation(); readyPopShow($('readyPop').hidden); });
+$('dlgApp').addEventListener('click', e => { if (!$('readyPop').hidden && !e.target.closest('#readyPop, #readyChip')) readyPopShow(false); });
+$('dlgApp').addEventListener('keydown', e => { if (e.key === 'Escape' && !$('readyPop').hidden) { e.preventDefault(); e.stopPropagation(); readyPopShow(false); $('readyChip').focus(); } }, true);
+$('dlgApp').addEventListener('close', () => readyPopShow(false));
+// More (2.38.67): History and Remove from catalog - out of the footer's first row, the removal no longer beside Cancel.
+// The menu sits in the dialog itself, not the footer: the footer's blur makes it the frame of anything fixed inside it.
+$('dlgApp').append($('appEdMenu'));
+$('btnAppMore').addEventListener('click', e => {
+  e.stopPropagation();
+  const m = $('appEdMenu'), open = m.hidden;
+  if (!open) { m.hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); return; }
+  m.hidden = false;
+  // Above the button (it sits at the bottom of the window) - placeMenu keeps it on screen and focuses its first item.
+  const r = $('btnAppMore').getBoundingClientRect();
+  placeMenu(m, r.left, r.top - m.offsetHeight - 4);
+  $('btnAppMore').setAttribute('aria-expanded', 'true');
+});
+$('appEdMenu').addEventListener('click', () => { $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); });
+$('dlgApp').addEventListener('click', e => { if (!$('appEdMenu').hidden && !e.target.closest('#appEdMenu, #btnAppMore')) { $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); } });
+$('appEdMenu').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); $('btnAppMore').focus(); } else if (typeof menuStep === 'function') menuStep(e, $('appEdMenu')); });
+// The assignment filter folded into one line (2.38.67) - open when one is set.
+function filterSummary() { const f = $('aFilter').value.trim(); $('aFilterSum').textContent = f ? `- ${f} (${$('aFilterMode').value === 'exclude' ? 'excluded' : 'included'})` : '- none'; }
+$('aFilter').addEventListener('input', filterSummary); $('aFilterMode').addEventListener('change', filterSummary);
 $('appForm').addEventListener('input', () => updateReady());
 $('appForm').addEventListener('change', () => updateReady());
 
@@ -397,7 +426,8 @@ function renderWhere() {
   const form = $('appForm'), dlg = $('dlgApp'), dsec = $('deploySec');
   const [left, right] = form.querySelectorAll(':scope > .formgrid > section');
   const [dLeft, dRight] = dsec.querySelectorAll(':scope > .formgrid > section');
-  const names = ['Basics', 'Who gets it', 'Details', 'Install & detection'];
+  // 2.38.67: five parts - what the app is, how its versions reach devices, who gets it, what Intune shows, how it installs.
+  const names = ['App', 'Updates', 'Who gets it', 'Details', 'Install & detection'];
   const pageOf = new Map();
   // Install & detection holds all of how it installs: the commands, the detection rule, the requirements, then the
   // dependencies and supersedence (moved under the requirements - one column, in the order they are looked at).
@@ -447,7 +477,7 @@ function renderWhere() {
   window.edRevealFor = msg => {
     const m = String(msg || ''), hit = [[/supersed|depend/i, 'dep'], [/detection|product code|registry|file detection/i, 'det'],
       [/install time|architecture|return code|disk|memory|processor|cpu|operating system|minimum os|restart/i, 'req']].find(([re]) => re.test(m));
-    if (hit) { unfold(hit[1]); setPage(3); }
+    if (hit) { unfold(hit[1]); setPage(4); }
   };
   // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
   // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
@@ -462,9 +492,11 @@ function renderWhere() {
       // By Intune's own app type only (2.38.23): an app named like Office but packaged by hand (an Office Deployment Tool
       // package without its detection yet) needs this tab to get its commands and detection.
       const special = st || !!(!$('aWinget').value.trim() && row && row.msHint && row.hasAppId);
-      bar.children[3].hidden = special;
+      bar.children[4].hidden = special;
+      // Microsoft 365 and Store apps: Microsoft or the Store updates them - no Updates part either (2.38.67).
+      bar.children[1].hidden = st;
       $('dlgApp').classList.toggle('is-special', special);
-      if (special && cur === 3) setPage(0);
+      if ((special && cur === 4) || (st && cur === 1)) setPage(0);
     } catch (e) { }
     return st;
   };
@@ -472,7 +504,9 @@ function renderWhere() {
     const id = $('aWinget').value.trim();
     detOwn = false;
     const store = storeState();
-    grid.classList.toggle('f-det', (!!id || store) && (store || !$('xType').value));
+    // A rule made for winget (its script names the Winget ID) folds away like none at all (2.38.67): nothing to set there.
+    const madeForWinget = !!id && $('xType').value === 'Script' && $('xScript').value.includes(`$AppToDetect = '${id}'`);
+    grid.classList.toggle('f-det', (!!id || store) && (store || !$('xType').value || madeForWinget));
     grid.classList.add('f-req', 'f-dep');
     foldSummaries();
   };
@@ -484,12 +518,12 @@ function renderWhere() {
   // A winget ID typed in (a new app): its detection is made for winget - folded, unless a rule of its own was asked for.
   $('aWinget').addEventListener('input', () => { const store = storeState(); if (!$('aWinget').value.trim()) unfold('det'); else if (store || (!detOwn && !$('xType').value)) grid.classList.add('f-det'); });
   const assign = (section, start, switches) => { let p = start; for (const c of section.children) { const sw = switches.find(([test]) => test(c)); if (sw) p = sw[1]; pageOf.set(c, p); } };
-  assign(left, 0, [[c => c.matches('h3.withtool'), 1]]);
-  assign(right, 2, [[c => c.matches('.ready'), 0], [c => c.tagName === 'H3', 2]]);
-  for (const c of [...dLeft.children, ...dRight.children]) pageOf.set(c, 3);
+  assign(left, 0, [[c => c.id === 'aUpdHead', 1], [c => c.matches('h3.withtool'), 2]]);
+  assign(right, 3, []);
+  for (const c of [...dLeft.children, ...dRight.children]) pageOf.set(c, 4);
   // The install and uninstall commands belong with the detection rule.
-  pageOf.set($('instRaw'), 3);
-  pageOf.set($('instBlocks'), 3);
+  pageOf.set($('instRaw'), 4);
+  pageOf.set($('instBlocks'), 4);
   let cur = 0;
   const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...names.map((name, i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
     setPage(i);
@@ -511,11 +545,9 @@ function renderWhere() {
       [...s.children].forEach(c => c.classList.remove('pgfirst'));
       const first = [...s.children].find(c => pageOf.get(c) === i); if (first) first.classList.add('pgfirst');
     }
-    dsec.classList.toggle('offpage', i < 3);
-    // Basics: the "Ready to send?" box is a narrow column beside the fields, not half the window.
-    left.parentElement.classList.toggle('pg0', i === 0);
+    dsec.classList.toggle('offpage', i < 4);
     form.dataset.pg = String(i);
-    if (i >= 3) dsec.open = true;
+    if (i >= 4) dsec.open = true;
     mark(i); dlg.scrollTop = 0;
   }
   // The page a field is on, brought up - for "go to the field" links and a required field left empty.

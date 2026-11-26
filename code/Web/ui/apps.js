@@ -231,6 +231,7 @@ function fillEditor(a) {
   $('gRequired').value = (a.requiredFor || []).join('\n'); $('gAvailable').value = (a.availableFor || []).join('\n');
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
   $('aFilter').value = a.assignmentFilter || ''; $('aFilterMode').value = a.assignmentFilterMode === 'exclude' ? 'exclude' : 'include'; $('filterNote').textContent = '';
+  $('aFilterFold').open = !!a.assignmentFilter; if (typeof filterSummary === 'function') filterSummary();
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
   fillDeploy(a.deploy);
@@ -297,7 +298,8 @@ function showSrc() {
   // Microsoft 365: its settings instead of managed updates, a release rule and a package - Microsoft updates it on its channel.
   $('aOfficeBox').hidden = !office;
   // A Store app neither (2.38.23) - the Store updates it.
-  $('aManaged').parentElement.hidden = office || editorSrc === 'store';
+  // A Winget app (2.38.67): "Install with" below says it (managed updates is one of its choices) - not a tick box too.
+  $('aManaged').parentElement.hidden = office || editorSrc === 'store' || editorSrc === 'winget';
   if (office || editorSrc === 'store') $('aManaged').checked = false;
   // Microsoft's app: its publisher, when nothing is set yet.
   if (office && !$('mPublisher').value.trim()) { $('mPublisher').value = 'Microsoft'; if (!$('mDeveloper').value.trim()) $('mDeveloper').value = 'Microsoft'; }
@@ -503,7 +505,10 @@ async function refreshMethod() {
   let m = r.current || 'Custom';
   // Managed ticked: Save pins the commands to the App version, whatever they are now.
   if ($('aManaged').checked) m = 'Managed'; else if (m === 'Managed') m = 'Custom';
-  $('aMethod').value = m; $('aMethodInfo').textContent = methodText(m, r.pinned);
+  $('aMethod').value = m;
+  // What the hidden managed-updates line said (a version in pilot, superseded ones) - under the choice now (2.38.67).
+  const rel = $('aManagedNote').textContent.replace(/^- /, '').replace(/ - /g, '; ');
+  $('aMethodInfo').textContent = methodText(m, r.pinned) + (m === 'Managed' && rel ? ` Now: ${rel}.` : '');
   if (r.current === 'Managed' || r.current === 'Winget') genFor = { id, method: r.current };
 }
 // The Winget ID the commands were generated for (and how): a new ID writes them again for it - unless they were
@@ -674,6 +679,7 @@ async function openEditor(name) {
   }
   $('btnRemoveApp').hidden = !name;
   $('btnAppHistory').hidden = !name;
+  $('btnAppMore').hidden = !name;
   $('dlgApp').showModal();
   if (typeof fillBtnSync === 'function') fillBtnSync();
   editorSnapshot = editorState();
@@ -1845,7 +1851,7 @@ function versionCell(a) {
   // An own package watching a winget package (2.36.0): an arrow when winget has a newer one - Get new installer fetches it.
   const watched = !a.wingetId && a.watchWinget && a.newerOnWinget && !pilot ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget (${a.watchWinget}) has ${a.wingetVersion} - More > Get new installer puts it in its folder, then release it.` }) : '';
   if (!a.wingetId) return a.version ? [el('span', { class: 'vpin', title: `Its package installs ${a.version} - a new installer goes out with Release new version (managed) or Package + Send.` }, a.version), pilot, watched]
-    : [el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' })];
+    : [el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (App); Updates > App version sets it.' })];
   if (a.managed) {
     if (!a.version) return [el('span', { class: 'vwarn', text: 'not pinned yet', title: a.hasAppId ? 'Managed updates, but no App version yet: Set version (winget\'s current one) - until then it installs the newest.' : "Managed updates need the version to pin before it can be sent to Intune: Set version (winget's current one)." })];
     const lock = el('span', { class: 'vlock' }); lock.innerHTML = lockSvg;

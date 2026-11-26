@@ -468,7 +468,7 @@ async function wauSwitch() {
   const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install & detection): ${r.carried.join('; ')}.` : '') +
     ((r.dropped || []).length ? ` Left out options winget's own command can't take - check these install as you want: ${r.dropped.join('; ')}.` : '');
   const ids = ((r.tookId || []).length ? ` Winget ID taken from the WAU command (none was set): ${r.tookId.join('; ')}.` : '') +
-    ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (Basics), then Switch them again.` : '');
+    ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (App), then Switch them again.` : '');
   // Nothing changed: nothing to undo.
   if (!r.changed.length) { toast(msg + ids, (r.byHand || []).length + (r.mismatch || []).length > 0); loadHome(); return; }
   if (r.deployed.length) {

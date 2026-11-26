@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.38.67
+
+- **The app editor, simplified.** It now has five parts:
+  - **App:** name, where it installs from, ID, link to Intune, icon, and its own installer.
+  - **Updates:** how new versions reach devices, the App version, and the release rule.
+  - **Who gets it:** the assignments.
+  - **Details:** what Intune and the Company Portal show.
+  - **Install & detection:** commands, detection, requirements and dependencies.
+- **Winget apps** have one control for how new versions reach devices ("Install with": managed updates, or the
+  winget command), not also a "Managed updates" tick box. A version in pilot or kept as superseded is said under
+  the choice.
+- **A detection rule made for winget** folds to one line like none at all - nothing to set there.
+- **"Ready to send?"** is a chip in the footer, on every part: what is still missing, with the list one click away
+  and each item a link to its field.
+- **History and Remove from catalog** are under More in the footer; Cancel and Save stand alone on the right.
+- **The assignment filter** folds into one line under the groups, open when one is set. The list of groups used in
+  the catalog is gone: the group boxes suggest them while you type.
+- **Empty install and uninstall commands** say what goes there.
+
 ## 2.38.66
 
 - **TeamViewer and TeamViewer QuickSupport in the starter set (recommended) are fetched from TeamViewer, not
