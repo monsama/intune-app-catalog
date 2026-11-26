@@ -975,12 +975,13 @@ dialog .wctl > button.wc-close:hover, dialog .wctl > button.wc-close:focus-visib
 .wtitle.movable { cursor: move; user-select: none; }
 dialog.maxed { width: calc(100vw - 16px) !important; max-width: none !important; height: calc(100vh - 16px); max-height: none !important; margin: 8px; transform: none !important; }
 #dlgTray { position: fixed; inset: auto 16px 40px auto; margin: 0; padding: 0; z-index: 60; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-#dlgTray .tray-chip { display: inline-flex; align-items: center; border: 1px solid var(--bd); border-radius: var(--r-m); background: var(--surface); box-shadow: var(--shadow); font-size: 12px; overflow: hidden; }
+#dlgTray .tray-chip { display: inline-flex; align-items: center; border: 1px solid var(--bd); border-radius: var(--r-l); background: var(--surface); box-shadow: 0 6px 20px rgba(16, 24, 40, .18); font-size: 12px; overflow: hidden; position: relative; padding-left: 3px; }
+#dlgTray .tray-chip::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
 #dlgTray button { border: 0; background: transparent; color: var(--fg); cursor: pointer; padding: 7px 10px; font: inherit; }
 #dlgTray .tray-open { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 #dlgTray .tray-open:hover { background: var(--hover); }
 #dlgTray .tray-x { padding: 7px 9px; color: var(--muted); }
-#dlgTray .tray-x:hover { color: #fff; background: #c42b1c; }
+#dlgTray .tray-x:hover { color: var(--fg); background: var(--hover); }
 
 .toolbar > .pagebtns { margin-left: 4px; padding-left: 8px; border-left: 1px solid var(--bd); }
 .toolbar > .spacer + .pagebtns, .toolbar > .pagebtns:only-child { border-left: 0; }
@@ -1923,12 +1924,38 @@ input[type=radio]:disabled { opacity: .5; cursor: default; }
 .stage .btn.small.next { min-width: 112px; justify-content: center; text-align: center; }
 /* 2.38.39: one small window per send, side by side in the bottom right corner - the newest left of the others. */
 .sendstack { position: fixed; right: 16px; bottom: 16px; z-index: 41; display: flex; flex-direction: row-reverse; flex-wrap: wrap-reverse; align-items: flex-end; gap: 10px; max-width: calc(100vw - 32px); max-height: 60vh; overflow-y: auto; pointer-events: none; }
-.sendcard { pointer-events: auto; width: 320px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 14px; box-shadow: 0 10px 32px rgba(16, 24, 40, .25); box-sizing: border-box; }
-.sendcard .trayhead { display: flex; align-items: center; gap: 8px; }
-.sendcard .trayhead h2 { margin: 0; font-size: 14px; }
-.sendcard .sub { margin: 4px 0 0; }
-.sendcard .log { max-height: 26vh; margin-top: 8px; font-size: 11px; }
-.sendcard.failed { border-color: var(--err, #c42b1c); }
+/* 2.38.69: the send cards look like the dialogs - a status mark, title and app, a bar while it runs, the log folded. */
+.sendcard { pointer-events: auto; width: 320px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--bd); border-radius: var(--r-l); padding: 12px 12px 10px 14px; box-shadow: 0 10px 32px rgba(16, 24, 40, .22); box-sizing: border-box; overflow: hidden; position: relative; transition: padding .2s; }
+.sendcard::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--bd); }
+.sendcard.sending::before { background: var(--accent); } .sendcard.sent::before { background: var(--ok); } .sendcard.failed::before { background: var(--err); }
+.sendcard .shead { display: flex; align-items: center; gap: 10px; }
+.sendcard .smark { flex: none; width: 20px; height: 20px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--bd2); color: var(--muted); }
+.sendcard.sending .smark { background: none; border: 2px solid var(--accent-soft); border-top-color: var(--accent); animation: sspin .8s linear infinite; box-sizing: border-box; }
+.sendcard.sent .smark { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+.sendcard.failed .smark { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+@keyframes sspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sendcard.sending .smark { animation: none; } }
+.sendcard .stitle { flex: 1; min-width: 0; display: grid; }
+.sendcard .stitle h2 { margin: 0; font-size: 13px; font-weight: 600; }
+.sendcard .sapp { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sendcard .sstate { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.sendcard.sent .sstate { color: var(--ok); } .sendcard.failed .sstate { color: var(--err); font-weight: 600; }
+.sendcard .sclose { flex: none; width: 24px; height: 24px; border: 0; border-radius: var(--r-s); background: none; color: var(--muted); font-size: 16px; line-height: 1; cursor: pointer; }
+.sendcard .sclose:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
+.sendcard .sclose:disabled { opacity: .35; cursor: default; }
+.sendcard .sbar { height: 3px; margin: 10px 0 0; border-radius: 999px; background: var(--bd2); overflow: hidden; display: none; }
+.sendcard.sending .sbar { display: block; }
+.sendcard .sbar span { display: block; width: 40%; height: 100%; background: var(--accent); border-radius: 999px; animation: sbar 1.3s ease-in-out infinite; }
+@keyframes sbar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .sendcard .sbar span { animation: none; width: 100%; } }
+.sendcard .sfoot { display: flex; align-items: center; gap: 8px; }
+.sendcard .sfoot:has(> :not([hidden])) { margin-top: 8px; }
+.sendcard .slog { flex: 1; min-width: 0; }
+.sendcard .slog > summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+.sendcard .slog .log { max-height: 26vh; margin-top: 6px; font-size: 11px; }
+.sendcard.folded { padding-top: 8px; padding-bottom: 8px; }
+.sendcard.folded .sfoot { display: none; }
+.sendstack .smore { pointer-events: auto; align-self: flex-end; font-size: 12px; color: var(--muted); background: var(--surface); border: 1px solid var(--bd); border-radius: 999px; padding: 4px 10px; box-shadow: var(--shadow); }
 @media (max-width: 720px) { .sendstack { flex-direction: column-reverse; flex-wrap: nowrap; } .sendcard { width: auto; } }
 .rwhat .pill { margin-left: 8px; vertical-align: 1px; }
 #sec-about .cols > .col.wide { grid-column: 1 / -1; }
@@ -2000,3 +2027,12 @@ input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
 #viewGroups .gscope { flex: 0 1 auto; width: auto; min-width: 0; }
 #viewGroups .gfilter { display: flex; align-items: center; gap: 8px; }
 #viewGroups .gfilter .muted { flex: 1 1 auto; }
+/* Side panel (2.38.69): the stage on its own line, its explanation under it - the pill sat inside wrapped text. */
+.apppanel .pstage { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+/* A failed card: the log the full width, Try again under it. */
+.sendcard .sfoot { flex-wrap: wrap; }
+.sendcard .slog[open] { flex: 1 1 100%; }
+.sendcard .sfoot > .btn { margin-left: auto; }
+/* The cards line up at their bottom edge (2.38.69): with wrap-reverse the cross axis runs upward, so flex-start is the bottom. */
+.sendstack { align-items: flex-start; }
+.sendstack .smore { align-self: flex-start; }

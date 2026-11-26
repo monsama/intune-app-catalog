@@ -40,6 +40,8 @@ function renderScripts() {
 }
 $('scriptSearch').addEventListener('input', renderScripts);
 $('btnScriptsReload').addEventListener('click', loadScripts);
+// The same round Reload icon as Apps, Updates and Groups (2.38.69).
+if (typeof reloadIcon === 'function') reloadIcon('btnScriptsReload');
 $('btnScriptsFolder').addEventListener('click', () => openFolder('scripts-folder'));
 $('btnScriptNew').addEventListener('click', () => openScript(null));
 $('btnScriptEdit').addEventListener('click', () => scriptSel && openScript(scriptSel));
