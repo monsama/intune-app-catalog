@@ -1892,9 +1892,12 @@ label > input, .inputrow input { font-family: inherit; }
 /* Checks: no empty band when there is nothing to say. */
 #checkNotes:empty { display: none; }
 /* Radio buttons drawn like the checkboxes - the browser's own looked disabled in the dark theme. */
-input[type=radio] { appearance: none; -webkit-appearance: none; border: 1.5px solid var(--bd); border-radius: 50%; display: inline-grid; place-items: center; background: var(--surface); margin: 0; cursor: pointer; flex: none; }
-input[type=radio]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .1s; }
-input[type=radio]:checked { border-color: var(--accent); }
+/* Radio buttons (2.38.51): a ring you can see on the dark theme too, and a filled dot when chosen. The dot is a block
+   in a grid - label.chk sets its inputs inline-block, which left the empty ::before without a size (no dot at all). */
+input[type=radio], label.chk > input[type=radio] { appearance: none; -webkit-appearance: none; box-sizing: border-box; width: 16px !important; height: 16px !important; min-width: 16px; padding: 0 !important; border: 1.5px solid var(--muted) !important; border-radius: 50% !important; display: inline-grid !important; place-items: center; background: var(--surface) !important; margin: 0; cursor: pointer; flex: none; box-shadow: none; transition: border-color .1s, background .1s; }
+input[type=radio]::before { content: ''; display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .1s; }
+input[type=radio]:hover { border-color: var(--accent) !important; }
+input[type=radio]:checked { border-color: var(--accent) !important; }
 input[type=radio]:checked::before { transform: scale(1); }
 input[type=radio]:disabled { opacity: .5; cursor: default; }
 /* Add apps > PowerShell script: the two script boxes one under the other while the dialog is narrow. */
