@@ -1035,7 +1035,14 @@ function Global:Invoke-WebHousekeeping {
     if (Test-Path -LiteralPath $bk) { foreach ($i in @(Get-ChildItem -LiteralPath $bk -Directory -Filter 'app-edit_*' -ErrorAction SilentlyContinue)) { if ($i.Name -match '^app-edit_\d{4}-\d{2}-\d{2}$' -and (& $old $i 180)) { $n += & $drop $i } } }
     # Packages folders of removed apps (2.38.47): kept 30 days to get one back, then gone.
     $rp = Join-Path $bk 'removed-packages'
-    if (Test-Path -LiteralPath $rp) { foreach ($i in @(Get-ChildItem -LiteralPath $rp -Directory -ErrorAction SilentlyContinue)) { if ($i.Name -match '_\d{8}-\d{6}$' -and (& $old $i 30)) { $n += & $drop $i } } }
+    # Their age by the time in the name (2.38.61): a move keeps a folder's own time, so it said nothing about the move.
+    if (Test-Path -LiteralPath $rp) {
+        foreach ($i in @(Get-ChildItem -LiteralPath $rp -Directory -ErrorAction SilentlyContinue)) {
+            if ($i.Name -notmatch '_(\d{8}-\d{6})$') { continue }
+            $at = [datetime]::MinValue
+            if ([datetime]::TryParseExact($Matches[1], 'yyyyMMdd-HHmmss', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$at) -and ((Get-Date) - $at).TotalDays -gt 30) { $n += & $drop $i }
+        }
+    }
     $lg = Get-AppFolder -Kind Logs
     if (Test-Path -LiteralPath $lg) { foreach ($i in @(Get-ChildItem -LiteralPath $lg -File -Filter 'intune-deployment-*.log' -ErrorAction SilentlyContinue)) { if (& $old $i 90) { $n += & $drop $i } } }
     if ($n) { Write-Log "[INFO] Housekeeping: $n old item(s) removed (temporary files, backups older than 180 days, removed apps' packages folders older than 30 days, logs older than 90 days)." }

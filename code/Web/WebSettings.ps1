@@ -308,7 +308,7 @@ function Global:Invoke-WebOrphanPackageCleanup {
     # The folders above moved to Backups\removed-packages (deleted from there after 30 days by the housekeeping).
     $moved = New-Object System.Collections.Generic.List[string]; $failed = New-Object System.Collections.Generic.List[string]
     foreach ($o in @(Get-WebOrphanPackageFolders)) {
-        try { $t = Move-WebPackageFolderToBackups -Name $o.Name; if ($t) { $moved.Add($o.Name) } } catch { $failed.Add("$($o.Name): $($_.Exception.Message)") }
+        try { $t = Move-WebPackageFolderToBackups -FolderName $o.Name; if ($t) { $moved.Add($o.Name) } } catch { $failed.Add("$($o.Name): $($_.Exception.Message)") }
     }
     if ($moved.Count) { Write-Log "[OK] Packages folders no app uses moved to Backups: $($moved -join ', ')." }
     return @{ ok = $true; moved = $moved.ToArray(); failed = $failed.ToArray() }
