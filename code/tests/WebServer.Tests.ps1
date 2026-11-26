@@ -668,10 +668,17 @@ try {
     }
     $scBuilt = @(Get-ChildItem -LiteralPath $scDir -Filter '*.intunewin' -File -ErrorAction SilentlyContinue)
     Check ($scDone -and $scBuilt.Count -eq 1 -and $scLog -cnotmatch '-> FAILED') 'script app: Package builds it' (($scLog -split "`n" | Select-Object -Last 8) -join ' | ')
+    # 2.38.53: the list says when it was built, and that nothing changed since.
+    $scRow = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
+    Check ($scRow -and -not $scRow.packageMissing -and $scRow.packageBuilt -and -not $scRow.packageStale) 'script app: the list has its build time, not out of date' ($scRow | ConvertTo-Json -Compress)
+    # Built a while ago, as far as the files can tell - the change below is then plainly after it.
+    if ($scBuilt.Count) { $scBuilt[0].LastWriteTimeUtc = (Get-Date).ToUniversalTime().AddMinutes(-5) }
     # A new version: the detection rule and the script's version marker move together.
     $scQ = Invoke-Api '/api/app-quick' @{ name = $scName; field = 'appVersion'; value = '2.5' }
     $scApp2 = (Invoke-Api '/api/app-get' @{ name = $scName }).app
     Check ($scQ.ok -and @($scQ.scripts) -contains 'Install.ps1' -and $scApp2.deploy.detection.value -eq '2.5' -and (Get-Content -LiteralPath (Join-Path $scDir 'Install.ps1') -Raw) -match "-Name Version -Value '2\.5'") 'a script app''s new version: detection and the Install.ps1 marker both 2.5' ($scQ | ConvertTo-Json -Compress)
+    $scRow2 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
+    Check ($scRow2 -and $scRow2.packageStale) 'script app: Install.ps1 changed after the build - the list says the package is out of date' ($scRow2 | ConvertTo-Json -Compress)
     # Package scripts in the app (2.26): read with the locked marker lines, saved only unchanged since opened, parsing and keeping the marker; the earlier one in Backups.
     $ps1 = Invoke-Api '/api/package-script' @{ name = $scName; file = 'Install.ps1' }
     Check ($ps1.ok -and $ps1.text -match 'IntuneAppCatalog' -and @($ps1.locked).Count -ge 2 -and @($ps1.files) -contains 'Uninstall.ps1') 'script editor: Install.ps1 read, its version marker locked' ($ps1 | ConvertTo-Json -Compress)

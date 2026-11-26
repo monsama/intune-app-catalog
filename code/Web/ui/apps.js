@@ -120,6 +120,7 @@ const filters = {
   nogroups: a => !(a.groups || []).length,
   notintenant: a => tenantState(a) === 'missing',
   pkgmissing: a => a.packageMissing,
+  pkgstale: a => !!a.packageStale && !a.packageMissing,
   winget: a => !!a.wingetId,
   custom: a => !a.wingetId,
   newer: a => !!a.newerOnWinget,
@@ -129,7 +130,7 @@ const filters = {
 function sortValue(a, k) {
   if (k === 'groups') return a.required * 10000 + a.available * 100 + a.uninstall;
   // The stage column sorts by stage (the order an app goes through), not by its status text.
-  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'unsent', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
+  if (k === 'status') { const order = ['busy', 'tenant', 'look', 'rebuild', 'unsent', 'draft', 'msapp', 'retire', 'ready', 'pilot', 'everyone']; const i = order.indexOf(stageOf(a).key); return String(i < 0 ? 9 : i) + (a.name || '').toLowerCase(); }
   return String(a[k] || '').toLowerCase();
 }
 // The search box: words match names and Winget IDs; group:text (or group:"two words") the apps assigned to a group whose name contains it.
