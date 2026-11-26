@@ -43,6 +43,9 @@ function stageOf(a) {
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
   // A package built from other files than the one in Intune (2.38.54): Send to Intune uploads it - a rebuild of the
   // same files isn't one (the server compares what they were built from).
+  // Managed updates (2.38.64): a send doesn't upload it - Replace package does (same version, other files).
+  if (own && a.hasAppId && a.packageReplace) return { key: 'pkgsend', label: 'New package to send', cls: 'warn', why: `Its package was built again from changed files${a.packageBuilt ? ` (${fmtWhen(a.packageBuilt)})` : ''} - Intune still has the old one. Managed updates: a send doesn't upload it; Replace package does (same version). A new version goes through Release new version.`,
+    next: { label: 'Replace package', title: 'Upload the package under the app as it is in Intune', run: () => replacePackageNow(a.name) } };
   if (own && a.hasAppId && a.packageToSend) return { key: 'pkgsend', label: 'New package to send', cls: 'warn', why: `Its package was built again from changed files${a.packageBuilt ? ` (${fmtWhen(a.packageBuilt)})` : ''} - Intune still installs the old one. Send to Intune uploads it.`,
     next: { label: 'Send', title: 'Send it to Intune with the new package', run: () => onApp(a, 'deploy') } };
   // Changed in the catalog since it was last sent: the send it needs is the next step.
@@ -193,7 +196,7 @@ async function fillPanel(a) {
       fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       // Whether its installer is packaged, and when (2.38.53) - only for an app that installs from its own package.
-      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - newer than the one in Intune, send it' : ''}` : '') : ''),
+      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - newer than the one in Intune, send it' : a.packageReplace ? ' - newer than the one in Intune: More > Replace package' : ''}` : '') : ''),
       // The App ID in full, with Copy and Open in Intune - the app's page in the Intune admin center.
       a.hasAppId && a.appId ? el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { class: 'pappid' },
         el('span', { text: a.type || 'yes' }), el('code', { class: 'appid', text: a.appId, title: 'The Intune App ID' }),
@@ -547,6 +550,8 @@ let sendLoopRunning = false, sendSeq = 0;
 const sendKinds = {
   settings: { title: 'Send settings', path: '/api/deploy-start', body: name => ({ name, metadataOnly: true }), start: 'Sending settings for ', what: 'Settings' },
   groups: { title: 'Send groups', path: '/api/push-start', body: name => ({ names: [name], mode: 'AfterDeploy' }), start: 'Sending groups for ', what: 'Groups' },
+  // 2.38.64: the built package under the app as it is in Intune (also with managed updates) - same version, other files.
+  package: { title: 'Replace package', path: '/api/package-replace', body: name => ({ name }), start: 'Uploading the package of ', what: 'Package' },
 };
 function sendStack() {
   let s = $('sendStack');
@@ -616,6 +621,11 @@ async function runSendQueue() {
 }
 function sendSettingsNow(names) { queueSend('settings', names); }
 function sendGroupsNow(names) { queueSend('groups', names); }
+async function replacePackageNow(name) {
+  const a = apps.find(x => x.name === name); if (!a) return;
+  if (!(await ask(`Upload ${name}'s package to Intune, under the app it is now?\n\nIt replaces the package Intune has - for the same version (its files changed: a script, a setting, the installer rebuilt). Devices that have it already keep what they have; every install from now on gets the new package.${a.managed ? '\n\nA new version goes through Release new version instead - pilot groups first.' : ''}`, { ok: 'Replace package', danger: false }))) return;
+  queueSend('package', [name]);
+}
 
 // Retire the MSI line-of-business app a Win32 app replaced (2.33.0): asked first, checked again on the server.
 async function retireLobApp(name) {

@@ -121,7 +121,7 @@ const filters = {
   notintenant: a => tenantState(a) === 'missing',
   pkgmissing: a => a.packageMissing,
   pkgstale: a => !!a.packageStale && !a.packageMissing,
-  pkgsend: a => !!a.packageToSend,
+  pkgsend: a => !!a.packageToSend || !!a.packageReplace,
   winget: a => !!a.wingetId,
   custom: a => !a.wingetId,
   newer: a => !!a.newerOnWinget,
@@ -1434,7 +1434,7 @@ function openMenu(x, y) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, duplicate: !!one, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
@@ -1532,6 +1532,7 @@ async function menuAction(act) {
     case 'deploy': openDeploy(names); break;
     case 'pull': openPull(names); break;
     case 'pushsettings': pushSettings(sel().filter(a => a.hasAppId).map(a => a.name)); break;
+    case 'replacepkg': if (one) replacePackageNow(one.name); break;
     case 'batchedit': if (!prefs) await loadPrefs(); openBatch(names); break;
     case 'filldetails': fillDetails(names); break;
     case 'addgroups': if (!prefs) await loadPrefs(); openGroupsBatch('add', names); break;
