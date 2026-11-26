@@ -1997,6 +1997,6 @@ input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
 /* Groups (2.38.67): one search row - the text and which groups it looks in - and New group beside the status. */
 #viewGroups .panel.side > .toolbar.tight { flex-wrap: nowrap; }
 #viewGroups .panel.side > .toolbar.tight #groupSearch { flex: 1 1 auto; min-width: 0; }
-#viewGroups .gscope { flex: 0 0 auto; width: auto; max-width: 48%; }
+#viewGroups .gscope { flex: 0 1 auto; width: auto; min-width: 0; }
 #viewGroups .gfilter { display: flex; align-items: center; gap: 8px; }
 #viewGroups .gfilter .muted { flex: 1 1 auto; }

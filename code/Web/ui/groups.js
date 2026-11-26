@@ -289,7 +289,7 @@ async function openGroup(name, again) {
     setGroupBusy(false);
     // The members table says why it is empty (2.38.67: only its headings showed).
     $('gMembers').replaceChildren(el('tr', {}, el('td', { class: 'muted', colspan: '4', text: off ? 'Members are read from Entra ID once the connection is set up.' : `Members couldn't be read: ${r.error}` })));
-    $('gNote').textContent = r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupDescSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
+    $('gNote').textContent = off ? '' : r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupDescSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
   }
   // Created a moment ago and Entra ID is still copying it: say so and look again shortly, instead of "Not in Entra ID".
   if (!r.found && r.pending && pendingTries < 10) {

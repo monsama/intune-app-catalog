@@ -237,13 +237,13 @@
     <div class="gsplit">
       <div class="panel side">
         <div class="toolbar tight">
-          <input type="search" id="groupSearch" placeholder="Search groups - Enter searches all of Entra ID" title="Part of a name, or * as a wildcard. Enter searches all of Entra ID" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+          <input type="search" id="groupSearch" placeholder="Search groups" title="Part of a name, or * as a wildcard. Enter searches all of Entra ID" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
           <button class="btn" id="btnGroupOpen" hidden title="Search all of Entra ID for this text (Enter)">Search Entra ID</button>
+        </div>
+        <div class="gfilter">
           <select class="gscope" id="groupShow" aria-label="Which groups to show" title="The groups the catalog uses (all, or those Entra ID has or lacks), or every group in Entra ID">
             <option value="">Used by the catalog</option><option value="missing">Used, not in Entra ID</option><option value="found">Used, in Entra ID</option><option value="entra">All groups in Entra ID</option>
           </select>
-        </div>
-        <div class="gfilter">
           <span class="muted" id="groupStatusNote" aria-live="polite"></span>
           <span class="spacer"></span>
           <button class="btn small" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
