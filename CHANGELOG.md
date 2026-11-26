@@ -11,6 +11,9 @@
   "install.ps1" wasn't in it). Asked first; a new version still goes through Release new version.
 - **Warned before sending**: the send plan now says when files changed after the package was built ("build it again"),
   and when the package in Intune is older than the built one and the send won't upload it (managed updates).
+- **Install status explains more errors**: winget's "installer hash mismatch" (0x8A150011, shown by Intune as
+  0x80070011 - the vendor replaced the file, TeamViewer QuickSupport), a script command whose script isn't in the
+  package (0x80070000, from PowerShell's 0xFFFD0000), and exit code 5 from an Inno Setup installer (aborted).
 
 ## 2.38.63
 
