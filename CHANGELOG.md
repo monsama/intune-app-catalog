@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38.75
+
+- **Scrollbars sit inside the window.**
+  - Each scrollbar is a slim bar, with a gap to the edge and clear of the rounded corners.
+  - A dialog's scrollbar used to sit at its very edge, further out than the close button.
+  - The same look applies across the app, in light and dark, and in the dark logs. Firefox gets a thin bar in the
+    same colours.
+
 ## 2.38.74
 
 - **Checks compares the assignments again.**
