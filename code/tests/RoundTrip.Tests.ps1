@@ -218,6 +218,9 @@ try {
         $ap = Invoke-Api '/api/pull-apply' @{ pending = $rv.pending; keep = @{ $nOffice = @() } }
         $off = (Invoke-Api '/api/app-get' @{ name = $nOffice }).app.office
         Check ($ap.ok -and [string]$off.channel -eq 'monthlyEnterprise') 'Microsoft 365 Apps: ... and takes Intune''s channel' "$($ap | ConvertTo-Json -Compress) $($off | ConvertTo-Json -Compress)"
+        # 2.38.54: what was taken from Intune is what Intune has - not "Changes to send" against the last send from here.
+        $offRow2 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $nOffice })[0]
+        Check ($offRow2 -and -not [string]$offRow2.unsent) 'Microsoft 365 Apps: after taking Intune''s values, nothing to send' ($offRow2 | ConvertTo-Json -Compress)
     }
 
     # ---- release flows, run by the server ---------------------------------------------------------------

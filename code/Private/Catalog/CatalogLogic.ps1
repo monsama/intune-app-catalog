@@ -3719,6 +3719,7 @@ function Global:Get-OfficeSettingsSummary {
     $parts = @((Get-OfficeChannels)[$s.channel], $(if ($s.architecture -eq 'x86') { '32-bit' } else { '64-bit' }), $lang)
     if ($s.sharedActivation) { $parts += 'shared computer activation' }
     $txt = $parts -join ', '
-    if (@($s.excluded).Count) { $txt += '; without ' + ((@($s.excluded) | ForEach-Object { $names[$_] }) -join ', ') }
+    # In one order (2.38.54) - the same apps picked in another order, or read from Intune, read the same.
+    if (@($s.excluded).Count) { $txt += '; without ' + ((@($names.Keys | Where-Object { @($s.excluded) -contains $_ }) | ForEach-Object { $names[$_] }) -join ', ') }
     return $txt
 }

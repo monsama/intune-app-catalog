@@ -51,6 +51,7 @@ function Global:Get-WebCatalog {
         $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
         $busyApps = Get-WebBusyApps
         $sentStamps = Read-WebSentStamps
+        $pkgSources = Read-WebPackageSources
         for ($i = 0; $i -lt $apps.Count; $i++) {
             $row = Get-CatalogRow -App $apps[$i] -Index $i -PackageIndex $index
             # winget's newest version: of its own ID, or (an own package, 2.36.0) of the one it watches.
@@ -72,6 +73,10 @@ function Global:Get-WebCatalog {
                 busy         = [string]$busyApps[(Get-SafeFileNameForApp -Name $apps[$i].appName)]
                 # What changed in the catalog since it was last sent (settings / groups) - only known once it was sent with 2.26.4 or later.
                 unsent       = $(if ($apps[$i].appId) { Get-WebUnsent -App $apps[$i] -Sent $sentStamps } else { '' })
+                # A package built since the last upload, from other files than that one (2.38.54) - the next send uploads it.
+                # Only once a package was uploaded with its stamp (else every older app would say so); not managed updates
+                # (a new package goes through Release new version there).
+                packageToSend = [bool]($apps[$i].appId -and -not $apps[$i].managedUpdates -and $apps[$i].packageStamp -and $row.PackagePath -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $row.PackagePath) -Sent ([string]$apps[$i].packageStamp) -Record $pkgSources[(Get-SafeFileNameForApp -Name $apps[$i].appName)]))
                 # The App version (what deploys and releases use) - Intune's own reported version apart.
                 version      = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
                 intuneVersion = [string]$row.Version
@@ -482,6 +487,8 @@ function Global:Complete-WebJob {
             $text = ''
             try { $text = Get-Content -LiteralPath $LogPath -Raw -Encoding UTF8 } catch { }
             $failed = if ($text -match '(?m)Failed:\s*(\d+)') { [int]$Matches[1] } else { 0 }
+            # What each new package was built from (2.38.54): a rebuild of the same files isn't a new package to send.
+            try { Update-WebPackageSources -Names @($After.Names) } catch { Write-Log "[WARN] Couldn't note what the packages were built from: $($_.Exception.Message)" }
             Write-Log "$(if ($failed) { '[WARN]' } else { '[OK]' }) Packaging finished$(if ($failed) { " - $failed failed, see the log" })."
             return @{ ok = $true; failed = $failed }
         }
@@ -518,6 +525,8 @@ function Global:Complete-WebJob {
                     $app.metadata = $defaults
                 }
                 if ($After.PackageStamp) { $app.packageStamp = [string]$After.PackageStamp }
+                # What the uploaded package was built from (2.38.54) - a rebuild of the same files isn't new.
+                if ($After.PackageSource) { try { $ps = Read-WebPackageSources; $pk = Get-SafeFileNameForApp -Name ([string]$After.AppName); if ($ps.ContainsKey($pk)) { $ps[$pk].sent = [string]$After.PackageSource; Save-WebPackageSources $ps } } catch { Write-Log "[WARN] Couldn't note the uploaded package: $($_.Exception.Message)" } }
                 # A managed app is sent pinned (its commands, detection and return codes written for its version, as they
                 # are today) - the file takes that form too (2.38.38), or Checks compared the old form with Intune for good.
                 if ($app.managedUpdates -and $app.wingetId -and $app.metadata) { [void](Set-ManagedAppPin $app) }
@@ -998,7 +1007,10 @@ function Global:Get-WebAppSentValues {
     # A Store app's or Microsoft 365 Apps' text and links from Microsoft (2.38.52): not sent unless changed here, so not
     # a change to send either (Test-OwnContentField). Which fields are its own is bookkeeping, not something Intune gets.
     $skip = @($skip) + @('ownFields') + @(Get-OwnContentFieldNames | Where-Object { -not (Test-OwnContentField $App $_) })
-    if ($m) { foreach ($p in @($m.PSObject.Properties | Sort-Object Name)) { if ($skip -notcontains $p.Name) { $o[$p.Name] = $p.Value } } }
+    # Microsoft 365 Apps (2.38.54): only what its send carries (Start-WebDeploy's Office branch) - its Win32 fields
+    # (architecture, install context, return codes, ...) never go to Intune, and a Pull empties them.
+    $only = if ($App.office -and -not ([string]$App.wingetId).Trim()) { @('owner', 'developer', 'notes', 'isFeatured', 'clearedFields') + @(Get-OwnContentFieldNames) } else { $null }
+    if ($m) { foreach ($p in @($m.PSObject.Properties | Sort-Object Name)) { if ($skip -notcontains $p.Name -and (-not $only -or $only -contains $p.Name)) { $o[$p.Name] = $p.Value } } }
     # Microsoft 365 Apps (2.38.21): its settings are what Intune gets - in words, so Changes to send can show them.
     if ($App.office) { $o['office'] = [string](Get-OfficeSettingsSummary $App.office) }
     $sort = { param($l) @(@($l) | ForEach-Object { ([string]$_).Trim().ToLowerInvariant() } | Where-Object { $_ } | Sort-Object -Unique) }
@@ -1051,6 +1063,34 @@ function Global:Set-WebSentStamp {
     [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'sent.json'), (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function Global:Get-WebSentFieldDiffs {
+    <#
+      The fields that differ between what was last sent (-Was, the values kept then) and what Intune would get now
+      (-Now), as @(@{ k; sent; now }) (2.38.54). A field the last send had but the app no longer sends at all (a Store
+      app's or Microsoft 365 Apps' text from Microsoft since 2.38.52, Microsoft 365 Apps' Win32 fields) isn't a change:
+      without this every such app showed "Changes to send" with those fields "(empty)". Microsoft 365 Apps' settings
+      compare without the order of the apps left out.
+    #>
+    param($App, $Was, $Now)
+    $text = { param($v) if ($null -eq $v) { '' } elseif ($v -is [string]) { $v } elseif ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary]) -and -not ($v.PSObject.Properties['PSPath'])) { (@($v | ForEach-Object { if ($_ -is [string] -or $_ -is [ValueType]) { [string]$_ } else { ConvertTo-Json -InputObject $_ -Compress -Depth 8 } })) -join ', ' } elseif ($v -is [ValueType]) { [string]$v } else { ConvertTo-Json -InputObject $v -Compress -Depth 8 } }
+    $office = { param($t) $i = $t.IndexOf('; without '); if ($i -lt 0) { $t } else { $t.Substring(0, $i) + '; without ' + ((@($t.Substring($i + 10) -split ', ') | Sort-Object) -join ', ') } }
+    $notSent = @('ownFields') + @(Get-OwnContentFieldNames) + @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes')
+    $isOffice = [bool]$App.office -and -not ([string]$App.wingetId).Trim()
+    $rows = New-Object System.Collections.Generic.List[object]
+    $keys = @(@($Was.PSObject.Properties.Name) + @($Now.PSObject.Properties.Name) | Select-Object -Unique)
+    foreach ($k in $keys) {
+        $inNow = [bool]$Now.PSObject.Properties[$k]
+        if ($Was.PSObject.Properties[$k] -and -not $inNow -and ($isOffice -or $notSent -contains $k)) { continue }
+        # A field the last send's record doesn't hold (a managed app's version, commands, detection and return
+        # codes go with its releases, so they weren't kept) isn't "blank in Intune" - said as what it is (2.38.36).
+        $l = if ($Was.PSObject.Properties[$k]) { & $text $Was.$k } else { '(not recorded)' }
+        $r = & $text $Now.$k
+        if ($k -eq 'office') { if ((& $office $l) -ceq (& $office $r)) { continue } }
+        if ($l -cne $r) { $rows.Add(@{ k = $k; sent = $l; now = $r }) }
+    }
+    return $rows.ToArray()
+}
+
 function Global:Get-WebUnsentDiff {
     <#
       "Changes to send", field by field (2.38.8): what was last sent next to what the catalog has now. From the values
@@ -1075,14 +1115,7 @@ function Global:Get-WebUnsentDiff {
         if ($st["$($part)v"]) {
             $was = $st["$($part)v"] | ConvertFrom-Json
             $cur = $now[$part] | ConvertTo-Json -Depth 10 | ConvertFrom-Json
-            $keys = @(@($was.PSObject.Properties.Name) + @($cur.PSObject.Properties.Name) | Select-Object -Unique)
-            foreach ($k in $keys) {
-                # A field the last send's record doesn't hold (a managed app's version, commands, detection and return
-                # codes go with its releases, so they weren't kept) isn't "blank in Intune" - said as what it is (2.38.36).
-                $l = if ($was.PSObject.Properties[$k]) { & $text $was.$k } else { '(not recorded)' }
-                $r = & $text $cur.$k
-                if ($l -cne $r) { $rows.Add([ordered]@{ part = $what; field = (& $label $k); sent = $l; now = $r }) }
-            }
+            foreach ($d in @(Get-WebSentFieldDiffs -App $a -Was $was -Now $cur)) { $rows.Add([ordered]@{ part = $what; field = (& $label $d.k); sent = $d.sent; now = $d.now }) }
         }
         else { $fromHistory = $true; $histParts.Add($part) }
     }
@@ -1125,5 +1158,17 @@ function Global:Get-WebUnsent {
     $st = $Sent[(Get-SafeFileNameForApp -Name $App.appName)]
     if (-not $st) { return '' }
     $h = Get-WebAppSentHashes $App
-    return (@($(if ($st.s -and $st.s -ne $h.s) { 'settings' }), $(if ($st.g -and $st.g -ne $h.g) { 'groups' })) | Where-Object { $_ }) -join ','
+    # A fingerprint that differs is checked field by field when the sent values were kept (2.38.54): a field the app
+    # no longer sends, or the same Microsoft 365 apps in another order, isn't a change to send.
+    $differs = {
+        param($part)
+        if (-not $st[$part] -or $st[$part] -eq $h[$part]) { return $false }
+        if (-not $st["$($part)v"]) { return $true }
+        try {
+            $now = (Get-WebAppSentValues $App)[$part] | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+            return (@(Get-WebSentFieldDiffs -App $App -Was ($st["$($part)v"] | ConvertFrom-Json) -Now $now).Count -gt 0)
+        }
+        catch { return $true }
+    }
+    return (@($(if (& $differs 's') { 'settings' }), $(if (& $differs 'g') { 'groups' })) | Where-Object { $_ }) -join ','
 }

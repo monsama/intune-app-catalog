@@ -679,6 +679,45 @@ try {
     Check ($scQ.ok -and @($scQ.scripts) -contains 'Install.ps1' -and $scApp2.deploy.detection.value -eq '2.5' -and (Get-Content -LiteralPath (Join-Path $scDir 'Install.ps1') -Raw) -match "-Name Version -Value '2\.5'") 'a script app''s new version: detection and the Install.ps1 marker both 2.5' ($scQ | ConvertTo-Json -Compress)
     $scRow2 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
     Check ($scRow2 -and $scRow2.packageStale) 'script app: Install.ps1 changed after the build - the list says the package is out of date' ($scRow2 | ConvertTo-Json -Compress)
+    # 2.38.54: a rebuild of the same files isn't a new package to send; one of changed files is.
+    $buildSc = {
+        $j = Invoke-Api '/api/package-start' @{ names = @($scName) }; $o = 0; $end = (Get-Date).AddSeconds(120)
+        while ($j.ok -and (Get-Date) -lt $end) { $pp = Invoke-Api '/api/job-poll' @{ job = $j.job; offset = $o }; if (-not $pp.ok) { break }; $o = $pp.offset; if ($pp.done -and -not $pp.text) { break }; Start-Sleep -Milliseconds 400 }
+        Start-Sleep -Seconds 1
+        $f = @(Get-ChildItem -LiteralPath $scDir -Filter '*.intunewin' -File)[0]
+        return ($f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ') + '|' + $f.Length)
+    }
+    $catDirSc = (Invoke-Api '/api/catalog').path
+    $scFile = Get-ChildItem -LiteralPath $catDirSc -Filter '*.json' -File | Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match [regex]::Escape("`"$scName`"") } | Select-Object -First 1
+    $stampA = & $buildSc
+    $srcFile = Join-Path (Join-Path $catDirSc '.integrity') 'package-sources.json'
+    $srcMap = if (Test-Path -LiteralPath $srcFile) { Get-Content -LiteralPath $srcFile -Raw | ConvertFrom-Json } else { $null }
+    $srcKey = if ($srcMap) { @($srcMap.PSObject.Properties | Where-Object { $_.Value.built -eq $stampA })[0] } else { $null }
+    Check ($srcKey -and $srcKey.Value.source -match '^[0-9a-f]{64}$') 'package: what it was built from is noted (a fingerprint of its files)' ($srcMap | ConvertTo-Json -Compress)
+    if ($srcKey -and $scFile) {
+        # As if it had been uploaded to Intune: an App ID, this package's stamp, its fingerprint as sent.
+        $srcKey.Value.sent = $srcKey.Value.source
+        [System.IO.File]::WriteAllText($srcFile, ($srcMap | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+        $scJson = Get-Content -LiteralPath $scFile.FullName -Raw | ConvertFrom-Json
+        $scJson | Add-Member -NotePropertyName appId -NotePropertyValue '11111111-2222-3333-4444-555555555555' -Force
+        $scJson | Add-Member -NotePropertyName packageStamp -NotePropertyValue $stampA -Force
+        # Not managed updates: there a new package goes through Release new version, not under the app in Intune.
+        $scJson | Add-Member -NotePropertyName managedUpdates -NotePropertyValue $false -Force
+        [System.IO.File]::WriteAllText($scFile.FullName, ($scJson | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
+        $pr1 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
+        Check ($pr1 -and $pr1.hasAppId -and -not $pr1.packageToSend) 'package: the one in Intune - nothing to send' ($pr1 | ConvertTo-Json -Compress)
+        $stampB = & $buildSc
+        $pr2 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
+        Check ($stampB -ne $stampA -and $pr2 -and -not $pr2.packageToSend) 'package: built again from the same files - not a new package to send' "$stampA / $stampB $($pr2 | ConvertTo-Json -Compress)"
+        Set-Content -LiteralPath (Join-Path $scDir 'readme.txt') -Value 'changed' -Encoding ASCII
+        $null = & $buildSc
+        $pr3 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
+        Check ($pr3 -and $pr3.packageToSend) 'package: built from changed files - a new package to send' ($pr3 | ConvertTo-Json -Compress)
+        Remove-Item -LiteralPath (Join-Path $scDir 'readme.txt') -Force -ErrorAction SilentlyContinue
+        $scJson = Get-Content -LiteralPath $scFile.FullName -Raw | ConvertFrom-Json
+        $scJson.appId = ''; $scJson.packageStamp = ''; $scJson.managedUpdates = $true
+        [System.IO.File]::WriteAllText($scFile.FullName, ($scJson | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
+    }
     # Package scripts in the app (2.26): read with the locked marker lines, saved only unchanged since opened, parsing and keeping the marker; the earlier one in Backups.
     $ps1 = Invoke-Api '/api/package-script' @{ name = $scName; file = 'Install.ps1' }
     Check ($ps1.ok -and $ps1.text -match 'IntuneAppCatalog' -and @($ps1.locked).Count -ge 2 -and @($ps1.files) -contains 'Uninstall.ps1') 'script editor: Install.ps1 read, its version marker locked' ($ps1 | ConvertTo-Json -Compress)
