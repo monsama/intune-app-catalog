@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.51
+
+- **Radio buttons you can read**: the chosen one shows its dot again (a rule
+  for checkbox rows made the dot zero-sized), and the ring is visible on the
+  dark theme - for example Add apps > PowerShell script > Detection.
+
 ## 2.38.50
 
 - **Server updates don't fill the disk**: every update backs the data up first,
