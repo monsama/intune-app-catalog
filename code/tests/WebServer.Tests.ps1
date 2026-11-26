@@ -1040,7 +1040,7 @@ try {
     $ss = Invoke-Api '/api/store-search' @{ q = 'x' }
     Check (-not $ss.ok -and $ss.error -like '*at least 2*') 'store search: too short a query is refused' ($ss | ConvertTo-Json -Compress)
     $st = Invoke-Api '/api/package-list' @{ starter = $true }
-    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 13 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
+    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 15 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
     # 2.38.21: Microsoft 365 Apps from the starter set - Intune's own Office app with its settings, ready to send without a package.
     $o365 = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune'; name = 'Microsoft 365 Apps' }); required = @('SG-ZZ-Office') }

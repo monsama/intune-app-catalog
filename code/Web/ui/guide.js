@@ -77,8 +77,10 @@ function stageOf(a) {
   const gw = gets.length === 1 ? gets[0] : `${gets.length} groups`;
   if (a.managed && a.newerOnWinget && !a.wingetId && a.watchWinget) return { key: 'everyone', label: `Update ${a.wingetVersion}`, cls: 'info', why: `${gw} ${a.version ? `have ${a.version}` : 'have it'}; winget (${a.watchWinget}) has ${a.wingetVersion}.`, next: { label: 'Get new installer...', title: `Download ${a.wingetVersion} into its folder, then release it`, run: () => fetchWatched(a.name) } };
   if (a.managed && a.newerOnWinget) return { key: 'everyone', label: `Update ${a.wingetVersion}`, cls: 'info', why: `${gw} ${a.version ? `have ${a.version}` : 'have it'}; winget has ${a.wingetVersion} - release it to the pilot groups first.`, next: { label: 'Release...', title: `Release ${a.wingetVersion} to the pilot groups first`, run: () => openRelease(a.name) } };
-  return { key: 'everyone', label: a.managed ? (a.version ? `Released ${a.version}` : 'Released') : 'Deployed', cls: 'ok',
-    why: a.managed ? `Released to ${gw}: ${a.version || 'its version'} on every ring; new versions go to the pilot groups first.` : `Deployed to ${gw} - ${updatesText(a, false)}.` };
+  // 2.38.66: one word for both - "Released" (managed updates) and "Deployed" (the others) meant the same: in Intune, the
+  // groups have it. How new versions come is in the tooltip.
+  return { key: 'everyone', label: a.version ? `In Intune ${a.version}` : 'In Intune', cls: 'ok',
+    why: a.managed ? `In Intune for ${gw}: ${a.version || 'its version'} on every ring; new versions go to the pilot groups first.` : `In Intune for ${gw} - ${updatesText(a, false)}.` };
 }
 function stageCell(a) {
   const s = stageOf(a);

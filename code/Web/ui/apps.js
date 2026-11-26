@@ -1437,7 +1437,7 @@ function openMenu(x, y, right = false) {
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
   const enable = { edit: !!one, duplicate: !!one, export: any, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
-    replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
+    replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, deleteall: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
     filldetails: sel.some(a => a.wingetId && !isStoreId(a.wingetId)),
@@ -1452,7 +1452,7 @@ function openMenu(x, y, right = false) {
     deploy: 'Select one or more apps first.', batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
     replacegroup: any ? 'None of the selected apps is assigned to a group.' : 'Select one or more apps first.',
     copyid: 'None of the selected apps has an App ID.', clearid: 'None of the selected apps has an App ID.',
-    delete: 'None of the selected apps is in Intune.', remove: 'Select one or more apps first.',
+    delete: 'None of the selected apps is in Intune.', remove: 'Select one or more apps first.', deleteall: 'Select one or more apps first.',
     retire: one ? 'This app isn\'t in Intune - Remove from catalog is enough.' : 'Select exactly one app.',
     takeversion: sel.some(a => a.managed && a.hasAppId) ? 'Apps in Intune with managed updates get a new version through Release new version.' : apps.some(a => a.wingetVersion) ? 'winget offers nothing newer for the selected apps.' : 'Ask winget first: Catalog > Check winget for new versions.',
     release: !one ? 'Select exactly one app.' : !one.managed ? 'Turn managed updates on first (More > Managed updates on).' : !one.hasAppId ? 'Send it to Intune first - that is its first release.' : 'A version is in pilot already - promote or withdraw it first.',
@@ -1496,6 +1496,7 @@ function openMenu(x, y, right = false) {
   menu.querySelector('[data-act=copyid]').textContent = ids > 1 ? `Copy ${ids} App IDs` : 'Copy App ID';
   menu.querySelector('[data-act=clearid]').textContent = ids > 1 ? `Clear ${ids} App IDs...` : 'Clear App ID...';
   menu.querySelector('[data-act=remove]').textContent = sel.length > 1 ? `Remove ${sel.length} apps from catalog...` : 'Remove from catalog...';
+  menu.querySelector('[data-act=deleteall]').textContent = sel.length > 1 ? `Delete ${sel.length} apps from Intune and catalog...` : 'Delete from Intune and catalog...';
   catMenu.hidden = true;
   placeMenu(menu, x, y, right);
 }
@@ -1595,6 +1596,29 @@ async function menuAction(act) {
       runDialog('Delete from Intune', del.join(', '));
       const done = await runEach(del, name => ({ name }), { path: '/api/delete-intune', log: 'runLog', startText: 'Deleting ' });
       toast(`Deleted ${done.length} of ${nWord(del.length, 'app')} from Intune.`, done.length < del.length); loadApps();
+      break;
+    }
+    // 2.38.66: both in one go - deleted from Intune first; only what is gone there (or never was) leaves the catalog.
+    case 'deleteall': {
+      const pool = sel();
+      // Older versions still in Intune (managed updates) would be left there with nothing to find them by.
+      const kept = pool.filter(a => a.hasAppId && ((a.previousVersions || []).length || a.pilotVersion || (a.rolledBackVersions || []).length));
+      const go = pool.filter(a => !kept.includes(a)), inIntune = go.filter(a => a.hasAppId).map(a => a.name), onlyHere = go.filter(a => !a.hasAppId).map(a => a.name);
+      if (!go.length) { toast(`${kept.map(a => a.name).join(', ')} still ${kept.length === 1 ? 'has' : 'have'} versions in Intune (pilot or superseded) - use Retire, or Delete old versions first.`, true); return; }
+      const list = go.map(a => a.name);
+      if (!(await ask(`Delete ${list.length === 1 ? `"${list[0]}"` : `these ${list.length} apps`} from Intune and remove ${list.length === 1 ? 'it' : 'them'} from the catalog?\n\n${list.length > 1 ? list.slice(0, 15).join('\n') + (list.length > 15 ? `\n... and ${list.length - 15} more` : '') + '\n\n' : ''}`
+        + `${inIntune.length ? `In Intune: ${nWord(inIntune.length, 'app')} and ${inIntune.length === 1 ? 'its' : 'their'} assignments are deleted - devices keep what is installed, but Intune stops managing it. ` : ''}`
+        + 'The catalog files and packages folders go to the Backups folder.'
+        + (kept.length ? `\n\nNot included (versions still in Intune - use Retire): ${kept.map(a => a.name).join(', ')}.` : '')))) return;
+      let deleted = [];
+      if (inIntune.length) {
+        runDialog('Delete from Intune and catalog', inIntune.join(', '));
+        deleted = await runEach(inIntune, name => ({ name }), { path: '/api/delete-intune', log: 'runLog', startText: 'Deleting ' });
+      }
+      const failed = inIntune.filter(n => !deleted.includes(n)).map(n => `${n}: not deleted from Intune - kept in the catalog`);
+      let gone = 0;
+      for (const n of [...deleted, ...onlyHere]) { const r = await api('/api/app-remove', { name: n }); if (r.ok) { selected.delete(n); gone++; } else failed.push(`${n}: ${r.error}`); }
+      toast(failed.length ? `Done for ${nWord(gone, 'app')}. Not done: ${failed.join('; ')}` : `Deleted ${nWord(gone, 'app')} from Intune and the catalog.`, failed.length > 0); loadApps();
       break;
     }
     case 'remove': {
