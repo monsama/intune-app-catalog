@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.38.66
+
+- **TeamViewer and TeamViewer QuickSupport in the starter set (recommended) are fetched from TeamViewer, not
+  winget.**
+  - **Why:** winget's manifests for them kept breaking (0x8A150011, "installer hash mismatch"), because TeamViewer
+    replaces its files at the same address.
+  - **How:** both are now script apps. When they install, they download the newest file from download.teamviewer.com
+    and use it only when it is validly signed by TeamViewer.
+  - **Safety:** the download goes into a folder only SYSTEM and Administrators can change.
+  - **TeamViewer** installs silently for all users and updates itself afterwards, as set in its options.
+  - **QuickSupport** is put in C:\Program Files\TeamViewer QuickSupport, with a shortcut in the Start menu and on
+    the desktop.
+  - **Uninstall** removes either one.
+  - TeamViewer Host stays a Winget app.
+- **More > Delete from Intune and catalog...**:
+  - Deletes the selected apps from Intune first; apps that aren't in Intune yet skip this step.
+  - Removes from the catalog only what is gone from Intune, with copies in Backups.
+  - Not offered for apps that still have older versions in Intune (pilot, superseded); Retire is for those.
+- **One word in the Apps list's Stage column:** "In Intune" (with its version) instead of "Released" for managed
+  apps and "Deployed" for the others - both meant the same. How new versions come is in its tooltip.
+
 ## 2.38.65
 
 - **Export and import apps** - to move a library to another instance, or one app with everything it has:

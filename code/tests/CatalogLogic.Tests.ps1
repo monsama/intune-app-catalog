@@ -105,6 +105,9 @@ $testableFunctionNames = @(
     "Get-StarterAppSet",
     "Get-CleanupAppSet",
     "Get-CleanupStarterItem",
+    "Get-DownloadAppSet",
+    "Get-DownloadStarterItem",
+    "Get-ScriptStarterAppSet",
     "Test-InstallerFileHeader",
     "Get-ListedBaseName",
     # 2.36.0: what doesn't fit together in a package, winget's SHA256
@@ -3459,11 +3462,25 @@ $starter = @(Get-StarterAppSet)
 $sIds = @($starter | ForEach-Object { $_.id })
 Assert-True ($starter.Count -ge 20 -and @($sIds | Select-Object -Unique).Count -eq $sIds.Count -and -not @($starter | Where-Object { $_.id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$' -or -not $_.name -or -not $_.category -or -not $_.why }).Count) "Starter set: unique, valid Winget IDs, each with a name, category and why"
 Assert-True ($sIds[0] -eq (Get-OfficeStarterId) -and $sIds[1] -eq '9WZDNCRFJ3PZ' -and $starter[0].category -eq 'Microsoft' -and $starter[1].recommended) "Starter set (2.38.21): Microsoft 365 Apps and Company Portal first"
-Assert-True (@($starter | Where-Object recommended).Count -eq 13 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+Assert-True (@($starter | Where-Object recommended).Count -eq 15 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
 # 2.38.58: the clean-up apps - Lenovo, HP and preinstalled Office, their scripts in EmbeddedScripts\Cleanup.
 $cleanDir = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'EmbeddedScripts') 'Cleanup'
 $cleanSet = @(Get-CleanupAppSet)
 Assert-True ($cleanSet.Count -eq 3 -and @($cleanSet | Where-Object { $sIds -contains $_.id }).Count -eq 3 -and -not @($cleanSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $cleanDir $_)) }).Count -and @($starter | Where-Object { $_.category -eq 'Clean-up' }).Count -eq 3) "Clean-up apps (2.38.58): three in the starter set, their script files there"
+# 2.38.66: TeamViewer and QuickSupport fetched from TeamViewer - script apps instead of winget's (its manifests broke).
+$dlDir = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'EmbeddedScripts') 'Download'
+$dlSet = @(Get-DownloadAppSet)
+Assert-True ($dlSet.Count -eq 2 -and @($dlSet | Where-Object { $sIds -contains $_.id }).Count -eq 2 -and -not @($dlSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $dlDir $_)) }).Count -and $sIds -notcontains 'TeamViewer.TeamViewer' -and $sIds -notcontains 'TeamViewer.TeamViewer.QuickSupport' -and $sIds -contains 'TeamViewer.TeamViewer.Host' -and @(Get-ScriptStarterAppSet).Count -eq 5) "Starter set: TeamViewer and QuickSupport as script apps fetched from TeamViewer, their files there; the Host stays a Winget app"
+$dlTest = & { Set-Variable -Name DownloadLoadOnly -Value $true; Set-Variable -Name Action -Value 'Detect'; . (Join-Path $dlDir 'TeamViewer.ps1'); . (Join-Path $dlDir 'Common.ps1')
+    @((Test-DownloadSigner 'CN=TeamViewer Germany GmbH, O=TeamViewer Germany GmbH, L=Goeppingen, S=Baden-Wuerttemberg, C=DE'), (Test-DownloadSigner 'CN=TeamViewer GmbH, O=TeamViewer GmbH, C=DE'),
+        (Test-DownloadSigner 'CN=Evil, O=Not TeamViewer Germany GmbH Ltd, C=US'), (Test-DownloadSigner 'CN=TeamViewer Germany GmbH, O=Someone Else, C=US'),
+        ('TeamViewer' -match '^TeamViewer( \d+)?$'), ('TeamViewer 15' -match '^TeamViewer( \d+)?$'), ('TeamViewer Host' -match '^TeamViewer( \d+)?$')) }
+Assert-True ($dlTest[0] -and $dlTest[1] -and -not $dlTest[2] -and -not $dlTest[3] -and $dlTest[4] -and $dlTest[5] -and -not $dlTest[6]) "TeamViewer download: only TeamViewer's own certificate (its organisation); the full app found by its name, not the Host" ($dlTest -join ',')
+foreach ($d in $dlSet) {
+    $txt = (@($d.files) | ForEach-Object { Get-Content -LiteralPath (Join-Path $dlDir $_) -Raw }) -join "`n"
+    $pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput("`$Action = 'Install'`n" + $txt, [ref]$null, [ref]$pe)
+    Assert-True (-not $pe.Count -and $txt -match 'https://download\.teamviewer\.com/') "$($d.name): its script parses and downloads from TeamViewer"
+}
 # What the HP and Lenovo lists take and leave (the scripts' own matching, with Windows' list of programs made up here).
 $cleanTest = {
     param([string]$Vendor, $Entries)

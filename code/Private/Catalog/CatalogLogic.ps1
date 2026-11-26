@@ -2213,7 +2213,7 @@ function Global:Get-InstallErrorInfo {
         '0x80070003' = @('A path wasn''t found (Windows error 3).', 'The install command uses a folder that doesn''t exist on the device - check paths and quoting.')
         '0x80070005' = @('Access denied (Windows error 5) - or the installer ended with exit code 5 (Inno Setup: the installation was aborted).', 'Access: install for the system, not the user, and check that nothing (antivirus, policies) blocks it. Inno Setup: usually a running copy of the app (files in use) or a requirement the setup checks - add /LOG="C:\Windows\Temp\setup.log" to the install command and read its end.')
         # 2.38.64: what came up on a real device. Intune shows a program's exit code made into a Windows error (0x8007xxxx).
-        '0x8A150011' = @('winget: the downloaded installer doesn''t match the hash in winget''s manifest.', 'The vendor replaced the file at the same address (TeamViewer, for one). Pick a newer version (the side panel''s Version), or wait until winget''s manifest is updated - or deploy it with its own installer.')
+        '0x8A150011' = @('winget: the downloaded installer doesn''t match the hash in winget''s manifest.', 'The vendor replaced the file at the same address (TeamViewer, for one). Pick a newer version (the side panel''s Version), or wait until winget''s manifest is updated - or deploy it with its own installer (TeamViewer: the starter set''s TeamViewer apps download it from TeamViewer).')
         '0x80070011' = @('For a Winget app: winget''s "installer hash mismatch" (0x8A150011) as Intune reports it. Otherwise Windows error 17 (another drive).', 'The vendor replaced the installer at the same address: pick a newer version (the side panel''s Version), or wait until winget''s manifest is updated - or deploy it with its own installer.')
         '0x80070000' = @('For a PowerShell script command (-File): the script wasn''t found - PowerShell ended with 0xFFFD0000.', 'The package in Intune doesn''t have the script the command names: build the package (with the script in its folder) and upload it - Send, or More > Replace package with managed updates.')
         '0x800705B4' = @('The installation timed out.', 'The installer took longer than the maximum install time - often a hidden prompt waiting for an answer. Make it silent, or raise the install time in the app''s deploy settings.')
@@ -2355,6 +2355,36 @@ function Global:Get-CleanupAppSet {
     )
 }
 
+function Global:Get-DownloadAppSet {
+    <#
+      Pure (2.38.66): the starter set's apps fetched from their vendor when they install - script apps for software
+      whose winget manifest keeps breaking (the vendor replaces the file at the same address: "installer hash mismatch").
+      Their scripts are in code\EmbeddedScripts\Download: Install.ps1, Uninstall.ps1 and the detection script are the
+      same text (the files below, in order) - $Action says which part runs. The file is used only when it is signed by
+      the vendor.
+    #>
+    return @(
+        [ordered]@{ id = 'IntuneAppCatalog.Download.TeamViewer'; name = 'TeamViewer'; files = @('TeamViewer.ps1', 'Common.ps1'); kind = 'download'; publisher = 'TeamViewer'
+            why = 'Remote support - the full app, for the support team (a TeamViewer licence for business use). Downloaded from TeamViewer when it installs, always the newest - not through winget, whose manifest breaks whenever TeamViewer replaces the file.'
+            notes = 'Downloads TeamViewer_Setup_x64.exe from download.teamviewer.com when it installs (the PC must reach it) and installs it only when it is signed by TeamViewer. TeamViewer updates itself afterwards, as set in its options. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-TeamViewer.log.' },
+        [ordered]@{ id = 'IntuneAppCatalog.Download.TeamViewerQS'; name = 'TeamViewer QuickSupport'; files = @('TeamViewerQS.ps1', 'Common.ps1'); kind = 'download'; publisher = 'TeamViewer'
+            why = 'On users'' PCs: the user starts it and gives support the ID - nothing runs in the background. Downloaded from TeamViewer when it installs, put in Program Files with a Start menu and desktop shortcut.'
+            notes = 'Downloads TeamViewerQS_x64.exe from download.teamviewer.com when it installs (the PC must reach it) and uses it only when it is signed by TeamViewer: put in C:\Program Files\TeamViewer QuickSupport, with shortcuts in the Start menu and on the desktop. It is the version of the day it was installed - Uninstall and install it again (or a new release of this app) for a newer one. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-TeamViewerQS.log.' }
+    )
+}
+
+function Global:Get-ScriptStarterAppSet {
+    # Pure (2.38.66): every script app of the starter set - the clean-up apps and the ones fetched from their vendor.
+    return @(@(Get-CleanupAppSet) + @(Get-DownloadAppSet))
+}
+
+function Global:Get-DownloadStarterItem {
+    # Pure (2.38.66): one app fetched from its vendor as a starter set entry.
+    param([int]$Index)
+    $c = @(Get-DownloadAppSet)[$Index]
+    return [ordered]@{ id = $c.id; name = $c.name; category = 'Remote access'; recommended = $true; why = $c.why }
+}
+
 function Global:Get-CleanupStarterItem {
     # Pure (2.38.58): one clean-up app as a starter set entry.
     param([int]$Index)
@@ -2401,9 +2431,11 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = 'OpenVPNTechnologies.OpenVPNConnect'; name = 'OpenVPN Connect'; category = 'Remote access'; recommended = $false; why = 'For an OpenVPN-based company VPN.' },
         [ordered]@{ id = 'WireGuard.WireGuard'; name = 'WireGuard'; category = 'Remote access'; recommended = $false; why = 'For a WireGuard-based company VPN.' },
         [ordered]@{ id = 'AnyDesk.AnyDesk'; name = 'AnyDesk'; category = 'Remote access'; recommended = $false; why = 'Remote support - needs an AnyDesk licence for business use.' },
-        [ordered]@{ id = 'TeamViewer.TeamViewer'; name = 'TeamViewer'; category = 'Remote access'; recommended = $false; why = 'Remote support - the full app, for the support team; needs a TeamViewer licence for business use.' },
+        # 2.38.66: TeamViewer and QuickSupport fetched from TeamViewer itself - winget's manifests broke whenever TeamViewer
+        # replaced its files (0x8A150011). See Get-DownloadAppSet.
+        (Get-DownloadStarterItem 0),
         [ordered]@{ id = 'TeamViewer.TeamViewer.Host'; name = 'TeamViewer Host'; category = 'Remote access'; recommended = $false; why = "On users' PCs: support connects to them unattended (the PC is assigned to the company's TeamViewer account)." },
-        [ordered]@{ id = 'TeamViewer.TeamViewer.QuickSupport'; name = 'TeamViewer QuickSupport'; category = 'Remote access'; recommended = $false; why = 'On users'' PCs: the user starts it and gives support the ID - nothing runs in the background.' },
+        (Get-DownloadStarterItem 1),
         [ordered]@{ id = 'Dropbox.Dropbox'; name = 'Dropbox'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Dropbox (OneDrive comes with Windows).' },
         [ordered]@{ id = 'Google.GoogleDrive'; name = 'Google Drive'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Google Drive.' },
         [ordered]@{ id = 'Box.Box'; name = 'Box Drive'; category = 'Cloud storage'; recommended = $false; why = 'Where files are shared on Box.' },

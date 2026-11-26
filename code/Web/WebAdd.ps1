@@ -85,7 +85,7 @@ function Global:Add-WebWingetApps {
             continue
         }
         # The clean-up apps of the starter set (2.38.58): script apps with their scripts from EmbeddedScripts\Cleanup.
-        $clean = @(Get-CleanupAppSet | Where-Object { $_.id -eq $id }) | Select-Object -First 1
+        $clean = @(Get-ScriptStarterAppSet | Where-Object { $_.id -eq $id }) | Select-Object -First 1
         if ($clean) {
             $r = Add-WebCleanupApp -Definition $clean -Data $Data -Apps $apps
             if ($r.ok) { $added.Add($r.name) } else { $skipped.Add("$($clean.name) ($($r.error))") }
@@ -133,9 +133,18 @@ function Global:Get-WebCleanupScripts {
     # A clean-up app's scripts (2.38.58): @{ Install; Detect; Uninstall } - Install.ps1 and the detection script are the
     # same files, the detection one only looks ($DetectOnly).
     param($Definition)
-    $dir = Join-Path (Join-Path (Join-Path $Global:App.RootPath 'code') 'EmbeddedScripts') 'Cleanup'
+    $download = [string]$Definition.kind -eq 'download'
+    $dir = Join-Path (Join-Path (Join-Path $Global:App.RootPath 'code') 'EmbeddedScripts') $(if ($download) { 'Download' } else { 'Cleanup' })
     $body = (@($Definition.files) | ForEach-Object { (Get-Content -LiteralPath (Join-Path $dir $_) -Raw -Encoding UTF8).TrimEnd() }) -join "`r`n`r`n"
     $head = "# $($Definition.name) - from Intune App Catalog's starter set. Runs as SYSTEM.`r`n"
+    # An app fetched from its vendor (2.38.66): the same text three times - $Action says which part runs.
+    if ($download) {
+        return @{
+            Install   = $head + "`$Action = 'Install'`r`n`r`n" + $body + "`r`n"
+            Detect    = $head + "# The detection script: the same as Install.ps1, but it only looks.`r`n`$Action = 'Detect'`r`n`r`n" + $body + "`r`n"
+            Uninstall = $head + "`$Action = 'Uninstall'`r`n`r`n" + $body + "`r`n"
+        }
+    }
     return @{
         Install   = $head + "`$DetectOnly = `$false`r`n`r`n" + $body + "`r`n"
         Detect    = $head + "# The detection script: the same as Install.ps1, but it only looks. Found = nothing of the list is installed.`r`n`$DetectOnly = `$true`r`n`r`n" + $body + "`r`n"
@@ -149,12 +158,13 @@ function Global:Add-WebCleanupApp {
     $twin = @($Apps | Where-Object { ([string]$_.appName) -eq [string]$Definition.name }) | Select-Object -First 1
     if ($twin) { return @{ ok = $false; error = "already in the catalog as $($twin.appName)" } }
     $sc = Get-WebCleanupScripts $Definition
-    $r = Add-WebScriptApp @{ name = $Definition.name; publisher = 'IT'; version = ''; description = $Definition.why
+    $r = Add-WebScriptApp @{ name = $Definition.name; publisher = $(if ($Definition.publisher) { [string]$Definition.publisher } else { 'IT' }); version = ''; description = $Definition.why
         install = $sc.Install; uninstall = $sc.Uninstall; detectScript = $sc.Detect; managed = $false
         requiredFor = @($Data.requiredFor); availableFor = @($Data.availableFor); excludeFor = @($Data.excludeFor) }
     # Three hours to run (2.38.61): Intune stops an install after 60 minutes by default - several uninstallers (10 to 30
     # minutes each) and McAfee's removal tool can take longer, and the removal was stopped half way.
-    if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes; $a.metadata | Add-Member -NotePropertyName installTimeMinutes -NotePropertyValue 180 -Force }.GetNewClosure()) }
+    $minutes = if ([string]$Definition.kind -eq 'download') { 60 } else { 180 }
+    if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes; $a.metadata | Add-Member -NotePropertyName installTimeMinutes -NotePropertyValue $minutes -Force }.GetNewClosure()) }
     return $r
 }
 
