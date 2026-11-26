@@ -116,6 +116,8 @@ function Global:Get-WebCatalog {
                 audit        = [string]$row.IntuneAudit
                 hasAppId     = [bool]$row.HasAppId
                 packageMissing = [bool]$row.PackageMissing
+                packageBuilt = [string]$row.PackageBuilt
+                packageStale = [bool]$row.PackageStale
             })
         }
     }

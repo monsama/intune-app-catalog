@@ -206,6 +206,25 @@ function Global:Get-CatalogRow {
     # the app editor now (Package location), not in a column here.
     $pkg = if ($needsPackageCheck) { Resolve-AppPackagePath -AppName $app.appName -Uncommon $isUncommon -Index $PackageIndex -PackagePath $app.packagePath } else { $null }
 
+    # When the package was built, and whether a file next to it changed since (2.38.53): the list and the side panel
+    # say "built <time>" or "files changed since - build it again", not only "packaged" or not. The files are the
+    # ones in the .intunewin's own folder (Package saves it in the app's source folder) - a package kept elsewhere
+    # (a stored packagePath to a file outside the packages folder) only gets its time.
+    $pkgBuilt = ''; $pkgStale = $false
+    if ($pkg -and $pkg.Found -and ([string]$pkg.Path) -match '(?i)\.intunewin$') {
+        $pkgItem = Get-Item -LiteralPath $pkg.Path -ErrorAction SilentlyContinue
+        if ($pkgItem) {
+            $pkgBuilt = $pkgItem.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+            $pkgRoot = [string](Get-AppFolder -Kind Packages)
+            $pkgDir = [string]$pkgItem.DirectoryName
+            if ($pkgRoot -and $pkgDir.StartsWith($pkgRoot.TrimEnd('\', '/'), [System.StringComparison]::OrdinalIgnoreCase) -and $pkgDir.TrimEnd('\', '/').Length -gt $pkgRoot.TrimEnd('\', '/').Length) {
+                # Two seconds of slack: a file copied in the same moment the package was built isn't "newer".
+                $cut = $pkgItem.LastWriteTimeUtc.AddSeconds(2)
+                $pkgStale = [bool](@(Get-ChildItem -LiteralPath $pkgDir -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.intunewin' -and $_.LastWriteTimeUtc -gt $cut } | Select-Object -First 1).Count)
+            }
+        }
+    }
+
     # For the Custom Config column only. Status used to repeat it as a
     # note, which said the same thing twice on one row.
     $hasCustomConfig = Test-AppHasCustomConfig -App $app
@@ -257,6 +276,8 @@ function Global:Get-CatalogRow {
         # that it says "No App ID", and the package is just as missing.
         HasAppId  = [bool]$app.appId
         PackageMissing = [bool]($needsPackageCheck -and -not $pkg.Found)
+        PackageBuilt = $pkgBuilt
+        PackageStale = $pkgStale
         Index     = $Index
     }
 }

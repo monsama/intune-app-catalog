@@ -38,6 +38,8 @@ function stageOf(a) {
   if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install & detection).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
   if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
+  // Built, but a file in its packages folder changed since (2.38.53): Intune gets the old package until it is built again.
+  if (own && a.packageStale && !a.packageMissing) return { key: 'rebuild', label: 'Rebuild package', cls: 'warn', why: `Files in its packages folder changed after its package was built (${fmtWhen(a.packageBuilt)}) - ${a.hasAppId ? 'Intune still has the old one' : 'the package still holds the old ones'}.`, next: { label: 'Build', title: 'Build the .intunewin again from its packages folder', run: () => onApp(a, 'package') } };
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
   // Changed in the catalog since it was last sent: the send it needs is the next step.
   if (a.hasAppId && a.unsent) {
@@ -186,6 +188,8 @@ async function fillPanel(a) {
       })(),
       fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
+      // Whether its installer is packaged, and when (2.38.53) - only for an app that installs from its own package.
+      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : ''}` : '') : ''),
       // The App ID in full, with Copy and Open in Intune - the app's page in the Intune admin center.
       a.hasAppId && a.appId ? el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { class: 'pappid' },
         el('span', { text: a.type || 'yes' }), el('code', { class: 'appid', text: a.appId, title: 'The Intune App ID' }),
@@ -253,7 +257,7 @@ function updateReady() {
       const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file && String(editorInstaller.file).split(/[\\/]/).pop();
       if (named && have && named.toLowerCase() !== String(have).toLowerCase() && !/^(msiexec|cmd|powershell)\.exe$/i.test(named))
         return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Build package`, 'mInstallCommand'];
-      return [!!(row && !row.packageMissing), row && !row.packageMissing ? 'Its installer is packaged' : 'Its installer, packaged (upload it, then Build package)', null];
+      return [!!(row && !row.packageMissing && !row.packageStale), row && !row.packageMissing ? (row.packageStale ? 'Its installer is packaged (files changed since - build it again)' : 'Its installer is packaged') : 'Its installer, packaged (upload it, then Build package)', null];
     })()
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],

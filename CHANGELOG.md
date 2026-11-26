@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.38.53
+
+- **Is it packaged?** The side panel of an app with its own installer now says *Package: built &lt;time&gt;* or *not built yet*.
+  When a file in its packages folder changed after the build (a new installer, an edited Install.ps1, a new version),
+  it says so, the stage is **Rebuild package** with a Build button, and the Ready checklist no longer ticks "packaged".
+  New list filter: **Package out of date**.
+
 ## 2.38.52
 
 - **Store apps and Microsoft 365 Apps keep Microsoft's text**: their
