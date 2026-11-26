@@ -508,6 +508,20 @@ try {
                 $workerError = [string]$job.Ps.Streams.Error[0]
             }
 
+            # Several workers signing in to Graph at the same moment can trip over each other inside the Graph module
+            # ("Collection was modified; enumeration operation may not execute.") - nothing about the app. Once more,
+            # a moment later (2.38.54): Checks showed the first app as "Could not check".
+            if ($workerError -and $workerError -match 'Collection was modified') {
+                $job.Ps.Dispose()
+                $retry = [powershell]::Create(); $retry.RunspacePool = $pool
+                [void]$retry.AddScript($perAppWork).AddParameter('AppEntry', $job.AppEntry).AddParameter('TenantId', $Config.TenantId).AddParameter('ClientId', $Config.ClientId).AddParameter('CertThumbprint', $Config.CertificateThumbprint)
+                Start-Sleep -Seconds 2; $workerError = $null; $output = $null
+                try { $output = $retry.Invoke() } catch { $workerError = $_.Exception.Message }
+                if (Get-Command Write-GraphLogFromInformation -ErrorAction SilentlyContinue) { Write-GraphLogFromInformation $retry.Streams.Information }
+                if (-not $workerError -and $retry.Streams.Error.Count -gt 0) { $workerError = [string]$retry.Streams.Error[0] }
+                $job.Ps = $retry
+            }
+
             if ($workerError) {
                 Write-Host ""
                 Write-Host "[$doneCount/$($jobs.Count)] $($job.AppEntry.AppName)" -ForegroundColor Cyan

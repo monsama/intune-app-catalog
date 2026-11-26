@@ -239,6 +239,7 @@ $testableFunctionNames = @(
     "ConvertTo-OfficeSuiteBody",
     "ConvertFrom-OfficeSuiteApp",
     "Get-OfficeSettingsSummary",
+    "Get-OfficeSettingsDiff",
     "Test-StoreProductId",
     "Get-PermissionReport",
     "Set-PsadtTemplateValues",
@@ -961,6 +962,11 @@ $offH = ConvertTo-OfficeSettings @{ excluded = @() }
 Assert-True (@($offE.excluded).Count -eq 0 -and @($offH.excluded).Count -eq 0 -and $offH.channel -eq 'monthlyEnterprise' -and (@($offE.locales) -join '') -eq 'sr-latn-rs' -and (ConvertTo-OfficeSuiteBody -Settings $offE).excludedApps.lync -eq $false) "ConvertTo-OfficeSettings: no apps left out is kept, a missing channel is the default, sr-latn-rs is a language"
 $offG = ConvertFrom-OfficeSuiteApp ([pscustomobject]@{ updateChannel = 'deferred'; officePlatformArchitecture = 'x86'; localesToInstall = @('fr-fr'); useSharedComputerActivation = $true; shouldUninstallOlderVersionsOfOffice = $false; excludedApps = [pscustomobject]@{ teams = $true; word = $false; visio = $true } })
 Assert-True ($offG.channel -eq 'deferred' -and $offG.architecture -eq 'x86' -and (@($offG.excluded) -join ',') -eq 'teams,visio' -and $offG.sharedActivation -and -not $offG.removeOlder) "ConvertFrom-OfficeSuiteApp: Intune's Microsoft 365 Apps read back as the catalog's settings"
+$odL = Get-OfficeDefaultSettings; $odR = Get-OfficeDefaultSettings; $odL.excluded = @($odL.excluded | Where-Object { $_ -ne 'bing' })
+$odD = Get-OfficeSettingsDiff $odL $odR
+Assert-True ($odD -and $odD.Local -eq 'installs Bing (search in the browser)' -and $odD.Remote -eq 'leaves out Bing (search in the browser)') "Get-OfficeSettingsDiff (2.38.54): only the app that differs, not both whole summaries"
+$odR.channel = 'current'
+Assert-True ((Get-OfficeSettingsDiff $odL $odR).Remote -eq 'Current Channel; leaves out Bing (search in the browser)' -and $null -eq (Get-OfficeSettingsDiff (Get-OfficeDefaultSettings) (Get-OfficeDefaultSettings))) "Get-OfficeSettingsDiff: the channel too; nothing when they match"
 Assert-True ((Get-OfficeSettingsSummary (Get-OfficeDefaultSettings)) -like "Monthly Enterprise Channel, 64-bit, Windows' language; without *Skype for Business*") "Get-OfficeSettingsSummary: the defaults in one line"
 $patV = Get-InstalledNamePattern 'apm system2'
 Assert-True ('apm system2 Version 2.1' -match $patV -and 'apm system2 v2.1' -match $patV -and 'apm system2 Viewer' -notmatch $patV) "Get-InstalledNamePattern (2.38.18): 'Version 2.1' after the name counts as its version"

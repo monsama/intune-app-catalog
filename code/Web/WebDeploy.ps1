@@ -656,9 +656,10 @@ function Global:Get-WebOfficeDiff {
     param($App)
     try { $o = Get-WebOfficeFromIntune @{ name = [string]$App.appName } } catch { return $null }
     if (-not $o.ok -or -not $o.found) { return $null }
-    $l = [string](Get-OfficeSettingsSummary $App.office); $r = [string](Get-OfficeSettingsSummary $o.office)
-    if ($l -eq $r) { return $null }
-    return @{ Local = $l; Remote = $r; Office = $o.office }
+    # Only what differs (2.38.54) - the whole summaries were cut off before the one app that differed.
+    $d = Get-OfficeSettingsDiff $App.office $o.office
+    if (-not $d) { return $null }
+    return @{ Local = $d.Local; Remote = $d.Remote; Office = $o.office }
 }
 
 function Global:Remove-WebReplacedLobApp {
