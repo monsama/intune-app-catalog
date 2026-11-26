@@ -631,6 +631,8 @@ try {
     $fa = Invoke-Api '/api/app-installer' @{ name = $fName; uploadId = $fs.uploadId }
     $fApp = (Invoke-Api '/api/app-get' @{ name = $fName }).app
     $pf = Invoke-Api '/api/package-files' @{ name = $fName }
+    $pfSum = [long]0; foreach ($x in @($pf.files)) { $pfSum += [long]$x.size }
+    Check ($pf.ok -and $pfSum -gt 0 -and [long]$pf.total -eq $pfSum) 'packages: the folder''s total is its files'' sizes added up (2.38.64: it was 0)' "$($pf.total) / $pfSum"
     $pfPaths = @($pf.files | ForEach-Object { $_.path })
     Check ($fa.ok -and $fa.files -eq 3 -and $fa.setup -eq 'Setup\zz-folder-setup.exe' -and $fApp.metadata.installCommand -eq '"Setup\zz-folder-setup.exe" /S' -and $pf.ok -and $pf.setupFile -eq 'Setup\zz-folder-setup.exe' -and ($pfPaths -contains 'Setup\config.xml') -and ($pfPaths -contains 'readme.txt') -and ($pfPaths -contains 'Uninstall.ps1')) 'folder upload: into its packages folder with its subfolders, the setup file remembered, the commands filled in' ($pfPaths -join ', ')
     # A .zip on top: asked first (files there already); added, it keeps them - replaced, they go. A .zip with a ../ entry is refused.

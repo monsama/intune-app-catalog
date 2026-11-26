@@ -14,6 +14,7 @@
 - **Install status explains more errors**: winget's "installer hash mismatch" (0x8A150011, shown by Intune as
   0x80070011 - the vendor replaced the file, TeamViewer QuickSupport), a script command whose script isn't in the
   package (0x80070000, from PowerShell's 0xFFFD0000), and exit code 5 from an Inno Setup installer (aborted).
+- **The editor's package file list shows the real total size** - it said "1 KB" whatever the folder held.
 
 ## 2.38.63
 
