@@ -447,16 +447,29 @@ async function loadPkgFiles() {
 function pkgFilesView() {
   const r = pkgFiles; if (!r || !r.files.length) return '';
   const setup = (editorInstaller && editorInstaller.found ? editorInstaller.file : '') || r.setupFile || '';
-  const row = f => el('li', {}, el('span', { class: 'pfpath mono', text: f.path, title: f.path }), el('span', { class: 'muted', text: fmtMB(f.size) }),
-    f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pill ok', text: 'setup', title: 'The setup file Package uses' })
+  // 2.38.74: when each file last changed - and what changed after the package was built (it isn't in Intune's package
+  // until Build package), and names only capitals tell apart (Windows sees one file).
+  const builtAt = r.package && r.package.modified ? Date.parse(r.package.modified) : 0;
+  const lower = new Map(); for (const f of r.files) { const k = f.path.toLowerCase(); lower.set(k, (lower.get(k) || 0) + 1); }
+  const newer = f => builtAt && f.modified && Date.parse(f.modified) > builtAt + 2000;
+  const changedN = r.files.filter(newer).length;
+  // The folder part of a path quieter than the file's name.
+  const pathEl = p => { const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')); return el('span', { class: 'pfpath mono', title: p }, i >= 0 ? el('span', { class: 'pfdir', text: p.slice(0, i + 1) }) : '', p.slice(i + 1)); };
+  const row = f => el('li', { class: newer(f) ? 'pfnew' : '' }, pathEl(f.path),
+    lower.get(f.path.toLowerCase()) > 1 ? el('span', { class: 'pfmark warn', text: 'Same name', title: 'Another file here has this name in other capitals - on Windows they are one file, and the package holds only one of them. Delete the one the commands don\'t run.' })
+      : newer(f) ? el('span', { class: 'pfmark new', text: 'Not built yet', title: 'Changed after the package was built - Build package (and Send or Replace package) takes it into Intune' }) : el('span'),
+    el('span', { class: 'muted', text: fmtMB(f.size) }),
+    el('span', { class: 'muted pfwhen', text: f.modified ? fmtWhen(f.modified) : '', title: f.modified ? `Last changed ${new Date(f.modified).toLocaleString()}` : '' }),
+    f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pfmark ok', text: 'Setup', title: 'The setup file Package uses' })
       // Not the uninstall script (2.38.0): it was offered as a setup file too.
       : /\.(msi|exe|ps1)$/i.test(f.path) && !/(^|[\\/])uninstall\.ps1$/i.test(f.path) ? el('button', { type: 'button', class: 'linkish', text: 'Use as setup', title: 'Package uses this file as the setup file', onclick: () => setPkgSetup(f.path) }) : el('span'),
     // 2.38.17: scripts and the text files a setup reads (directly in the folder) open in the code editor.
     !/[\\/]/.test(f.path) && /\.(ps1|cfg|ini|xml|txt|cmd|bat|inf|iss|json|reg|config)$/i.test(f.path) && f.size <= 262144
-      ? el('button', { type: 'button', class: 'linkish', text: 'Open', title: `Show and edit ${f.path} in the code editor`, onclick: () => openScriptEditor({ name: editingName, file: f.path }) }) : '',
+      ? el('button', { type: 'button', class: 'linkish', text: 'Open', title: `Show and edit ${f.path} in the code editor`, onclick: () => openScriptEditor({ name: editingName, file: f.path }) }) : el('span'),
     el('button', { type: 'button', class: 'bx', text: '×', title: `Delete ${f.path} from the packages folder`, 'aria-label': `Delete ${f.path}`, onclick: () => deletePkgFile(f.path) }));
-  const d = el('details', { class: 'pkgfiles' }, el('summary', { text: `Files in its packages folder - ${r.files.length}, ${fmtMB(r.total)}${r.package ? ` · package built ${fmtWhen(r.package.modified)}` : ''}` }),
-    el('ul', {}, ...r.files.slice(0, 300).map(row)), r.files.length > 300 ? el('p', { class: 'muted', text: `... and ${r.files.length - 300} more.` }) : '');
+  const d = el('details', { class: 'pkgfiles' }, el('summary', { text: `Files in its packages folder - ${r.files.length}, ${fmtMB(r.total)}${r.package ? ` · package built ${fmtWhen(r.package.modified)}` : ' · no package built yet'}${changedN ? ` · ${changedN} changed after` : ''}` }),
+    el('ul', {}, el('li', { class: 'pfhead', 'aria-hidden': 'true' }, el('span', { text: 'Name' }), el('span'), el('span', { text: 'Size' }), el('span', { text: 'Changed' }), el('span'), el('span'), el('span')),
+      ...r.files.slice(0, 300).map(row)), r.files.length > 300 ? el('p', { class: 'muted', text: `... and ${r.files.length - 300} more.` }) : '');
   d.open = !!pkgFilesOpen; d.addEventListener('toggle', () => { pkgFilesOpen = d.open; });
   return d;
 }

@@ -10,6 +10,16 @@
   - Each one now signs in again a moment later, and a read that hits this is tried again.
   - If it still fails, the app is checked once more on its own. Reading Intune's app settings does the same.
 - **Logs:** the ✓, ⚠ and ✕ marks no longer sit on the time at the start of a timed line.
+- **Package files** (editor > App > Files in its packages folder) are a proper table.
+  - Columns: name, size, when the file last changed, setup, Open, delete.
+  - The summary says when the package was built and how many files changed after it.
+  - A file changed after the build is in bold, marked "Not built yet": Intune's package doesn't have it until Build
+    package.
+  - Files whose names differ only in capitals are marked "Same name". Windows sees one file, as with uninstall.ps1 and
+    Uninstall.ps1.
+  - Subfolders are quieter than the file name.
+- **The package check says plainly what a same-name pair means.** It names which file the commands run and which to
+  delete, and where to delete it.
 
 ## 2.38.73
 
