@@ -749,8 +749,6 @@ label > .chipbox input.chipinput { margin-top: 0; }
 td.src { font-size: 12px; color: var(--muted); }
 /* The change history (History dialog) */
 #histChanges { list-style: none; margin: 0 0 8px; padding: 0; max-height: 46vh; overflow: auto; }
-#histChanges > li { border-left: 3px solid var(--bd); padding: 6px 10px; margin: 0 0 6px; }
-#histChanges > li.intune { border-left-color: var(--info); }
 #histChanges .thead { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12px; }
 #histChanges .thead .btn { margin-left: auto; }
 #histChanges ul.changes { margin: 4px 0 0; padding-left: 18px; font-size: 13px; }
@@ -1589,7 +1587,7 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 
 /* 2.31.0: the list's view options in one icon menu, with the mouse and keys */
 .menu.looks .mkeys { max-width: 300px; margin: 4px 8px 6px; font-size: 12px; line-height: 1.5; color: var(--muted); white-space: normal; }
-body[data-view="home"] #setupBanner { display: none; }
+body[data-view="home"] #setupBanner, body[data-view="settings"] #setupBanner { display: none; }
 
 /* 2.31.0: the release rule as one line; the App ID as plain text; the icon's extra actions in one menu */
 #aRuleBox .foldsum { display: flex; align-items: center; gap: 12px; padding: 6px 0 2px; font-size: 13px; color: var(--muted); }
@@ -1996,3 +1994,9 @@ input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
 /* Details: Publisher, Owner and Developer in one row on wide windows (Developer sat alone on its row). */
 @media (min-width: 1100px) { #dlgApp .two:has(#mDeveloper) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .readypop { left: 0; }
+/* Groups (2.38.67): one search row - the text and which groups it looks in - and New group beside the status. */
+#viewGroups .panel.side > .toolbar.tight { flex-wrap: nowrap; }
+#viewGroups .panel.side > .toolbar.tight #groupSearch { flex: 1 1 auto; min-width: 0; }
+#viewGroups .gscope { flex: 0 1 auto; width: auto; min-width: 0; }
+#viewGroups .gfilter { display: flex; align-items: center; gap: 8px; }
+#viewGroups .gfilter .muted { flex: 1 1 auto; }

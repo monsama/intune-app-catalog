@@ -10,10 +10,11 @@ async function loadScripts() {
   const r = await api('/api/scripts');
   if (!r.ok) { $('scriptNote').textContent = r.error; return; }
   scripts = r.rows || [];
-  const notes = [r.tenantRead ? 'PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.' : r.tenantError];
+  const off = !r.tenantRead && !!(state && !state.configured && !state.testMode);
+  const notes = [r.tenantRead || off ? 'PowerShell scripts Intune runs on enrolled Windows devices, with the local copies kept beside the catalog.' : r.tenantError];
   if (r.localErrors && r.localErrors.length) notes.push('Unreadable local files: ' + r.localErrors.join('; '));
   $('scriptNote').textContent = notes.join(' ');
-  $('scriptNote').className = 'sub' + (r.tenantRead ? '' : ' warntext');
+  $('scriptNote').className = 'sub' + (r.tenantRead || off ? '' : ' warntext');
   setEnabled($('btnScriptsSave'), !!r.tenantRead, 'Intune couldn\'t be read - set up the connection first.');
   if (scriptSel && !scripts.some(x => x.displayName === scriptSel.displayName && x.id === scriptSel.id)) scriptSel = null;
   renderScripts();

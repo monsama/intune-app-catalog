@@ -325,7 +325,8 @@ function showManagedState() {
   $('aRuleBox').hidden = !$('aManaged').checked;
   // Updates itself (2.38.40): the other way to keep a Winget app current - offered while managed updates are off.
   const storeId = has && isStoreId($('aWinget').value.trim());
-  $('aSelfRow').hidden = !has || storeId || $('aManaged').checked;
+  // A Winget app says it under Install with (2.38.67) - the tick box itself is no longer shown.
+  $('aSelfRow').hidden = true;
   $('aSelfHint').hidden = !(has && !storeId && $('aManaged').checked && editorSelfKnown);
   $('arAutoRow').hidden = has; $('arUrlRow').hidden = has;
   // "Winget package to watch" is for an app with its own installer - not beside a Winget ID box (2.38.61: a new Winget app showed both).
@@ -493,6 +494,7 @@ function methodText(m, pinned) {
     : `Installs exactly ${pinned || v} (the App version), with winget. Newer versions reach devices only when you release them: pilot groups first, then everyone.` + (w && w !== v ? ` Winget has ${w} now - release it on Updates.` : '');
   if (m === 'WAU') return "Still installs through Winget-AutoUpdate, which this catalog no longer uses. Choose Managed updates (or the winget command) - Home switches all such apps at once.";
   if (m === 'Winget') return 'Installs whatever version winget has at that moment - nothing is pinned. Nothing updates it afterwards.' + now;
+  if (m === 'Self') return "Installs winget's newest - the app then keeps itself up to date on the devices (browsers, meeting apps). Nothing is pinned, nothing is released here." + now;
   return 'The install command was edited by hand, so it is left as it is - check it for which version it installs. Choosing a method here replaces it.';
 }
 async function refreshMethod() {
@@ -507,6 +509,8 @@ async function refreshMethod() {
   let m = r.current || ($('mInstallCommand').value.trim() ? 'Custom' : 'Winget');
   // Managed ticked: Save pins the commands to the App version, whatever they are now.
   if ($('aManaged').checked) m = 'Managed'; else if (m === 'Managed') m = 'Custom';
+  // Updates itself (2.38.67): one of the choices here, not a tick box of its own beside them.
+  if (m === 'Winget' && $('aSelfUpd').checked) m = 'Self';
   $('aMethod').value = m;
   // What the hidden managed-updates line said (a version in pilot, superseded ones) - under the choice now (2.38.67).
   const rel = $('aManagedNote').textContent.replace(/^- /, '').replace(/ - /g, '; ');
@@ -536,14 +540,15 @@ $('xContext').addEventListener('change', methodSoon);
 $('aManaged').addEventListener('change', methodSoon);
 $('aMethod').addEventListener('change', () => applyMethod());
 // Install for decides --scope machine: generated commands are written again for it (own ones are left as typed).
-$('xContext').addEventListener('change', () => { if (!$('aMethodRow').hidden && ['Managed', 'Winget'].includes($('aMethod').value)) applyMethod(); });
+$('xContext').addEventListener('change', () => { if (!$('aMethodRow').hidden && ['Managed', 'Winget', 'Self'].includes($('aMethod').value)) applyMethod(); });
 async function applyMethod() {
-  const m = $('aMethod').value, before = await api('/api/winget-commands', methodBody());
+  // "Updates itself" installs with the winget command too - and says the app keeps itself current.
+  const choice = $('aMethod').value, m = choice === 'Self' ? 'Winget' : choice, before = await api('/api/winget-commands', methodBody());
   if (before.ok && !before.current && $('mInstallCommand').value.trim() && !(await ask('Replace the install and uninstall commands?\n\nThey were edited by hand - choosing a method writes the generated ones instead.', { ok: 'Replace' }))) { refreshMethod(); return; }
   // The extra winget options in the commands stay (the server reads them back from the install command).
   const r = await api('/api/winget-commands', methodBody({ method: m }));
   if (!r.ok) { toast(r.error, true); refreshMethod(); return; }
-  $('aManaged').checked = m === 'Managed'; showManagedState();
+  $('aManaged').checked = m === 'Managed'; $('aSelfUpd').checked = choice === 'Self'; showManagedState();
   for (const [id, v] of [['mInstallCommand', r.install], ['mUninstallCommand', r.uninstall]]) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); }
   refreshMethod();
 }
@@ -711,7 +716,7 @@ $('appForm').addEventListener('submit', async e => {
   if (deployTouched) app.deploy = readDeploy();
   app.iconChange = iconChange; if (iconChange === 'set') app.icon = editorIcon;
   app.managedUpdates = $('aManaged').checked;
-  if (!$('aSelfRow').hidden) app.updatesItself = $('aSelfUpd').checked;
+  if ($('aWinget').value.trim() && !isStoreId($('aWinget').value.trim()) && !$('aManaged').checked) app.updatesItself = $('aSelfUpd').checked;
   app.releaseRule = { days: $('arDays').value.trim(), maxFailedPercent: $('arFailed').value.trim(), minInstalled: $('arMin').value.trim() };
   app.detectedName = $('arDetected').value.trim();
   app.autoRelease = $('arAuto').checked && !$('aWinget').value.trim(); app.downloadUrl = $('arUrl').value.trim();
@@ -771,19 +776,24 @@ async function loadChanges(name) {
   const r = await api('/api/app-history', { name });
   if (!r.ok) { $('histChangesNote').textContent = r.error; $('histChanges').replaceChildren(); return; }
   $('histChangesNote').textContent = r.entries.length ? '' : 'Nothing recorded yet - changes are recorded from this version of the app on.';
-  $('histChanges').replaceChildren(...r.entries.map(e => el('li', { class: e.kind === 'intune' ? 'intune' : '' },
-    el('div', { class: 'thead' }, el('time', { text: fmtWhen(e.at) }), el('span', { class: 'pill ' + (e.kind === 'intune' ? 'info' : 'muted'), text: e.kind === 'intune' ? 'Intune' : 'Catalog' }),
-      el('span', { class: 'muted', text: e.source }), e.app !== name ? el('span', { class: 'muted', text: `(as ${e.app})` }) : '',
-      e.canUndo ? el('button', { class: 'btn small', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async () => {
-        if (!(await ask(`Undo this change to ${name}?\n\n${e.changes.filter(c => c.revertable).map(c => `${histField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nOnly the catalog changes - Send to Intune sends it there.`, { ok: 'Undo' }))) return;
-        const x = await api('/api/history-undo', { name, id: e.id });
-        if (!x.ok) { toast(x.error, true); return; }
-        toast(`Undone: ${x.undone.map(histField).join(', ')}${x.skipped.length ? ` - left alone: ${x.skipped.join('; ')}` : ''}`);
-        $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(name);
-      } }) : ''),
-    e.text ? el('div', { text: e.text }) : '',
-    e.changes.length ? el('ul', { class: 'changes' }, ...e.changes.map(c => el('li', {}, el('strong', { text: histField(c.field) + ': ' }),
-      el('span', { class: 'old', text: c.before || '(empty)' }), ' → ', el('span', { class: 'new', text: c.after || '(empty)' })))) : '')));
+  // The same rows as Recent changes (2.38.67): when, where from, what - opened for its fields, Undo inside.
+  $('histChanges').replaceChildren(...r.entries.map((e, n) => {
+    const what = e.text || [...new Set(e.changes.map(c => histField(c.field)))].slice(0, 4).join(', ') || 'Changed';
+    const undo = e.canUndo ? el('button', { class: 'btn small ghost', text: 'Undo', title: 'Put the fields this change changed back - only those not changed again since', onclick: async () => {
+      if (!(await ask(`Undo this change to ${name}?\n\n${e.changes.filter(c => c.revertable).map(c => `${histField(c.field)}: back to ${c.before || '(empty)'}`).join('\n')}\n\nOnly the catalog changes - Send to Intune sends it there.`, { ok: 'Undo' }))) return;
+      const x = await api('/api/history-undo', { name, id: e.id });
+      if (!x.ok) { toast(x.error, true); return; }
+      toast(`Undone: ${x.undone.map(histField).join(', ')}${x.skipped.length ? ` - left alone: ${x.skipped.join('; ')}` : ''}`);
+      $('dlgHistory').close(); $('dlgApp').close(); await loadApps(); openEditor(name);
+    } }) : '';
+    const head = el('summary', {}, el('span', { class: 'rwhen', text: fmtWhen(e.at) }), el('span', { class: 'rsrc', text: e.source }),
+      el('span', { class: 'rwhat' }, what, e.kind === 'intune' ? el('span', { class: 'pill info', text: 'Intune' }) : ''),
+      el('span', { class: 'rapps muted', text: e.app !== name ? `as ${e.app}` : '' }));
+    const body = el('div', { class: 'rbody' }, el('div', { class: 'ritem' }, undo ? el('div', { class: 'rapp' }, undo) : '',
+      e.changes.length ? el('ul', { class: 'rchanges' }, ...e.changes.map(c => el('li', {}, el('span', { class: 'f', text: histField(c.field) }),
+        el('span', { class: 'v' }, el('span', { class: 'b', text: c.before || '(empty)' }), el('span', { class: 'arr', text: '→', 'aria-label': 'to' }), el('span', { class: 'a', text: c.after || '(empty)' }))))) : ''));
+    return el('li', {}, el('details', { open: n < 3 }, head, body));
+  }));
 }
 async function compareVersion(name, b) {
   const r = await api('/api/app-compare', { name, id: b.id });
