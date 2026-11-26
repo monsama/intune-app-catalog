@@ -2033,3 +2033,6 @@ input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
 .sendcard .sfoot { flex-wrap: wrap; }
 .sendcard .slog[open] { flex: 1 1 100%; }
 .sendcard .sfoot > .btn { margin-left: auto; }
+/* The cards line up at their bottom edge (2.38.69): with wrap-reverse the cross axis runs upward, so flex-start is the bottom. */
+.sendstack { align-items: flex-start; }
+.sendstack .smore { align-self: flex-start; }
