@@ -2211,7 +2211,11 @@ function Global:Get-InstallErrorInfo {
         '0x80070BC9' = @('Installed, but a restart is needed to finish (exit code 3017).', 'Add 3017 as a Soft reboot return code, or let the device restart.')
         '0x80070002' = @('A file wasn''t found (Windows error 2).', 'The install command names a file that isn''t in the package (or the wrong path) - check it against the package folder, and rebuild the package.')
         '0x80070003' = @('A path wasn''t found (Windows error 3).', 'The install command uses a folder that doesn''t exist on the device - check paths and quoting.')
-        '0x80070005' = @('Access denied (Windows error 5).', 'The install ran without the rights it needs: install for the system, not the user, or check that nothing (antivirus, policies) blocks it.')
+        '0x80070005' = @('Access denied (Windows error 5) - or the installer ended with exit code 5 (Inno Setup: the installation was aborted).', 'Access: install for the system, not the user, and check that nothing (antivirus, policies) blocks it. Inno Setup: usually a running copy of the app (files in use) or a requirement the setup checks - add /LOG="C:\Windows\Temp\setup.log" to the install command and read its end.')
+        # 2.38.64: what came up on a real device. Intune shows a program's exit code made into a Windows error (0x8007xxxx).
+        '0x8A150011' = @('winget: the downloaded installer doesn''t match the hash in winget''s manifest.', 'The vendor replaced the file at the same address (TeamViewer, for one). Pick a newer version (the side panel''s Version), or wait until winget''s manifest is updated - or deploy it with its own installer.')
+        '0x80070011' = @('For a Winget app: winget''s "installer hash mismatch" (0x8A150011) as Intune reports it. Otherwise Windows error 17 (another drive).', 'The vendor replaced the installer at the same address: pick a newer version (the side panel''s Version), or wait until winget''s manifest is updated - or deploy it with its own installer.')
+        '0x80070000' = @('For a PowerShell script command (-File): the script wasn''t found - PowerShell ended with 0xFFFD0000.', 'The package in Intune doesn''t have the script the command names: build the package (with the script in its folder) and upload it - Send, or More > Replace package with managed updates.')
         '0x800705B4' = @('The installation timed out.', 'The installer took longer than the maximum install time - often a hidden prompt waiting for an answer. Make it silent, or raise the install time in the app''s deploy settings.')
         '0x80072329' = @('winget wasn''t on the device (exit code 9009) - usually a new device still setting up (Autopilot).', 'Nothing to do: the install command waits for winget up to 5 minutes and Intune tries again later (9009 is a Retry return code). If it stays, check that App Installer is on the device.')
         '0x80070001' = @('The installer returned 1 (incorrect function / generic failure).', 'Exit code 1 is the installer''s own "failed" - run it by hand as SYSTEM to see why; for scripts, check the script''s errors.')
@@ -2523,6 +2527,11 @@ function Global:Get-PackageConsistencyWarnings {
     if (-not $Metadata) { return @() }
     $have = @{}; foreach ($f in @($Files)) { if ($f) { $p = ([string]$f -replace '/', '\').ToLowerInvariant(); $have[$p] = $true; $have[($p -split '\\')[-1]] = $true } }
     $hasFiles = $have.Count -gt 0
+    # Files whose names differ only in capitals (2.38.64): two files on the server (Linux), one on a PC - which one the
+    # device gets is chance ("Uninstall.ps1" beside "uninstall.ps1").
+    foreach ($grp in @(@($Files | Where-Object { $_ } | ForEach-Object { [string]$_ -replace '/', '\' }) | Group-Object { $_.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) {
+        $w.Add("$((@($grp.Group) | Sort-Object) -join ' and ') differ only in capitals - on a PC they are one file, and which one it gets is chance. Delete the one you don't use.")
+    }
     if ($hasFiles) {
         foreach ($k in 'installCommand', 'uninstallCommand') {
             foreach ($f in @(Get-CommandPackageFiles ([string]$Metadata.$k))) {

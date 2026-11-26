@@ -76,6 +76,8 @@ function Global:Get-WebCatalog {
                 # A package built since the last upload, from other files than that one (2.38.54) - the next send uploads it.
                 # Only once a package was uploaded with its stamp (else every older app would say so); not managed updates
                 # (a new package goes through Release new version there).
+                # Managed updates (2.38.64): the same, for Replace package - a send doesn't upload it there.
+                packageReplace = [bool]($apps[$i].appId -and $apps[$i].managedUpdates -and $apps[$i].packageStamp -and $row.PackagePath -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $row.PackagePath) -Sent ([string]$apps[$i].packageStamp) -Record $pkgSources[(Get-SafeFileNameForApp -Name $apps[$i].appName)]))
                 packageToSend = [bool]($apps[$i].appId -and -not $apps[$i].managedUpdates -and $apps[$i].packageStamp -and $row.PackagePath -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $row.PackagePath) -Sent ([string]$apps[$i].packageStamp) -Record $pkgSources[(Get-SafeFileNameForApp -Name $apps[$i].appName)]))
                 # The App version (what deploys and releases use) - Intune's own reported version apart.
                 version      = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
@@ -857,6 +859,7 @@ function Global:Invoke-WebApi {
         '/api/app-restore'      { return (Invoke-WithCatalogLock { Restore-WebAppBackup $Data }) }
         '/api/deploy-plan'      { return (Get-WebDeployPlan $Data) }
         '/api/deploy-start'     { return (Start-WebDeploy $Data) }
+        '/api/package-replace'  { return (Start-WebDeploy @{ name = [string]$Data.name; replacePackage = $true }) }
         '/api/push-start'       { return (Start-WebPushGroups $Data) }
         '/api/checks-run'       { return (Invoke-WebChecks $Data) }
         '/api/checks-details'   { return (Start-WebCheckDetails $Data) }

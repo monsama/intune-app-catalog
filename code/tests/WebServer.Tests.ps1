@@ -631,6 +631,8 @@ try {
     $fa = Invoke-Api '/api/app-installer' @{ name = $fName; uploadId = $fs.uploadId }
     $fApp = (Invoke-Api '/api/app-get' @{ name = $fName }).app
     $pf = Invoke-Api '/api/package-files' @{ name = $fName }
+    $pfSum = [long]0; foreach ($x in @($pf.files)) { $pfSum += [long]$x.size }
+    Check ($pf.ok -and $pfSum -gt 0 -and [long]$pf.total -eq $pfSum) 'packages: the folder''s total is its files'' sizes added up (2.38.64: it was 0)' "$($pf.total) / $pfSum"
     $pfPaths = @($pf.files | ForEach-Object { $_.path })
     Check ($fa.ok -and $fa.files -eq 3 -and $fa.setup -eq 'Setup\zz-folder-setup.exe' -and $fApp.metadata.installCommand -eq '"Setup\zz-folder-setup.exe" /S' -and $pf.ok -and $pf.setupFile -eq 'Setup\zz-folder-setup.exe' -and ($pfPaths -contains 'Setup\config.xml') -and ($pfPaths -contains 'readme.txt') -and ($pfPaths -contains 'Uninstall.ps1')) 'folder upload: into its packages folder with its subfolders, the setup file remembered, the commands filled in' ($pfPaths -join ', ')
     # A .zip on top: asked first (files there already); added, it keeps them - replaced, they go. A .zip with a ../ entry is refused.
@@ -708,6 +710,9 @@ try {
     Check ($scQ.ok -and @($scQ.scripts) -contains 'Install.ps1' -and $scApp2.deploy.detection.value -eq '2.5' -and (Get-Content -LiteralPath (Join-Path $scDir 'Install.ps1') -Raw) -match "-Name Version -Value '2\.5'") 'a script app''s new version: detection and the Install.ps1 marker both 2.5' ($scQ | ConvertTo-Json -Compress)
     $scRow2 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
     Check ($scRow2 -and $scRow2.packageStale) 'script app: Install.ps1 changed after the build - the list says the package is out of date' ($scRow2 | ConvertTo-Json -Compress)
+    # 2.38.64: Replace package - only for an app in Intune.
+    $rp = Invoke-Api '/api/package-replace' @{ name = $scName }
+    Check (-not $rp.ok -and $rp.error -like '*isn''t in Intune yet*') 'Replace package: refused for an app not in Intune' ($rp | ConvertTo-Json -Compress)
     # 2.38.54: a rebuild of the same files isn't a new package to send; one of changed files is.
     $buildSc = {
         $j = Invoke-Api '/api/package-start' @{ names = @($scName) }; $o = 0; $end = (Get-Date).AddSeconds(120)
@@ -742,6 +747,14 @@ try {
         $null = & $buildSc
         $pr3 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
         Check ($pr3 -and $pr3.packageToSend) 'package: built from changed files - a new package to send' ($pr3 | ConvertTo-Json -Compress)
+        # Managed updates (2.38.64): a send doesn't upload it - Replace package is offered instead, and the send plan says so.
+        $scJson = Get-Content -LiteralPath $scFile.FullName -Raw | ConvertFrom-Json; $scJson.managedUpdates = $true
+        [System.IO.File]::WriteAllText($scFile.FullName, ($scJson | ConvertTo-Json -Depth 20), (New-Object System.Text.UTF8Encoding($false)))
+        $pr4 = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $scName })[0]
+        # The same warning as the send plan's (which needs a connection): Checks' package findings, local.
+        $chk4 = Invoke-Api '/api/checks-run' @{ names = @($scName) }
+        $pf4 = (@($chk4.findings | Where-Object { $_.area -eq 'Package' }) | ForEach-Object { [string]$_.problem }) -join ' '
+        Check ($pr4 -and $pr4.packageReplace -and -not $pr4.packageToSend -and $pf4 -like '*Replace package*') 'package: with managed updates a new package is offered as Replace package, and the package check warns' "$($pr4.packageReplace) / $pf4 / $($chk4 | ConvertTo-Json -Compress -Depth 3)"
         Remove-Item -LiteralPath (Join-Path $scDir 'readme.txt') -Force -ErrorAction SilentlyContinue
         $scJson = Get-Content -LiteralPath $scFile.FullName -Raw | ConvertFrom-Json
         $scJson.appId = ''; $scJson.packageStamp = ''; $scJson.managedUpdates = $true

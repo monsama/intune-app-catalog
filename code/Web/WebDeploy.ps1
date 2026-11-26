@@ -85,7 +85,20 @@ function Global:Get-WebPackageWarnings {
     if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return @() }
     $files = @(Get-PackageFolderFiles -Folder $folder | ForEach-Object { [string]$_.path })
     $inst = $null; try { $inst = Get-WebInstallerInfo $App.appName -SetupFile ([string]$App.setupFile) } catch { }
-    return @(Get-PackageConsistencyWarnings -Metadata $App.metadata -Files $files -Installer $(if ($inst -and $inst.found) { $inst }) -SetupFile ([string]$App.setupFile))
+    $w = @(Get-PackageConsistencyWarnings -Metadata $App.metadata -Files $files -Installer $(if ($inst -and $inst.found) { $inst }) -SetupFile ([string]$App.setupFile))
+    # The package against its files and against Intune (2.38.64): an old package (or none in Intune) under new commands
+    # fails on the devices - M-Files' install.ps1 wasn't in the package Intune had.
+    $pkg = Resolve-AppPackagePath -AppName $App.appName -Uncommon $true -Index $null -PackagePath ([string]$App.packagePath)
+    if ($pkg.Found) {
+        $item = Get-Item -LiteralPath $pkg.Path -ErrorAction SilentlyContinue
+        if ($item -and @(Get-ChildItem -LiteralPath $folder -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.intunewin' -and $_.LastWriteTimeUtc -gt $item.LastWriteTimeUtc.AddSeconds(2) } | Select-Object -First 1).Count) {
+            $w += 'Files in its packages folder changed after the package was built - build it again (More > Build package), or Intune gets the old files.'
+        }
+        if ($App.appId -and $App.managedUpdates -and $App.packageStamp -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $pkg.Path) -Sent ([string]$App.packageStamp) -Record (Read-WebPackageSources)[(Get-SafeFileNameForApp -Name $App.appName)])) {
+            $w += 'The package in Intune is older than the one built here - a send doesn''t upload it (managed updates). More > Replace package uploads it.'
+        }
+    }
+    return @($w)
 }
 
 # ---------------------------------------------------------------- what went into a package (2.38.54)
@@ -268,7 +281,15 @@ function Global:Start-WebDeploy {
     # Built from the same files as the package last uploaded (2.38.54): not uploaded again - only noted as sent.
     $srcRec = if ($stamp) { (Read-WebPackageSources)[(Get-SafeFileNameForApp -Name $a.appName)] } else { $null }
     $upload = $stamp -and (-not $a.appId -or (-not $a.managedUpdates -and (Test-WebPackageIsNew -Stamp $stamp -Sent ([string]$a.packageStamp) -Record $srcRec)))
+    # Replace package (2.38.64): the built package under the app as it is in Intune - also with managed updates, where a
+    # send never uploads one (a new version goes through Release new version). Same version, other files.
+    if ($Data.replacePackage) {
+        if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
+        if (-not $stamp) { return @{ ok = $false; error = "$name has no built package to upload - build it first (More > Build package)." } }
+        $upload = $true
+    }
     $sameSource = $stamp -and $a.appId -and -not $a.managedUpdates -and -not $upload -and $stamp -ne [string]$a.packageStamp
+    if ($Data.replacePackage -and $metadataOnly) { return @{ ok = $false; error = 'Replace package uploads the package - not with settings only.' } }
     if ($a.appId -and $upload) { $config.ReplaceContent = $true }
     # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
     $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.38.64
+
+- **Files that differ only in capitals in a packages folder are named**: on the server (Linux) "Uninstall.ps1" and
+  "uninstall.ps1" are two files; on a PC they are one, and which one the device gets is chance. The check before
+  sending (and the editor's package warnings) now say so - delete the one you don't use.
+- **Replace package** (More menu, and the stage "New package to send" with managed updates): uploads the built package
+  under the app as it is in Intune - same version, other files (a script added, a setting changed). With managed updates
+  a send never uploaded a new package, so a command changed later ran against the old package on the devices (M-Files:
+  "install.ps1" wasn't in it). Asked first; a new version still goes through Release new version.
+- **Warned before sending**: the send plan now says when files changed after the package was built ("build it again"),
+  and when the package in Intune is older than the built one and the send won't upload it (managed updates).
+- **Install status explains more errors**: winget's "installer hash mismatch" (0x8A150011, shown by Intune as
+  0x80070011 - the vendor replaced the file, TeamViewer QuickSupport), a script command whose script isn't in the
+  package (0x80070000, from PowerShell's 0xFFFD0000), and exit code 5 from an Inno Setup installer (aborted).
+- **The editor's package file list shows the real total size** - it said "1 KB" whatever the folder held.
+
 ## 2.38.63
 
 - **Remove preinstalled vendor apps - Lenovo: McAfee's survey no longer comes up.** McAfee's suite (LiveSafe, Total

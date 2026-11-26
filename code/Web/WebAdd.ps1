@@ -685,7 +685,9 @@ function Global:Get-WebPackageFiles {
     $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $a.appName)
     $files = @(Get-PackageFolderFiles $folder)
     $built = @(Get-PackageFolderFiles $folder -All | Where-Object { $_.path -match '(?i)\.intunewin$' } | Select-Object -First 1)
-    return @{ ok = $true; folder = $folder; files = $files; total = [long](($files | Measure-Object size -Sum).Sum); setupFile = [string]$a.setupFile
+    # Added up by hand (2.38.64): Measure-Object -Property doesn't read an ordered dictionary's key - the total was 0 ("1 KB").
+    $total = [long]0; foreach ($f in $files) { $total += [long]$f.size }
+    return @{ ok = $true; folder = $folder; files = $files; total = $total; setupFile = [string]$a.setupFile
         package = $(if ($built.Count) { $built[0] } else { $null }) }
 }
 
