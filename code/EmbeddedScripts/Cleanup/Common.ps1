@@ -136,6 +136,11 @@ if ($Targets.McAfeeTool -and @(Get-CleanupPrograms | Where-Object { $_.Name -lik
 foreach ($p in @(Get-CleanupPackages)) { Remove-CleanupPackage $p }
 
 $left = @(@(Get-CleanupPrograms | ForEach-Object { $_.Name }) + @(Get-CleanupPackages | ForEach-Object { $_.Name }) | Select-Object -Unique)
+# Some uninstallers (NSIS) hand over to a copy of themselves and return at once: up to 3 minutes for them to finish.
+for ($wait = 0; $left.Count -and $wait -lt 12; $wait++) {
+    Start-Sleep -Seconds 15
+    $left = @(@(Get-CleanupPrograms | ForEach-Object { $_.Name }) + @(Get-CleanupPackages | ForEach-Object { $_.Name }) | Select-Object -Unique)
+}
 if ($left.Count) {
     Write-CleanupLog "Still installed: $($left -join ', ')$(if ($restart) { ' - a restart may finish it' })"
     # A restart may finish it (McAfee, some MSI): Intune restarts and the detection decides; else it failed and Intune tries again later.

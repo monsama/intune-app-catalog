@@ -407,6 +407,8 @@ function Global:Complete-WebPull {
     $failed = New-Object System.Collections.Generic.List[string]
     $review = New-Object System.Collections.Generic.List[object]
     $pending = @{}
+    # What Intune has now, noted once after the loop (2.38.61: per app it read the whole catalog twice, under the lock).
+    $stampS = New-Object System.Collections.Generic.List[string]; $stampG = New-Object System.Collections.Generic.List[string]
     foreach ($r in @($Result.results)) {
         if (-not $r.Success) { $failed.Add("$($r.AppName): $($r.Error)"); continue }
         $all = @((Read-WebCatalogRecords).Apps)
@@ -427,12 +429,14 @@ function Global:Complete-WebPull {
         $groupDiffs = @(if ($r.GroupFetchOk) { Get-GroupFieldDiffs -LocalApp $app -RemoteResult $r })
         # Microsoft 365 Apps' own settings (2.38.42): one more row to choose - Intune's, or the catalog's kept.
         if ($app.office -and -not ([string]$app.wingetId).Trim()) {
-            $od = Get-WebOfficeDiff -App $app
+            $od = Get-WebOfficeDiff -App $app -ReportFailure
+            # Intune's settings not read: not known to match - the settings aren't noted as what Intune has (2.38.61).
+            if ($od -and $od.Failed) { $noRel = $true; $od = $null }
             if ($od) { $r | Add-Member -NotePropertyName OfficeFromIntune -NotePropertyValue $od.Office -Force; $groupDiffs += [pscustomobject]@{ Field = 'Microsoft 365 settings'; Local = $od.Local; Remote = $od.Remote } }
         }
         if (($app.metadata -and $fieldDiffs.Count -gt 0) -or $groupDiffs.Count -gt 0) {
             # With the catalog entry as it was reviewed (2.38.42): applied later, a promote or send in between must not be undone.
-            $pending[$r.AppName] = @{ R = $r; AppId = [string]$app.appId; Stamp = (ConvertTo-Json -InputObject (Get-WebAppSentValues $app) -Compress -Depth 10) }
+            $pending[$r.AppName] = @{ R = $r; AppId = [string]$app.appId; Stamp = (ConvertTo-Json -InputObject (Get-WebAppSentValues $app) -Compress -Depth 10); NoStampS = [bool]$noRel }
             $review.Add([ordered]@{ app = $r.AppName; diffs = @(@($fieldDiffs) + @($groupDiffs) | ForEach-Object { [ordered]@{ field = [string]$_.Field; local = (Get-CheckValueText $_.Local); intune = (Get-CheckValueText $_.Remote) } }) })
         }
         else {
@@ -446,9 +450,11 @@ function Global:Complete-WebPull {
             $applied.Add($r.AppName)
             # The catalog has what Intune has now (2.38.54): nothing to send - "Changes to send" compared with the last
             # send from here, so taking Intune's values left it saying the catalog had changed.
-            if ($app.appId) { try { Set-WebSentStamp -Names @($r.AppName) -Part 's'; if ($r.GroupFetchOk) { Set-WebSentStamp -Names @($r.AppName) -Part 'g' } } catch { Write-Log "[WARN] Couldn't note what Intune has: $($_.Exception.Message)" } }
+            # Not when part of it wasn't read (relations, Microsoft 365's settings): the catalog's kept values aren't Intune's.
+            if ($app.appId) { if (-not $noRel) { $stampS.Add([string]$r.AppName) }; if ($r.GroupFetchOk) { $stampG.Add([string]$r.AppName) } }
         }
     }
+    Save-WebPulledStamps -Settings $stampS.ToArray() -Groups $stampG.ToArray()
     $id = [guid]::NewGuid().ToString('N')
     if ($review.Count) {
         # A review left open without applying isn't kept for ever - one older than an hour goes.
@@ -469,6 +475,7 @@ function Global:Invoke-WebPullApply {
     $pending = $Global:App.WebPending[$id]
     $done = New-Object System.Collections.Generic.List[string]
     $skipped = New-Object System.Collections.Generic.List[string]
+    $stampS = New-Object System.Collections.Generic.List[string]; $stampG = New-Object System.Collections.Generic.List[string]
     $now = @((Read-WebCatalogRecords).Apps)
     foreach ($name in @($pending.Keys)) {
         $p = $pending[$name]
@@ -496,12 +503,10 @@ function Global:Invoke-WebPullApply {
         # Intune's values taken (2.38.54): what Intune has now is the last-sent state - for the settings when none of the
         # catalog's were kept, for the groups likewise. A kept value still differs from Intune and stays a change to send.
         $groupLabels = @('Required for', 'Available for', 'Uninstall for')
-        try {
-            if ($cur.appId -and -not @($keep | Where-Object { $groupLabels -notcontains $_ }).Count) { Set-WebSentStamp -Names @($name) -Part 's' }
-            if ($cur.appId -and $r.GroupFetchOk -and -not @($keep | Where-Object { $groupLabels -contains $_ }).Count) { Set-WebSentStamp -Names @($name) -Part 'g' }
-        }
-        catch { Write-Log "[WARN] Couldn't note what Intune has: $($_.Exception.Message)" }
+        if ($cur.appId -and -not $p.NoStampS -and -not @($keep | Where-Object { $groupLabels -notcontains $_ }).Count) { $stampS.Add($name) }
+        if ($cur.appId -and $r.GroupFetchOk -and -not @($keep | Where-Object { $groupLabels -contains $_ }).Count) { $stampG.Add($name) }
     }
+    Save-WebPulledStamps -Settings $stampS.ToArray() -Groups $stampG.ToArray()
     [void]$Global:App.WebPending.Remove($id)
     Write-Log "[OK] Applied the pull for: $($done -join ', ')."
     if ($skipped.Count) { Write-Log "[WARN] Not applied - changed in the catalog since the review: $($skipped -join ', '). Pull them again." }
@@ -727,11 +732,40 @@ function Global:Get-WebOfficeFromIntune {
     return @{ ok = $true; found = $true; office = (ConvertFrom-OfficeSuiteApp $ty.value) }
 }
 
+function Global:Save-WebPulledStamps {
+    <#
+      After a Pull (2.38.61): the apps that took Intune's values have what Intune has - noted as sent, once for all.
+      Groups only where the parts Pull doesn't read (excluded groups, the filter and its mode) are as last sent: Pull
+      reads Required/Available/Uninstall only, and an exclusion changed here would otherwise never be sent.
+    #>
+    param([string[]]$Settings, [string[]]$Groups)
+    try {
+        if (@($Settings).Count) { Set-WebSentStamp -Names @($Settings) -Part 's' }
+        if (@($Groups).Count) {
+            $sent = Read-WebSentStamps
+            $apps = @((Read-WebCatalogRecords).Apps)
+            $ok = @(foreach ($n in $Groups) {
+                    $a = $apps | Where-Object { $_.appName -eq $n } | Select-Object -First 1
+                    if (-not $a) { continue }
+                    $now = (Get-WebAppSentValues $a).g
+                    $st = $sent[(Get-SafeFileNameForApp -Name $a.appName)]
+                    $was = if ($st -and $st.gv) { try { $st.gv | ConvertFrom-Json } catch { $null } } else { $null }
+                    $same = if ($was) { (@($was.x) -join "`n") -eq (@($now.x) -join "`n") -and [string]$was.f -eq [string]$now.f -and [string]$was.fm -eq [string]$now.fm }
+                            else { -not @($now.x).Count -and -not [string]$now.f }
+                    if ($same) { $n }
+                })
+            if ($ok.Count) { Set-WebSentStamp -Names $ok -Part 'g' }
+        }
+    }
+    catch { Write-Log "[WARN] Couldn't note what Intune has: $($_.Exception.Message)" }
+}
+
 function Global:Get-WebOfficeDiff {
-    # Microsoft 365 Apps' settings in the catalog against Intune's, in words (2.38.42): $null when they match or can't be read.
-    param($App)
-    try { $o = Get-WebOfficeFromIntune @{ name = [string]$App.appName } } catch { return $null }
-    if (-not $o.ok -or -not $o.found) { return $null }
+    # Microsoft 365 Apps' settings in the catalog against Intune's, in words (2.38.42): $null when they match or can't be
+    # read - with -ReportFailure @{ Failed } when they couldn't be read (Pull mustn't take that as "the same").
+    param($App, [switch]$ReportFailure)
+    try { $o = Get-WebOfficeFromIntune @{ name = [string]$App.appName } } catch { return $(if ($ReportFailure) { @{ Failed = $true } }) }
+    if (-not $o.ok -or -not $o.found) { return $(if ($ReportFailure -and -not $o.ok) { @{ Failed = $true } }) }
     # Only what differs (2.38.54) - the whole summaries were cut off before the one app that differed.
     $d = Get-OfficeSettingsDiff $App.office $o.office
     if (-not $d) { return $null }

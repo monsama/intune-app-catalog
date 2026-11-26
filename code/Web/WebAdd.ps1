@@ -152,7 +152,9 @@ function Global:Add-WebCleanupApp {
     $r = Add-WebScriptApp @{ name = $Definition.name; publisher = 'IT'; version = ''; description = $Definition.why
         install = $sc.Install; uninstall = $sc.Uninstall; detectScript = $sc.Detect; managed = $false
         requiredFor = @($Data.requiredFor); availableFor = @($Data.availableFor); excludeFor = @($Data.excludeFor) }
-    if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes }.GetNewClosure()) }
+    # Three hours to run (2.38.61): Intune stops an install after 60 minutes by default - several uninstallers (10 to 30
+    # minutes each) and McAfee's removal tool can take longer, and the removal was stopped half way.
+    if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes; $a.metadata | Add-Member -NotePropertyName installTimeMinutes -NotePropertyValue 180 -Force }.GetNewClosure()) }
     return $r
 }
 

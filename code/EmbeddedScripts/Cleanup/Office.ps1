@@ -1,6 +1,6 @@
 # ---------------------------------------------------------------- Intune App Catalog: removing preinstalled Office
-# "Remove preinstalled Office" (2.38.58): the consumer Office a new PC comes with (Microsoft 365 Family/Personal,
-# Home & Student, Home & Business, Personal, Professional, OneNote) - in every language it has. Microsoft 365 Apps
+# "Remove preinstalled Office" (2.38.58): the consumer Office a new PC comes with (the Microsoft 365 Family/Personal
+# trial, OneNote) - in every language it has. Microsoft 365 Apps
 # for enterprise or business, Visio, Project and volume-licensed Office stay. Install.ps1 and the detection script
 # are the same text: Install.ps1 removes ($DetectOnly = $false), the detection script only looks ($DetectOnly = $true).
 # How: each preinstalled language brings its own uninstall command (OfficeClickToRun.exe ... productstoremove=...);
@@ -8,8 +8,10 @@
 # Log: C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log
 
 function Get-OfficeRemovePattern {
-    # The Office product IDs removed (Click-to-Run, retail - what PCs come with). Edit it here and in the detection rule alike.
-    return '^(O365HomePrem|O365Personal|HomeStudent|HomeBusiness|Personal|Professional|OneNoteFree)\d*Retail$'
+    # The Office product IDs removed (Click-to-Run): the Microsoft 365 Family/Personal trial PCs come with, and the free
+    # OneNote. Edit it here and in the detection rule alike. Not by default (2.38.61): bought perpetual Office - Home &
+    # Student, Home & Business, Professional (add HomeStudent|HomeBusiness|Professional below if PCs bring those too).
+    return '^(O365HomePrem|O365Personal|OneNoteFree)\d*Retail$'
 }
 
 $LogFile = Join-Path $(if ($env:ProgramData) { $env:ProgramData } else { [System.IO.Path]::GetTempPath() }) 'Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log'

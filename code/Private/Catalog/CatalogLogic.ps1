@@ -2340,14 +2340,14 @@ function Global:Get-CleanupAppSet {
     #>
     return @(
         [ordered]@{ id = 'IntuneAppCatalog.Cleanup.Lenovo'; name = 'Remove preinstalled vendor apps - Lenovo'; files = @('Lenovo.ps1', 'Common.ps1')
-            why = 'Removes McAfee (WebAdvisor and the suite), Lenovo Now, Lenovo AI Now, Lenovo Smart Meeting Components and Motorola Smart Connect - unattended. Lenovo Vantage and System Update stay.'
+            why = 'For Lenovo PCs: removes McAfee (WebAdvisor; the suite with McAfee''s MCPR tool added to its folder), Lenovo Now, Lenovo AI Now, Lenovo Smart Meeting Components and Motorola Smart Connect - unattended. Lenovo Vantage and System Update stay.'
             notes = 'Removes McAfee, Lenovo Now, Lenovo AI Now, Lenovo Smart Meeting Components and Motorola Smart Connect (the list is at the top of Install.ps1 and of the detection script - keep them the same). McAfee''s suite needs McAfee''s removal tool: put MCPR''s files (mccleanup.exe) in the packages folder and Build package. Test on one PC first; the log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Lenovo.log.' },
         [ordered]@{ id = 'IntuneAppCatalog.Cleanup.HP'; name = 'Remove preinstalled vendor apps - HP'; files = @('HP.ps1', 'Common.ps1')
-            why = 'Removes HP Wolf Security (Sure Click, Sure Sense) and HP''s add-ons (myHP, Connection Optimizer, Notifications, ...) - unattended. HP Support Assistant and what keys, audio, docks and the BIOS need stay.'
+            why = 'For HP PCs: removes HP Wolf Security (Sure Click, Sure Sense) and HP''s add-ons (myHP, Connection Optimizer, Notifications, ...) - unattended. HP Support Assistant and what keys, audio, docks and the BIOS need stay.'
             notes = 'Removes HP Wolf Security and HP''s add-ons; HP Support Assistant stays (the list is at the top of Install.ps1 and of the detection script - keep them the same). Test on one PC first; the log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-HP.log.' },
         [ordered]@{ id = 'IntuneAppCatalog.Cleanup.Office'; name = 'Remove preinstalled Office'; files = @('Office.ps1')
-            why = 'Removes the consumer Office PCs come with (Microsoft 365 Family/Personal, Home & Student, ...) in every language - Microsoft 365 Apps for enterprise, Visio and Project stay.'
-            notes = 'Removes the consumer Office a PC came with, in every language, with Office''s own uninstall commands (nothing downloaded). Microsoft 365 Apps for enterprise or business, Visio, Project and volume-licensed Office stay. If it runs while Microsoft 365 Apps installs, one of them fails and Intune tries again later. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log.' }
+            why = 'Removes the consumer Microsoft 365 trial PCs come with (Family/Personal, in every language) - Microsoft 365 Apps for enterprise, Visio, Project and bought Office stay.'
+            notes = 'Removes the Microsoft 365 Family/Personal trial a PC came with (and the free OneNote), in every language, with Office''s own uninstall commands (nothing downloaded). Microsoft 365 Apps for enterprise or business, Visio, Project and volume-licensed Office stay. If it runs while Microsoft 365 Apps installs, one of them fails and Intune tries again later. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log.' }
     )
 }
 

@@ -462,7 +462,10 @@ function Global:Remove-WebApp {
     # Its own installer's folder goes along (2.38.47) - left behind, adding the app again under its name stopped at
     # "already holds files", and on the server nobody could empty it. Kept in Backups, not deleted.
     $moved = ''
-    if (-not ([string]$app.wingetId).Trim()) {
+    # Not when another app's package is in it (a stored package path pointing there) - it would lose its package.
+    $leaf = Get-SafeFileNameForApp -Name $app.appName
+    $shared = @($catalog.Apps | Where-Object { $_.appName -ne $app.appName -and ([string]$_.packagePath) -and ((Split-Path ([string]$_.packagePath) -Leaf) -eq $leaf -or (Split-Path (Split-Path ([string]$_.packagePath) -Parent) -Leaf) -eq $leaf) }).Count
+    if (-not ([string]$app.wingetId).Trim() -and -not $shared) {
         try { $moved = Move-WebPackageFolderToBackups -Name $app.appName } catch { Write-Log "[WARN] $($name)'s packages folder stays where it is: $($_.Exception.Message)" }
     }
     Add-WebHistoryEntry -App $name -Kind 'catalog' -Text 'Removed from the catalog'
@@ -472,8 +475,13 @@ function Global:Remove-WebApp {
 
 function Global:Move-WebPackageFolderToBackups {
     # An app's packages folder moved to Backups\removed-packages\<folder>_<time> - '' when it had none (or an empty one).
-    param([string]$Name)
-    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $Name)
+    # -FolderName (2.38.61): that folder in the packages folder as it is named - Clean up passes the folder it found. Made
+    # into an app's folder name again, "Foo Bar" (a folder made by hand) became "Foo-Bar": another app's, moved instead.
+    param([string]$Name, [string]$FolderName)
+    $root = Get-AppFolder -Kind Packages
+    $leaf = if ($FolderName) { $FolderName } else { Get-SafeFileNameForApp -Name $Name }
+    if (-not $leaf -or $leaf -in '.', '..' -or $leaf.IndexOfAny([char[]]'\/') -ge 0) { throw "'$leaf' isn't a folder name in the packages folder." }
+    $folder = Join-Path $root $leaf
     if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return '' }
     if (-not @(Get-ChildItem -LiteralPath $folder -Force -ErrorAction SilentlyContinue).Count) { Remove-Item -LiteralPath $folder -Force -ErrorAction SilentlyContinue; return '' }
     if (Test-WebPathThroughLink $folder) { throw "$folder is a link - left as it is." }
@@ -481,6 +489,8 @@ function Global:Move-WebPackageFolderToBackups {
     if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
     $target = Join-Path $dir ((Split-Path $folder -Leaf) + '_' + (Get-Date).ToString('yyyyMMdd-HHmmss', [Globalization.CultureInfo]::InvariantCulture))
     Move-Item -LiteralPath $folder -Destination $target -ErrorAction Stop
+    # Its 30 days start now: a move keeps the folder's own time, so one untouched for a month went at the next housekeeping.
+    try { (Get-Item -LiteralPath $target -Force).LastWriteTime = Get-Date } catch { $null = $_ }
     return $target
 }
 

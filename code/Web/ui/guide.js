@@ -193,7 +193,7 @@ async function fillPanel(a) {
       fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       // Whether its installer is packaged, and when (2.38.53) - only for an app that installs from its own package.
-      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - not in Intune yet, send it' : ''}` : '') : ''),
+      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - newer than the one in Intune, send it' : ''}` : '') : ''),
       // The App ID in full, with Copy and Open in Intune - the app's page in the Intune admin center.
       a.hasAppId && a.appId ? el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { class: 'pappid' },
         el('span', { text: a.type || 'yes' }), el('code', { class: 'appid', text: a.appId, title: 'The Intune App ID' }),
@@ -316,7 +316,8 @@ $('btnRunHide').addEventListener('click', () => $('dlgRun').close());
 // dialog (restored when minimized); the run tray only for a step that writes there.
 $('jobChip').addEventListener('click', () => {
   const log = jobLogId ? $(jobLogId) : null, dlg = log && log.closest('dialog'), view = log && log.closest('section.view');
-  if (dlg && dlg.id !== 'dlgRun' && dlg.open) { if (dlg.classList.contains('minimized')) wcRestore(dlg); log.scrollIntoView({ block: 'nearest' }); return; }
+  // Its dialog, also when it was hidden while the step runs (Send's Hide closes it) - not the empty run tray (2.38.61).
+  if (dlg && dlg.id !== 'dlgRun') { if (!dlg.open) dlg.showModal(); else if (dlg.classList.contains('minimized')) wcRestore(dlg); log.scrollIntoView({ block: 'nearest' }); return; }
   if (view) {
     showView(view.id.replace(/^view/, '').toLowerCase());
     const box = log.closest('details'); if (box) box.open = true;

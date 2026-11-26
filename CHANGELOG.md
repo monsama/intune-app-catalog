@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.38.61
+
+A sweep of everything since 2.38.42 - security, bugs, GUI and usability.
+
+- **Packages folders: Clean up moved the wrong folder.** A folder made by hand ("Foo Bar") was turned into an app's
+  folder name ("Foo-Bar") and that app's folder was moved instead. It now moves exactly the folder it listed. A folder
+  an app's package is found in is no longer listed as unused, and removing an app leaves its folder when another app's
+  package path points into it.
+- **Removed apps' folders are kept 30 days from the move** - counted by the time in their name; a folder untouched
+  for a month went at the next housekeeping.
+- **Release steps from the page** take only the app and the step - the flow fields are the server's own (a request
+  could skip the hold that keeps two changes of one app apart). Saved step records are only used when their files are
+  in the app's folders.
+- **Read from Intune** no longer marks excluded groups or the assignment filter as sent (Pull doesn't read them), nor
+  settings it couldn't read (Microsoft 365's, relations). It notes what Intune has once for all apps, not per app.
+- **Send to Intune while a send runs hidden** goes back to that send instead of starting a second one over it; the
+  Working... chip opens a hidden send again instead of an empty tray.
+- **Add groups** no longer warns that "G1, G2" is a missing group when two are chosen; with more than 5 apps it says
+  how many instead of listing every name.
+- **Clean-up apps:** 3 hours to run (Intune stopped them after 60 minutes), they wait up to 3 minutes for uninstallers
+  that finish in the background, and "Remove preinstalled Office" removes only the Microsoft 365 Family/Personal trial
+  and OneNote - not bought Office (Home & Student, Home & Business, Professional). Their texts say which PCs they are for.
+- **Backups:** old ones go after the new one is written (with ICA_BACKUP_KEEP=1 a failed backup left none).
+- **Wording and small fixes:** the packages folder is described as holding uploads (not "rebuildable, a scratch disk is
+  fine"); new list filter "New package to send", "Package out of date" is now "Rebuild package"; the Package fact says
+  "newer than the one in Intune"; "Winget package to watch" no longer shows for Winget apps; the list's "Managed updates"
+  says it is for the Winget apps; the Apps list is read again after a failed ring step.
+
 ## 2.38.60
 
 - **Settings > Packaging tidied**: the shared Winget package (init.intunewin) and the packages folders are parts of

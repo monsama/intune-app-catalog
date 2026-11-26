@@ -373,7 +373,7 @@ $('btnCertsLocal').addEventListener('click', () => { $('dlgCertsLocal').showModa
 let prefs = null;
 function setPkgState(p) {
   const builtIn = p.packagerInUse === 'builtin';
-  $('pkgTool').textContent = builtIn ? `Packages are built in - no download needed.${p.toolFound ? ' IntuneWinAppUtil.exe is there too.' : ''}`
+  $('pkgTool').textContent = builtIn ? `Packages are built by the app itself - nothing to download.${p.toolFound ? ' IntuneWinAppUtil.exe is there too.' : ''}`
     : p.toolFound ? `Packaging tool found${p.toolVersion ? ' (version ' + p.toolVersion + ')' : ''}.` : 'Packaging tool (IntuneWinAppUtil.exe) not downloaded yet.';
   $('pkgTool').className = 'certstatus ' + (builtIn || p.toolFound ? 'ok' : 'warn');
   if (p.packager) $('pkgPackager').value = p.packager;

@@ -353,6 +353,12 @@ function Global:Resume-WebSavedJobs {
         $rec = $null
         try { $rec = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
         if (-not $rec -or -not ([string]$rec.id -match '^[0-9a-f]{32}$') -or $Global:App.WebJobs.ContainsKey([string]$rec.id)) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; continue }
+        # The files it names only where steps write them (2.38.61): a record isn't trusted to point anywhere else -
+        # its log is written to and its leftovers removed below.
+        $roots = @(@($env:TEMP, [System.IO.Path]::GetTempPath(), $Global:App.RootPath) | Where-Object { $_ } | ForEach-Object { [System.IO.Path]::GetFullPath([string]$_).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar })
+        $named = @(@([string]$rec.log, [string]$rec.result) + @($rec.cleanup) | Where-Object { $_ } | ForEach-Object { [string]$_ })
+        $outside = @($named | Where-Object { $n = $_; try { $full = [System.IO.Path]::GetFullPath($n) } catch { $full = '' }; -not $full -or -not @($roots | Where-Object { $full.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count })
+        if ($outside.Count) { Write-Log "[WARN] A step record names files outside the app's folders - not used: $($f.Name)"; Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; continue }
         # Still owned by a running app (the nightly run, a second window): left to it.
         $ownerAlive = $false
         if ([int]$rec.owner -gt 0 -and [int]$rec.owner -ne $PID) { try { $ownerAlive = ((Get-Process -Id ([int]$rec.owner) -ErrorAction Stop).StartTime.ToUniversalTime().Ticks -eq [int64]$rec.ownerStart) } catch { } }
@@ -865,7 +871,9 @@ function Global:Invoke-WebApi {
         '/api/undo-info'        { return (Get-WebUndoInfo) }
         '/api/release-info'     { return (Get-WebReleaseInfo $Data) }
         '/api/release-start'    { return (Start-WebRelease $Data) }
-        '/api/release-assign'   { return (Start-WebReleaseAssign $Data) }
+        # Only the app and the step from the page (2.38.61): flow, then, shared and expectAppId are the server's own -
+        # "shared" from a request skipped the hold that keeps two changes of one app apart.
+        '/api/release-assign'   { return (Start-WebReleaseAssign @{ name = [string]$Data.name; step = [string]$Data.step }) }
         '/api/release-flow'     { return (Start-WebReleaseFlow $Data) }
         '/api/release-promoted' { return (Invoke-WithCatalogLock { Complete-WebPromotion $Data }) }
         '/api/release-rolledback' { return (Invoke-WithCatalogLock { Complete-WebRollback $Data }) }
