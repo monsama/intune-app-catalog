@@ -77,7 +77,7 @@ async function advanceRelease(name, p) {
   runDialog(`${name} ${p.version}: next ring`, '');
   const a = await releaseStep({ name, flow: 'advance' }, '/api/release-flow', 'runLog', 'Assigning it to the next ring\'s groups...');
   const r = a.after || {};
-  if (!r.flowDone) { toast(`Giving it to the next ring failed - nothing else changed. ${a.error || ''}`, true); return; }
+  if (!r.flowDone) { toast(`Giving it to the next ring failed - nothing else changed. ${a.error || ''}`, true); loadApps(); return; }
   toast(r.ok ? `${name} ${r.version} is in ${r.ringName} now.` : r.error, !r.ok);
   loadApps(); if (!$('viewUpdates').hidden) loadUpdates(true);
 }

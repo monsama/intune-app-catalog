@@ -295,8 +295,21 @@ function Global:Get-WebOrphanPackageFolders {
     $key = if (Test-WebCaseSensitiveFolder $root) { { param($n) [string]$n } } else { { param($n) ([string]$n).ToLowerInvariant() } }
     # Exact keys: a plain @{} ignores capitals by itself.
     $used = New-Object System.Collections.Hashtable ([System.StringComparer]::Ordinal)
+    $index = Get-PackageFolderIndex -Root $root
+    $rootFull = [System.IO.Path]::GetFullPath($root).TrimEnd('\', '/')
     foreach ($a in $apps) {
         $used[(& $key (Get-SafeFileNameForApp -Name $a.appName))] = $true
+        # The folder its package is found in too (2.38.61): the finder also matches a package by name in a folder
+        # spelled otherwise ("apm-system2" for "APM System2") - listed as unused, Clean up took the app's package away.
+        if (-not ([string]$a.wingetId).Trim() -and -not $a.office) {
+            $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $true -Index $index -PackagePath ([string]$a.packagePath)
+            if ($pkg.Found) {
+                $full = [System.IO.Path]::GetFullPath([string]$pkg.Path)
+                if ($full.StartsWith($rootFull, [StringComparison]::OrdinalIgnoreCase) -and $full.Length -gt $rootFull.Length + 1) {
+                    $used[(& $key (($full.Substring($rootFull.Length + 1) -split '[\\/]')[0]))] = $true
+                }
+            }
+        }
         if ($a.packagePath) { $used[(& $key (Split-Path ([string]$a.packagePath) -Leaf))] = $true; $used[(& $key (Split-Path (Split-Path ([string]$a.packagePath) -Parent) -Leaf))] = $true }
     }
     return @(Get-ChildItem -LiteralPath $root -Directory -Force -ErrorAction SilentlyContinue | Where-Object { -not $_.Name.StartsWith('.') -and -not $used.ContainsKey((& $key $_.Name)) } | ForEach-Object {

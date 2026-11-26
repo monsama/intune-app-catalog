@@ -207,6 +207,15 @@ try {
     $caseNewDir = Join-Path $pkgRoot ($caseNew.Replace(' ', '-'))
     if ($caseSensitive) { Check ($caseRen.ok -and @(Get-ChildItem -LiteralPath $pkgRoot -Directory | Where-Object { $_.Name -ceq (Split-Path $caseNewDir -Leaf) }).Count -eq 1 -and -not @(Get-ChildItem -LiteralPath $pkgRoot -Directory | Where-Object { $_.Name -ceq (Split-Path $caseOwn -Leaf) }).Count) 'rename with other capitals only: its packages folder follows (Linux)' ($caseRen | ConvertTo-Json -Compress) }
     [void](Invoke-Api '/api/app-remove' @{ name = $(if ($caseRen.ok) { $caseNew } else { $caseName }) })
+    # 2.38.61: Clean up moves the folder it found - "zz space x" (made by hand) is not the app "zz space x"'s "zz-space-x".
+    $spName = 'zz space ' + [guid]::NewGuid().ToString('N').Substring(0, 6)
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $spName; wingetId = ''; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() } })
+    $spOwn = Join-Path $pkgRoot ($spName.Replace(' ', '-')); $spStray = Join-Path $pkgRoot $spName
+    [void](New-Item -ItemType Directory -Path $spOwn -Force); Set-Content -LiteralPath (Join-Path $spOwn 'setup.msi') -Value 'x'
+    [void](New-Item -ItemType Directory -Path $spStray -Force); Set-Content -LiteralPath (Join-Path $spStray 'old.msi') -Value 'x'
+    $spCl = Invoke-Api '/api/packages-cleanup'
+    Check ($spCl.ok -and @($spCl.moved) -contains $spName -and (Test-Path -LiteralPath (Join-Path $spOwn 'setup.msi')) -and -not (Test-Path -LiteralPath $spStray)) 'packages: Clean up moves the unused folder it found, not the app''s folder its name resembles' ($spCl | ConvertTo-Json -Compress)
+    [void](Invoke-Api '/api/app-remove' @{ name = $spName })
     $ownName = 'ZZ Own Remove ' + [guid]::NewGuid().ToString('N').Substring(0, 6)
     [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $ownName; wingetId = ''; appId = ''; requiredFor = @(); availableFor = @(); uninstallFor = @(); excludeFor = @() } })
     $ownDir = Join-Path $pkgRoot ($ownName.Replace(' ', '-'))

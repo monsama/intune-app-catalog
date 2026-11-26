@@ -23,7 +23,7 @@ function Global:Get-AppFolderKinds {
     #>
     return @(
         @{ Key = 'Catalog';  Label = 'Catalog (one JSON file per app)'; Default = 'data\app-data';     Why = 'The apps themselves - what "Open other folder..." switches between, and what belongs in git.' }
-        @{ Key = 'Packages'; Label = 'Packages (.intunewin)';           Default = 'data\app-packages'; Why = 'Built packages. Large and rebuildable, so a scratch disk is a fine place for them.' }
+        @{ Key = 'Packages'; Label = 'Packages folders';               Default = 'data\app-packages'; Why = 'One folder per app with its own installer: the uploaded installer and scripts, and the .intunewin built from them. The uploads can''t be made again - back this folder up.' }
         @{ Key = 'Shared';   Label = 'Shared Winget package';           Default = 'init';              Why = 'init.intunewin, the one package every Winget app deploys with. Built on demand.' }
         @{ Key = 'Tools';    Label = 'Packaging tool';                  Default = 'tools';             Why = 'IntuneWinAppUtil.exe, Microsoft''s Win32 Content Prep Tool. Downloaded on demand.' }
         @{ Key = 'Scripts';  Label = 'Platform script copies';          Default = 'data\script-data';  Why = 'Local copies of the tenant''s platform scripts, shaped like the catalog.' }

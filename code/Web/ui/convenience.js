@@ -69,13 +69,15 @@ async function gpSuggest(ta) {
 async function gpCheck(ta) {
   const src = ta._source || ta, anchor = ta._source ? ta.parentElement : ta;
   let warn = anchor.parentElement.querySelector('.gpwarn');
-  const names = src.value.split('\n').map(s => s.trim()).filter(Boolean);
+  // A one-line chip box (Add groups) joins with ", " (2.38.61: "G1, G2" was checked as one group's name).
+  const sep = src.tagName === 'INPUT' ? /\n|, / : '\n';
+  const names = src.value.split(sep).map(s => s.trim()).filter(Boolean);
   if (!names.length) { if (warn) warn.hidden = true; return; }
   const r = await api('/api/group-check', { names });
   if (!r.ok || !r.checked) { if (warn) warn.hidden = true; return; }
   if (!warn) { warn = el('span', { class: 'gpwarn' }); anchor.after(warn); }
   // The box may have changed while Entra ID was asked.
-  if (src.value.split('\n').map(s => s.trim()).filter(Boolean).join('\n') !== names.join('\n')) return;
+  if (src.value.split(sep).map(s => s.trim()).filter(Boolean).join('\n') !== names.join('\n')) return;
   warn.hidden = !r.missing.length;
   const close = r.close || {}, near = r.missing.filter(n => close[n]), none = r.missing.filter(n => !close[n]);
   warn.textContent = [

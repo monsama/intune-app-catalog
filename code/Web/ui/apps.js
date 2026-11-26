@@ -121,6 +121,7 @@ const filters = {
   notintenant: a => tenantState(a) === 'missing',
   pkgmissing: a => a.packageMissing,
   pkgstale: a => !!a.packageStale && !a.packageMissing,
+  pkgsend: a => !!a.packageToSend,
   winget: a => !!a.wingetId,
   custom: a => !a.wingetId,
   newer: a => !!a.newerOnWinget,
@@ -324,7 +325,9 @@ function showManagedState() {
   const storeId = has && isStoreId($('aWinget').value.trim());
   $('aSelfRow').hidden = !has || storeId || $('aManaged').checked;
   $('aSelfHint').hidden = !(has && !storeId && $('aManaged').checked && editorSelfKnown);
-  $('arAutoRow').hidden = has; $('arUrlRow').hidden = has; $('aWatchRow').hidden = has;
+  $('arAutoRow').hidden = has; $('arUrlRow').hidden = has;
+  // "Winget package to watch" is for an app with its own installer - not beside a Winget ID box (2.38.61: a new Winget app showed both).
+  $('aWatchRow').hidden = has || editorSrc !== 'own';
   $('aManaged').parentElement.title = has ? 'Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates'
     : 'Release new versions of this package to the pilot groups first. Needs a detection rule that compares a version (MSI, or file/registry by version) - a release updates it to the new version.';
 }
@@ -1172,6 +1175,9 @@ function deployProgress() {
 $('btnDeploy').addEventListener('click', () => openDeploy([...selected]));
 async function openDeploy(names, opts = {}) {
   if (wcResume('dlgDeploy')) return;
+  // A send still running, its window hidden (2.38.61): back to it - a second plan took over its rows, and add-and-send
+  // started a second queue beside it.
+  if (deployRunning) { if (!$('dlgDeploy').open) $('dlgDeploy').showModal(); toast('A send is still running - wait for it to finish.', true); return; }
   $('btnDeployClose').textContent = 'Cancel';
   const r = await api('/api/deploy-plan', { names });
   if (!r.ok) { toast(r.error, true); return; }
@@ -1388,7 +1394,7 @@ function openGroupsBatch(mode, names) {
   gbMode = mode; gbNames = names;
   const sel = names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   $('gbTitle').textContent = mode === 'add' ? 'Add groups' : 'Remove groups';
-  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.join(', ')} - in the catalog. Send groups sends them to Intune.`;
+  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.length > 5 ? nWord(names.length, 'app') : names.join(', ')} - in the catalog. Send groups sends them to Intune.`;
   const roles = [['requiredFor', 'Required'], ['availableFor', 'Available'], ['uninstallFor', 'Uninstall'], ['excludeFor', 'Excluded']];
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('gbRoles').replaceChildren(...roles.map(([field, label]) => {
