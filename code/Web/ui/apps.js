@@ -456,11 +456,11 @@ function pkgFilesView() {
   // The folder part of a path quieter than the file's name.
   const pathEl = p => { const i = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')); return el('span', { class: 'pfpath mono', title: p }, i >= 0 ? el('span', { class: 'pfdir', text: p.slice(0, i + 1) }) : '', p.slice(i + 1)); };
   const row = f => el('li', { class: newer(f) ? 'pfnew' : '' }, pathEl(f.path),
-    lower.get(f.path.toLowerCase()) > 1 ? el('span', { class: 'pfmark warn', text: 'Same name', title: 'Another file here has this name in other capitals - on Windows they are one file, and the package holds only one of them. Delete the one the commands don\'t run.' })
-      : newer(f) ? el('span', { class: 'pfmark new', text: 'Not built yet', title: 'Changed after the package was built - Build package (and Send or Replace package) takes it into Intune' }) : el('span'),
+    lower.get(f.path.toLowerCase()) > 1 ? el('span', { class: 'pill warn', text: 'Same name', title: 'Another file here has this name in other capitals - on Windows they are one file, and the package holds only one of them. Delete the one the commands don\'t run.' })
+      : newer(f) ? el('span', { class: 'pill info', text: 'Not built yet', title: 'Changed after the package was built - Build package (and Send or Replace package) takes it into Intune' }) : el('span'),
     el('span', { class: 'muted', text: fmtMB(f.size) }),
     el('span', { class: 'muted pfwhen', text: f.modified ? fmtWhen(f.modified) : '', title: f.modified ? `Last changed ${new Date(f.modified).toLocaleString()}` : '' }),
-    f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pfmark ok', text: 'Setup', title: 'The setup file Package uses' })
+    f.path.toLowerCase() === setup.toLowerCase() ? el('span', { class: 'pill ok', text: 'Setup', title: 'The setup file Package uses' })
       // Not the uninstall script (2.38.0): it was offered as a setup file too.
       : /\.(msi|exe|ps1)$/i.test(f.path) && !/(^|[\\/])uninstall\.ps1$/i.test(f.path) ? el('button', { type: 'button', class: 'linkish', text: 'Use as setup', title: 'Package uses this file as the setup file', onclick: () => setPkgSetup(f.path) }) : el('span'),
     // 2.38.17: scripts and the text files a setup reads (directly in the folder) open in the code editor.
