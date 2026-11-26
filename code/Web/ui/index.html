@@ -70,7 +70,7 @@
           <option value="pkgstale">Rebuild package</option>
           <option value="pkgsend">New package to send</option>
           <option value="winget">Winget apps</option>
-          <option value="custom">Own package</option>
+          <option value="custom">Custom package</option>
           <option value="newer">Newer on winget</option>
           <option value="managed">Managed updates</option>
           <option value="pilot">In pilot</option>
@@ -124,7 +124,7 @@
       <table class="grid" id="grid">
         <thead><tr>
           <th data-sort="name" title="The app's name in the catalog (and in Intune). Click a header to sort.">App</th>
-          <th data-sort="wingetId" title="Where it installs from: a winget package, or its own installer">Source</th>
+          <th data-sort="wingetId" title="Where it installs from: a winget package, or a custom installer">Source</th>
           <th data-sort="version" title="Which version devices get: a lock and the version when it's pinned (managed updates - an arrow when winget has a newer one to release), or newest when it isn't (winget's version today in grey).">Version</th>
           <th data-sort="groups" title="Who gets it - hover for the groups by role">Who gets it</th>
           <th data-sort="status" title="Where the app is: Draft, Ready to send, In Intune, In pilot, Everyone - or Needs a look, Other tenant, Microsoft app, Retire. The button is its next step.">Stage</th>
@@ -170,7 +170,7 @@
       <span class="spacer"></span>
       <div class="btngroup" role="group" aria-label="Updates actions">
         <button class="btn" id="btnUpdWinget" title="Ask winget for the newest version of every Winget app">Check winget for new versions</button>
-        <button class="btn" id="btnUpdWatched" title="Own packages that watch a winget package: ask winget, then get each newer installer into its folder (checked against winget's SHA256) - and release them from the list">Get new installers...</button>
+        <button class="btn" id="btnUpdWatched" title="Custom packages that watch a winget package: ask winget, then get each newer installer into its folder (checked against winget's SHA256) - and release them from the list">Get new installers...</button>
         <button class="btn" id="btnUpdDownloads" title="Whether the version each app is pinned to can still be downloaded - a vendor that keeps only its latest version online breaks it, first on new devices. The nightly run checks this too.">Check downloads</button>
         <button class="btn" id="btnUpdExport" title="A compliance report as a CSV file: per app the pinned version, how many devices have it, whether it meets the bar (90 % on the pinned version, download still there), the release and its ring - with a totals row. For an audit or a report.">Compliance report</button>
         <button class="btn" id="btnUpdReload" title="Read the counts from Intune again">Reload</button>
@@ -184,7 +184,7 @@
     </section>
     <div class="tablewrap" tabindex="0" aria-label="Apps with managed updates">
       <table class="grid" id="updGrid">
-        <thead><tr><th>App</th><th title="The version everyone gets">Current</th><th title="Devices with the current release installed, of those it is assigned to">Devices on it</th><th title="The new version being released: its ring (or fast track), and what the release rule says">In release</th><th title="A newer version: winget's, or the installer in an own package's folder">Available</th><th title="Devices Intune's inventory finds with an older version of the app - installed by Intune or by hand">On older versions</th><th title="Earlier releases kept in Intune for rollback">Superseded</th><th><span class="sr">Actions</span></th></tr></thead>
+        <thead><tr><th>App</th><th title="The version everyone gets">Current</th><th title="Devices with the current release installed, of those it is assigned to">Devices on it</th><th title="The new version being released: its ring (or fast track), and what the release rule says">In release</th><th title="A newer version: winget's, or the installer in a custom package's folder">Available</th><th title="Devices Intune's inventory finds with an older version of the app - installed by Intune or by hand">On older versions</th><th title="Earlier releases kept in Intune for rollback">Superseded</th><th><span class="sr">Actions</span></th></tr></thead>
         <tbody id="updBody"></tbody>
       </table>
       <div class="empty" id="updEmpty" hidden><h2>No app has managed updates yet</h2><p id="updEmptyText">Select apps on the Apps page and choose More &gt; Managed updates on. The pilot groups and the release rule are in Settings &gt; Updates.</p><button class="btn primary" id="btnUpdOpenApps" title="Go to the Apps page">Open Apps</button></div>
@@ -424,7 +424,7 @@
               </section>
               <section class="tile">
                 <span class="ico" aria-hidden="true">&#8679;</span><h3>The catalog has apps, Intune doesn't</h3>
-                <p><b>Add apps</b> (Find... looks up the Winget ID), set the groups, then <b>Send to Intune</b> - several at once, in dependency order. Apps with their own installer need More &gt; Package and a detection rule first.</p>
+                <p><b>Add apps</b> (Find... looks up the Winget ID), set the groups, then <b>Send to Intune</b> - several at once, in dependency order. Apps with a custom installer need More &gt; Package and a detection rule first.</p>
                 <button class="btn" id="tileAdd" title="Open the app editor for a new app">Add app</button>
               </section>
               <section class="tile">
@@ -723,7 +723,7 @@
   <button role="menuitem" data-act="export" title="The selected apps with their settings, groups, icon and package files as one .zip - Catalog > Import library adds them on another instance">Export...</button>
   <button role="menuitem" data-act="deploy" title="Create or update the selected apps in Intune - their settings, package and groups (as the Send to Intune button)">Send to Intune...</button>
   <button role="menuitem" data-act="pushgroups" title="Send only the groups (assignments) to Intune - not the settings or the package">Send groups only</button>
-  <button role="menuitem" data-act="package" title="Build the .intunewin for apps with their own installer">Build package (.intunewin)</button>
+  <button role="menuitem" data-act="package" title="Build the .intunewin for apps with a custom installer">Build package (.intunewin)</button>
   <button role="menuitem" data-act="pull" title="Read the apps' settings and groups from Intune into the catalog - you choose per field">Read from Intune...</button>
   <button role="menuitem" data-act="pushsettings" title="Send the catalog's settings to Intune, without uploading a package">Send settings only...</button>
   <button role="menuitem" data-act="replacepkg" title="Upload the built package under the app as it is in Intune - same version, other files (also with managed updates)">Replace package...</button>
@@ -918,7 +918,7 @@
 </dialog>
 <dialog id="dlgWatched" class="wide" aria-labelledby="wtTitle">
   <h2 id="wtTitle">New installers from winget</h2>
-  <p class="sub" id="wtSub">Own packages that watch a winget package and have a newer version there. Each is downloaded into its folder and kept only if its SHA256 is the one winget gives.</p>
+  <p class="sub" id="wtSub">Custom packages that watch a winget package and have a newer version there. Each is downloaded into its folder and kept only if its SHA256 is the one winget gives.</p>
   <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th>Version</th><th>Status</th></tr></thead><tbody id="wtRows"></tbody></table></div>
   <div class="actions end"><button class="btn" id="wtClose">Close</button><button class="btn primary" id="wtGo">Get them</button></div>
 </dialog>
@@ -947,7 +947,7 @@
       <section>
         <h3>General</h3>
         <label>Name<input id="aName" required autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <div class="srcpick" role="radiogroup" aria-label="Installs from"><span class="srclbl">Installs from</span><button type="button" role="radio" data-src="winget" title="Devices install it with winget - from its Winget ID">Winget</button><button type="button" role="radio" data-src="own" title="Its own installer (.msi, .exe, a script) in its packages folder - built into a package">Its own installer</button><button type="button" role="radio" data-src="store" title="The Microsoft Store installs and updates it - from its Store product ID">Microsoft Store</button><button type="button" role="radio" data-src="office" title="Intune's own Microsoft 365 Apps (Word, Excel, Outlook, ...) - Microsoft installs and updates it on its update channel">Microsoft 365</button></div>
+        <div class="srcpick" role="radiogroup" aria-label="Installs from"><span class="srclbl">Installs from</span><button type="button" role="radio" data-src="winget" title="Devices install it with winget - from its Winget ID">Winget</button><button type="button" role="radio" data-src="own" title="Custom installer (.msi, .exe, a script) in its packages folder - built into a package">Custom installer</button><button type="button" role="radio" data-src="store" title="The Microsoft Store installs and updates it - from its Store product ID">Microsoft Store</button><button type="button" role="radio" data-src="office" title="Intune's own Microsoft 365 Apps (Word, Excel, Outlook, ...) - Microsoft installs and updates it on its update channel">Microsoft 365</button></div>
         <label id="aWingetRow" title="The winget package ID, e.g. 7zip.7zip. Find... searches winget."><span id="aWingetLbl">Winget ID</span><span class="inputrow"><input id="aWinget" autocomplete="off" spellcheck="false" placeholder="e.g. 7zip.7zip" autocorrect="off" autocapitalize="off"><button type="button" class="btn" id="btnFindWinget" title="Search winget for the package">Find...</button></span></label>
         <fieldset class="ownrule officebox" id="aOfficeBox" hidden>
           <legend>Microsoft 365 Apps <span class="muted">- as Intune's own Office app; Microsoft installs and updates it</span></legend>
@@ -993,7 +993,7 @@
           <label id="arUrlRow" title="Optional. The nightly run downloads the installer from here; it is used only if it carries a valid digital signature - from the same publisher as the installer already in the folder">Download the installer from <span class="muted">(https, optional)</span><input id="arUrl" type="url" maxlength="2000" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="https://vendor.example/latest/setup.msi"></label>
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
-        <label id="aWatchRow" title="Optional, for an app with its own installer: a winget package with the same app (its Winget ID). It is only watched - the Apps list shows when it has a newer version, and More > Get new installer downloads it (checked against winget's SHA256). Devices still install this app's own package.">Winget package to watch <span class="muted">(optional - only for new versions)</span><input id="aWatch" maxlength="128" placeholder="e.g. Vendor.App" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label id="aWatchRow" title="Optional, for an app with a custom installer: a winget package with the same app (its Winget ID). It is only watched - the Apps list shows when it has a newer version, and More > Get new installer downloads it (checked against winget's SHA256). Devices still install this app's custom package.">Winget package to watch <span class="muted">(optional - only for new versions)</span><input id="aWatch" maxlength="128" placeholder="e.g. Vendor.App" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <h3 class="withtool">Assignments <button type="button" class="help" data-help="assignments" aria-label="What do Required, Available, Uninstall and Excluded mean?">?</button> <select id="aProfile" class="small" aria-label="Apply an assignment profile"><option value="">Apply a profile...</option></select></h3>
         <div class="groups4">
           <label title="Installed automatically on these groups' devices.">Required<textarea autocomplete="off" id="gRequired" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
@@ -1025,7 +1025,7 @@
         <label>Privacy URL<input autocomplete="off" id="mPrivacyUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <div class="blockbar" id="instBlocks" role="group" aria-label="Install and uninstall commands as blocks" hidden></div>
         <details class="rawcmds" id="instRaw"><summary>The commands <span class="muted">as Intune gets them</span></summary>
-        <label>Install command<input autocomplete="off" id="mInstallCommand" class="mono" placeholder="Made from the Winget ID when it is sent (Winget apps) - or the command of its own installer" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Install command<input autocomplete="off" id="mInstallCommand" class="mono" placeholder="Made from the Winget ID when it is sent (Winget apps) - or the command of its custom installer" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <label title="The command Intune runs to uninstall the app (for the Uninstall assignment and Company Portal uninstalls).">Uninstall command<input autocomplete="off" id="mUninstallCommand" class="mono" placeholder="Made from the Winget ID when it is sent (Winget apps)" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         </details>
         <label>Notes<textarea autocomplete="off" id="mNotes" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
@@ -1038,7 +1038,7 @@
           <h3>Detection rule <button type="button" class="help" data-help="detection" aria-label="What is a detection rule?">?</button></h3>
           <button type="button" class="desktoponly btn" id="btnDetFromPc" title="Pick the app from the ones installed on this PC - its MSI product code, its program file's version, or its Uninstall entry">From an app on this PC...</button>
           <button type="button" class="btn serveronly" id="btnDetFromPaste" title="Run a small script on a Windows PC with the app installed, pick the app, paste what it copies - the detection rule is made from it">From an app on a PC...</button>
-          <label>Type<select id="xType"><option value="">(none - an app with its own package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
+          <label>Type<select id="xType"><option value="">(none - an app with a custom package needs one)</option><option value="Script">Script</option><option value="Msi">MSI product code</option><option value="File">File or folder</option><option value="Registry">Registry</option></select></label>
           <div data-det="Script"><div class="blockbar" id="detBlocks" role="group" aria-label="Detection script as blocks" hidden></div><details class="rawcmds" id="detRaw"><summary>The script <span class="muted">as Intune gets it</span></summary><label>Detection script <span class="muted">(writes output and exits 0 when installed)</span><textarea autocomplete="off" id="xScript" rows="8" class="monotext" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label></details></div>
           <div data-det="Msi"><label>Product code<input autocomplete="off" id="xProductCode" class="mono" spellcheck="false" placeholder="{00000000-0000-0000-0000-000000000000}" autocorrect="off" autocapitalize="off"></label>
             <div class="pcnote" id="xPcNote" role="status" hidden><span id="xPcText"></span> <span class="pcacts"><button type="button" class="btn small" id="btnPcToUninst"></button> <button type="button" class="btn small" id="btnPcToDet"></button></span></div></div>

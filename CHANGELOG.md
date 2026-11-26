@@ -14,6 +14,25 @@
   - Every value in the commands starts on one line, also plain text such as "winget install --id" or "none".
   - The headings line up with the row labels.
 - **Return codes:** shown as a compact list, with long codes such as -1978335135 now readable in full.
+- **Installs from, for an app already in Intune, offers only what it can become.**
+  - Intune can't change an app's type in place. A Windows app (Win32) shows Winget and Custom installer only; a Store
+    app shows only the Store; Microsoft 365 Apps shows only itself.
+  - Before, Microsoft 365 and the Store were offered and then refused with an error. The editor also stayed in
+    Microsoft 365 mode, with its tabs gone.
+  - Unlinking the App ID offers all choices again.
+- **"Its own installer" is now "Custom installer" everywhere.**
+  - This covers the editor's Installs from, the Apps list's Source column, menus, tooltips and messages.
+  - An app's built .intunewin is a "custom package".
+- **Switching Installs from back and forth gives you back what you had.**
+  - Each choice keeps its own Winget ID, install and uninstall commands, and the detection made for winget.
+  - Going from Winget to Custom installer no longer leaves the winget commands and detection in an app without a
+    Winget ID.
+  - Going back to Winget no longer leaves setup.exe, and the Winget ID is there again.
+  - A choice not used before starts empty. A Winget app's commands and detection are then made from its ID when it is
+    sent.
+  - Managed updates, turned off by choosing the Store or Microsoft 365, come back with Winget or Custom installer.
+  - The installer upload ("No installer yet - upload the .msi or .exe ...") shows only for Custom installer. It stayed
+    on after switching back to Winget.
 
 ## 2.38.72
 

@@ -22,7 +22,7 @@ function updatesText(a, managed) {
   if (a.msHint && !a.wingetId) return 'Microsoft keeps it updated (created in Intune)';
   if (a.office && !a.wingetId) return 'Microsoft keeps it updated on its update channel';
   if (a.wingetId && isStoreId(a.wingetId)) return 'the Microsoft Store keeps it updated';
-  if (!a.wingetId) return 'its own installer - the version you package';
+  if (!a.wingetId) return 'a custom installer - the version you package';
   return "winget's newest at install time, not updated afterwards";
 }
 function stageOf(a) {
@@ -36,7 +36,7 @@ function stageOf(a) {
   if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint };
   if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showChecksFor(a.name) } };
   if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install & detection).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
-  if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
+  if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses a custom package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
   // Built, but a file in its packages folder changed since (2.38.53): Intune gets the old package until it is built again.
   if (own && a.packageStale && !a.packageMissing) return { key: 'rebuild', label: 'Rebuild package', cls: 'warn', why: `Files in its packages folder changed after its package was built (${fmtWhen(a.packageBuilt)}) - ${a.hasAppId ? 'Intune still has the old one' : 'the package still holds the old ones'}.`, next: { label: 'Build', title: 'Build the .intunewin again from its packages folder', run: () => onApp(a, 'package') } };
@@ -195,7 +195,7 @@ async function fillPanel(a) {
         });
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', { class: 'pverwrap' }, sel, extra ? el('span', { class: 'muted pverx', text: extra }) : ''));
       })(),
-      fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
+      fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'a custom installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       // Whether its installer is packaged, and when (2.38.53) - only for an app that installs from its own package.
       fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - newer than the one in Intune, send it' : a.packageReplace ? ' - newer than the one in Intune: More > Replace package' : ''}` : '') : ''),

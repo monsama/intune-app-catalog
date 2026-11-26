@@ -2084,3 +2084,8 @@ pre.log .ln:has(> .lts) { padding-left: 9ch; text-indent: -9ch; }
    (-1978335135 was cut), the type beside it, not stretched across the dialog. */
 #xCodesRows { max-width: 560px; }
 #xCodesRows .coderow { grid-template-columns: 124px minmax(0, 1fr) 30px; }
+/* Installs from (2.38.73): only the kinds the app can be - the ends of what shows rounded. */
+.srcpick button.sfirst { border-radius: var(--r-m) 0 0 var(--r-m); margin-left: 0; }
+.srcpick button.slast { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.srcpick button.sfirst.slast { border-radius: var(--r-m); }
+.srcpick button:not(.sfirst):not(.slast) { border-radius: 0; }

@@ -635,7 +635,7 @@ try {
     $liId = & $sendZip $lxZip
     $liPv = Invoke-Api '/api/library-import-preview' @{ uploadId = $liId }
     $pvOwn = @($liPv.apps | Where-Object { $_.name -eq $lxOwn }) | Select-Object -First 1; $pvWin = @($liPv.apps | Where-Object { $_.name -eq $lxWin }) | Select-Object -First 1
-    Check ($liPv.ok -and $pvOwn.state -eq 'new' -and $pvOwn.files -eq 3 -and $pvOwn.kind -eq 'Own package' -and $pvWin.state -eq 'new' -and $pvWin.hasAppId -and ($liPv.exportedAt -is [datetime] -or $liPv.exportedAt -match '^\d{4}-\d{2}-\d{2}T')) 'import: the preview shows both apps as new, with their package files and App ID' ($liPv | ConvertTo-Json -Compress -Depth 4)
+    Check ($liPv.ok -and $pvOwn.state -eq 'new' -and $pvOwn.files -eq 3 -and $pvOwn.kind -eq 'Custom package' -and $pvWin.state -eq 'new' -and $pvWin.hasAppId -and ($liPv.exportedAt -is [datetime] -or $liPv.exportedAt -match '^\d{4}-\d{2}-\d{2}T')) 'import: the preview shows both apps as new, with their package files and App ID' ($liPv | ConvertTo-Json -Compress -Depth 4)
     $li = Invoke-Api '/api/library-import' @{ uploadId = $liId; mode = 'other'; apps = @(@{ name = $lxOwn; action = 'add' }, @{ name = $lxWin; action = 'add' }) }
     $liOwnApp = (Invoke-Api '/api/app-get' @{ name = $lxOwn }).app; $liWinApp = (Invoke-Api '/api/app-get' @{ name = $lxWin }).app
     Check ($li.ok -and @($li.added).Count -eq 2 -and $liWinApp.appId -eq '' -and @($liWinApp.availableFor) -contains 'SG-ZZ-Export-Av' -and @($liOwnApp.requiredFor) -contains 'SG-ZZ-Export' -and $liOwnApp.metadata.installCommand -like '*zz-export-setup.exe*' -and

@@ -53,7 +53,7 @@ function Global:Resolve-WebPackageScript {
     param([string]$Name, [string]$File)
     # A plain file name: no folder, no drive, no "..", only letters, digits, space, dot, dash and underscore.
     # 2.38.17: also the text files a setup reads next to it (SilentClient.cfg, setup.ini, login.xml, a .cmd...).
-    if ($File -notmatch (Get-WebPackageTextPattern) -or $File -match '\.\.') { return @{ Ok = $false; Error = 'Only a script or text file (.ps1, .cfg, .ini, .xml, .txt, .cmd, .bat, .inf, .iss, .json, .reg, .config) directly in the app''s own package folder can be edited here.' } }
+    if ($File -notmatch (Get-WebPackageTextPattern) -or $File -match '\.\.') { return @{ Ok = $false; Error = 'Only a script or text file (.ps1, .cfg, .ini, .xml, .txt, .cmd, .bat, .inf, .iss, .json, .reg, .config) directly in the app''s packages folder can be edited here.' } }
     $app = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $Name }) | Select-Object -First 1
     if (-not $app) { return @{ Ok = $false; Error = "'$Name' isn't in the catalog." } }
     $root = [IO.Path]::GetFullPath((Get-AppFolder -Kind Packages))

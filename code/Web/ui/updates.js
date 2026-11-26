@@ -58,7 +58,7 @@ function renderUpdates() {
       : el('span', { title: `${x.installed} installed, ${x.failed} failed, ${x.pending} pending, ${x.notInstalled} not installed` }, `${x.installed}`, el('span', { class: 'muted', text: ` of ${x.installed + x.failed + x.pending + x.notInstalled}` }), x.failed ? el('button', { type: 'button', class: 'pill err newer linkpill', text: `${x.failed} failed`, title: 'Why? Every device\'s state, and the errors explained', onclick: () => openStatus(x.name) }) : '');
     const where = p ? releaseTimeline(p.ring, p.fastTrack, updRings) : '';
     return el('tr', {},
-      el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (own package)' : '') + (x.ownRule ? ' - own rule' : '') + (x.autoRelease ? ' - released automatically' : '') })),
+      el('td', { class: 'name' }, x.name, el('span', { class: 'muted', text: (x.kind === 'package' ? ' (custom package)' : '') + (x.ownRule ? ' - own rule' : '') + (x.autoRelease ? ' - released automatically' : '') })),
       el('td', { class: 'num' }, x.current || '-', x.download && ['gone', 'notinwinget'].includes(x.download.status)
         ? el('span', { class: 'pill err newer', text: x.download.latestOnly ? 'download gone (latest only)' : 'download gone', title: `${x.download.text}\n(checked ${x.download.at})` })
         : x.download && x.download.status === 'ok' ? el('span', { class: 'dlok', text: '✓', title: `Can still be downloaded (checked ${x.download.at})`, 'aria-label': 'Download checked' }) : ''),
@@ -141,7 +141,7 @@ $('btnUpdWatched').addEventListener('click', async () => {
   try {
     // The list as it is now (another window may have just set an app to watch winget), then winget.
     await loadApps();
-    if (!apps.some(a => !a.wingetId && a.watchWinget)) { toast('No app with its own installer watches a winget package yet - the editor: Winget package to watch.'); return; }
+    if (!apps.some(a => !a.wingetId && a.watchWinget)) { toast('No app with a custom installer watches a winget package yet - the editor: Winget package to watch.'); return; }
     toast('Asking winget for the newest versions...');
     const r = await api('/api/checks-winget', {});
     if (!r.ok) { toast(r.error, true); return; }
