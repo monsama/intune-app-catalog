@@ -123,8 +123,8 @@ function openLibExport(names) {
   $('lxTitle').textContent = names.length ? `Export ${nWord(pool.length, 'app')}` : 'Export library';
   const own = pool.filter(a => !a.wingetId && !(a.office && !a.wingetId)).length;
   $('lxSummary').textContent = names.length && pool.length <= 5
-    ? `${pool.map(a => a.name).join(', ')}${own ? ` - ${own === pool.length ? 'with' : `${own} of them own packages, with`} the files in their packages folder` : ''}.`
-    : `${nWord(pool.length, 'app')}${own ? `, ${own} of them own packages - the files in their packages folders come along` : ''}.`;
+    ? `${pool.map(a => a.name).join(', ')}${own ? ` - ${own === pool.length ? 'with' : `${own} of them custom packages, with`} the files in their packages folder` : ''}.`
+    : `${nWord(pool.length, 'app')}${own ? `, ${own} of them custom packages - the files in their packages folders come along` : ''}.`;
   $('lxProgress').hidden = true; $('lxBar').style.width = '0'; $('lxNote').textContent = ''; $('lxErr').hidden = true;
   $('btnLxGo').textContent = 'Export'; $('btnLxGo').disabled = false; $('btnLxClose').textContent = 'Cancel'; $('btnLxClose').hidden = false;
   $('dlgLibExport').showModal();

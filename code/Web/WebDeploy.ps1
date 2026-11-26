@@ -66,7 +66,7 @@ function Global:Get-WebDeployPlan {
             $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
         elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (Pin newest in its side panel)." }
-        elseif ($unc -and -not $store -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with its own package needs one (the editor's Install & detection)." }
+        elseif ($unc -and -not $store -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with a custom package needs one (the editor's Install & detection)." }
         $lob = $a.appId -and (Test-IntuneLobMsiType ([string]$typeOf[([string]$a.appId).ToLowerInvariant()]))
         # What doesn't fit together (2.36.0): said, not blocking - each can be on purpose.
         $warnings = if ($unc -and -not $store -and -not $reason) { @(Get-WebPackageWarnings $a) } else { @() }
@@ -388,7 +388,7 @@ function Global:Start-WebPackage {
     $names = @($Data.names | ForEach-Object { [string]$_ } | Where-Object { $_ })
     $own = @($catalog.Apps | Where-Object { (Test-AppIsUncommon -App $_) -and -not $_.office })
     if ($names.Count) { $own = @($own | Where-Object { $names -contains $_.appName }) }
-    if ($names.Count -and $own.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps has its own installer to package - Winget apps use the shared package.' } }
+    if ($names.Count -and $own.Count -eq 0) { return @{ ok = $false; error = 'None of the chosen apps has a custom installer to package - Winget apps use the shared package.' } }
     $params = @{ InputFolder = (Get-AppFolder -Kind Packages -Create); Force = $true; ToolPath = (Get-PackagingToolPath) }
     if ((Get-PackagerChoice) -eq 'builtin') { $params.BuiltIn = $true }
     $folders = @($own | ForEach-Object { Get-SafeFileNameForApp -Name $_.appName })
@@ -399,7 +399,7 @@ function Global:Start-WebPackage {
     if ($names.Count -eq 1) { $params.SingleFolderName = $folders[0] }
     elseif ($names.Count -gt 1) { $params.FolderNames = ($folders -join ',') }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedPackageScript -Name 'package' -ConfigJson '' -ResultPath '' -Kind 'Package' -Parameters $params -After @{ Kind = 'package'; Names = @($own | ForEach-Object { [string]$_.appName }) }
-    if ($started.ok) { Write-Log "[INFO] Packaging $(if ($names.Count) { "$(Format-Count ($own.Count) 'app')" } else { 'every app with its own installer' })..." }
+    if ($started.ok) { Write-Log "[INFO] Packaging $(if ($names.Count) { "$(Format-Count ($own.Count) 'app')" } else { 'every app with a custom installer' })..." }
     return $started
 }
 

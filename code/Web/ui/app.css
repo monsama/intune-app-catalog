@@ -1558,12 +1558,7 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .setup li.done { padding-top: 3px; padding-bottom: 3px; }
 .setup li.done .body b { font-size: 13px; text-decoration: none; }
 
-/* Blocks, quieter: the fixed parts folded into one line, the raw commands folded under the blocks */
-.brec .bfixed { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--bd2); background: none; color: var(--muted); font: inherit; font-size: 12px; padding: 6px 12px; cursor: pointer; }
-.brec .bfixed::before { content: '\25B8'; display: inline-block; width: 14px; transition: transform .15s; }
-.brec.showfixed .bfixed::before { transform: rotate(90deg); }
-.brec .bfixed:hover { color: var(--fg); background: var(--hover); }
-.brec:not(.showfixed) .blk.lock, .brec:not(.showfixed) .bsec.onlyfixed { display: none; }
+/* Blocks, quieter: the raw commands folded under the blocks */
 .rawcmds { margin: 8px 0 4px; }
 .rawcmds > summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
 .rawcmds > summary:hover { color: var(--fg); }
@@ -2080,7 +2075,17 @@ pre.log .ln:has(> .lts) { padding-left: 9ch; text-indent: -9ch; }
 .readychip { height: 34px; }
 /* The starter set's sticky header covers the rows scrolled under it. */
 #alGrid thead th { background: var(--surface); box-shadow: 0 1px 0 var(--bd); }
-/* A winget app's uninstall: one line, shown also while the fixed parts are folded (2.38.72); folded away when they show. */
-.brec:not(.showfixed) .blk.lock.usum { display: grid; }
-.brec.showfixed .blk.usum { display: none; }
-.brec .blk.usum .bval { padding-left: 0; }
+/* 2.38.73: every value in the blocks starts on one line - plain text (a command's fixed start, "none") where a field's
+   text starts (its padding), not 11 px left of it. */
+.brec .blk .bval > .bpre:first-child, .brec .blk .bval > .bnone:first-child { padding-left: 11px; }
+/* Headings line up with the row labels under them (those sit after a 3 px marker). */
+.brec .bsec { padding-left: 15px; }
+/* Requirements on their own part (2.38.73): the return codes as a compact list - the whole code readable
+   (-1978335135 was cut), the type beside it, not stretched across the dialog. */
+#xCodesRows { max-width: 560px; }
+#xCodesRows .coderow { grid-template-columns: 124px minmax(0, 1fr) 30px; }
+/* Installs from (2.38.73): only the kinds the app can be - the ends of what shows rounded. */
+.srcpick button.sfirst { border-radius: var(--r-m) 0 0 var(--r-m); margin-left: 0; }
+.srcpick button.slast { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.srcpick button.sfirst.slast { border-radius: var(--r-m); }
+.srcpick button:not(.sfirst):not(.slast) { border-radius: 0; }

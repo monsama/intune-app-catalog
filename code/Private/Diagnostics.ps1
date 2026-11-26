@@ -23,7 +23,7 @@ function Global:Get-CatalogDiagnosticLines {
     & $add ($nothing.Count -eq 0) 'warn' "$($nothing.Count) app(s) with no App ID and no settings yet (nothing to deploy)" @($nothing | ForEach-Object { $_.appName })
 
     $uncommon = @($apps | Where-Object { (Test-AppIsUncommon -App $_) -and -not $_.office -and -not $_.metadata })
-    & $add ($uncommon.Count -eq 0) 'warn' "$($uncommon.Count) app(s) with their own package but no settings - they need a detection rule before they can be deployed" @($uncommon | ForEach-Object { $_.appName })
+    & $add ($uncommon.Count -eq 0) 'warn' "$($uncommon.Count) app(s) with a custom package but no settings - they need a detection rule before they can be deployed" @($uncommon | ForEach-Object { $_.appName })
 
     $neverSynced = @($apps | Where-Object { $_.appId -and -not $_.intuneAppType })
     & $add ($neverSynced.Count -eq 0) 'info' "$($neverSynced.Count) deployed app(s) never read back from Intune (no type or version recorded) - Pull from Intune picks it up" @($neverSynced | ForEach-Object { $_.appName })

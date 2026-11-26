@@ -88,7 +88,7 @@ const isLobMsi = a => !!a.appId && ((intuneApps || []).some(x => x.id === String
 // Intune's app types, short for the list (the full name is the cell's tooltip).
 const shortType = t => ({ 'Windows app (Win32)': 'Win32', 'Windows MSI line-of-business app': 'MSI (line-of-business)', 'Microsoft Store app (new)': 'Store', 'Microsoft 365 Apps (Windows 10 and later)': 'Microsoft 365' })[t] || t || '';
 // What the server's status words are shown as - the same meaning, in the words the rest of the page uses.
-const statusLabel = { 'No App ID': 'Not in Intune yet', 'Metadata saved - ready to deploy': 'Not in Intune yet - own settings', 'Custom package': 'Winget ID + own package' };
+const statusLabel = { 'No App ID': 'Not in Intune yet', 'Metadata saved - ready to deploy': 'Not in Intune yet - own settings', 'Custom package': 'Winget ID + custom package' };
 function statusPill(row) {
   if (row.retiringSince) return el('span', { class: 'pill err', text: 'Retiring', title: `Being uninstalled from its groups since ${row.retiringSince} - More > Retire shows how far, and finishes it.` });
   const s = row.status || '';
@@ -158,8 +158,8 @@ function renderApps() {
     const tr = el('tr', { 'data-name': a.name, class: selected.has(a.name) ? 'sel' : '', title: a.appId ? 'App ID ' + a.appId : 'Not in Intune yet' },
       el('td', { class: 'name' }, el('input', { type: 'checkbox', class: 'rowpick', 'aria-label': `Select ${a.name}`, title: 'Select - several at once (Shift: a range)', checked: selected.has(a.name),
         onclick: e => { e.stopPropagation(); pickRow(a.name, e.target.checked, e.shiftKey); }, ondblclick: e => e.stopPropagation() }), iconFor(a), el('span', { class: 'nm', text: a.name, title: a.name.length > 40 ? a.name : null })),
-      el('td', { class: 'mono src', text: a.office && !a.wingetId ? 'Microsoft 365 Apps' : a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'own installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
-        title: a.office && !a.wingetId ? `Intune's own Microsoft 365 Apps - ${a.officeText}` : !a.wingetId ? 'Its own installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
+      el('td', { class: 'mono src', text: a.office && !a.wingetId ? 'Microsoft 365 Apps' : a.msHint && !a.wingetId ? 'Microsoft (Intune)' : !a.wingetId ? 'custom installer' : isStoreId(a.wingetId) ? `${a.wingetId} (Store)` : a.wingetId,
+        title: a.office && !a.wingetId ? `Intune's own Microsoft 365 Apps - ${a.officeText}` : !a.wingetId ? 'Custom installer (Packages folder)' + (a.type ? ` - ${a.type} in Intune` : '') : isStoreId(a.wingetId) ? 'A Microsoft Store app - Intune\'s own Store type: no package, the Store installs and updates it' : `winget package ${a.wingetId}` }),
       el('td', { class: 'num' }, el('span', { class: 'vcell' }, ...versionCell(a))),
       el('td', { title: `Required: ${a.required}, Available: ${a.available}, Uninstall: ${a.uninstall}`, class: a.required + a.available ? '' : 'muted', text: a.required + a.available + a.uninstall ? `${(a.groups || []).length} group${(a.groups || []).length === 1 ? '' : 's'}` : 'nobody yet' }),
       el('td', { class: 'stagecol' }, stageCell(a)),
@@ -227,7 +227,7 @@ const metaIds = { description: 'mDescription', publisher: 'mPublisher', appVersi
   notes: 'mNotes' };
 let editingName = '';
 function fillEditor(a) {
-  $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || '';
+  $('aName').value = a.appName || ''; $('aWinget').value = a.wingetId || ''; $('aAppId').value = a.appId || ''; editorIntuneType = a.intuneAppType || '';
   $('gRequired').value = (a.requiredFor || []).join('\n'); $('gAvailable').value = (a.availableFor || []).join('\n');
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
   $('aFilter').value = a.assignmentFilter || ''; $('aFilterMode').value = a.assignmentFilterMode === 'exclude' ? 'exclude' : 'include'; $('filterNote').textContent = '';
@@ -255,7 +255,21 @@ function fillEditor(a) {
 // Managed updates need a Winget ID; while one is ticked, the install commands and detection follow the App version.
 // Installs from (2.38.20): Winget, its own installer or the Microsoft Store - the Winget ID field only where it means
 // something (an own installer has none), named for what goes in it.
-let editorSrc = 'own', editorSelfKnown = false;
+let editorSrc = 'own', editorSelfKnown = false, editorIntuneType = '', editorSrcAtOpen = '';
+// What an app in Intune can become in place (2.38.73): its Intune type is fixed - a Windows app (Win32) stays one (Winget
+// or its own installer), a Store app stays a Store app, Microsoft 365 Apps stays that. Without an App ID: anything.
+function srcAllowed() {
+  if (!$('aAppId').value.trim()) return null;
+  const t = editorIntuneType, at = editorSrcAtOpen;
+  const kind = /365|office/i.test(t) ? 'office' : /store/i.test(t) ? 'store' : /win32/i.test(t) ? 'win32' : t ? 'other'
+    : at === 'office' ? 'office' : at === 'store' ? 'store' : 'win32';
+  return kind === 'win32' ? ['winget', 'own'] : kind === 'other' ? [at || editorSrc] : [kind];
+}
+const srcNames = { winget: 'a Winget app', own: 'an app with a custom installer', store: 'a Microsoft Store app', office: 'Microsoft 365 Apps' };
+function srcLockedWhy(src) {
+  const ok = srcAllowed(); if (!ok || ok.includes(src)) return '';
+  return `It is ${editorIntuneType ? `a ${editorIntuneType}` : srcNames[editorSrcAtOpen] || 'another kind of app'} in Intune - it can't become ${srcNames[src]} in place. To make it one, unlink its App ID first (App ID: Change... > Unlink) - Send to Intune then creates a new app.`;
+}
 function srcFromField() { const v = $('aWinget').value.trim(); return !v ? null : isStoreId(v) ? 'store' : 'winget'; }
 // Microsoft 365 Apps (2.38.21): Intune's own Office app - its settings as the server keeps them (Get-OfficeDefaultSettings, -AppKeys, -Channels).
 const officeChannels = [['monthlyEnterprise', 'Monthly Enterprise Channel - once a month (recommended)'], ['current', 'Current Channel - new features as they come'],
@@ -292,7 +306,15 @@ function readOffice() {
     excluded: [...document.querySelectorAll('[data-oapp]')].filter(c => !c.checked).map(c => c.dataset.oapp), sharedActivation: $('oShared').checked, removeOlder: $('oRemoveOlder').checked };
 }
 function showSrc() {
-  for (const b of document.querySelectorAll('.srcpick [data-src]')) b.setAttribute('aria-checked', String(b.dataset.src === editorSrc));
+  for (const b of document.querySelectorAll('.srcpick [data-src]')) {
+    b.setAttribute('aria-checked', String(b.dataset.src === editorSrc));
+    // Not offered where Intune can't change the app's type in place (2.38.73): an app in Intune as a Windows app shows
+    // Winget and Its own installer only - Microsoft 365 and the Store were offered and then refused.
+    b.hidden = !!srcLockedWhy(b.dataset.src);
+  }
+  // The pill's rounded ends on the first and last choice shown.
+  const shownSrc = [...document.querySelectorAll('.srcpick [data-src]')].filter(b => !b.hidden);
+  shownSrc.forEach((b, i) => { b.classList.toggle('sfirst', i === 0); b.classList.toggle('slast', i === shownSrc.length - 1); });
   const office = editorSrc === 'office';
   $('aWingetRow').hidden = editorSrc === 'own' || office;
   // Microsoft 365: its settings instead of managed updates, a release rule and a package - Microsoft updates it on its channel.
@@ -307,15 +329,44 @@ function showSrc() {
   if (window.edSrcChanged) edSrcChanged();
   $('aWingetLbl').textContent = editorSrc === 'store' ? 'Store product ID' : 'Winget ID';
   $('aWinget').placeholder = editorSrc === 'store' ? 'e.g. 9WZDNCRFJ3PZ' : 'e.g. 7zip.7zip';
+  // The installer upload follows the choice (2.38.73: Winget with no ID yet still showed it after Its own installer).
+  try { showPkgInfo(); } catch (e) { /* not set up yet, on load */ }
 }
 for (const b of document.querySelectorAll('.srcpick [data-src]')) b.addEventListener('click', () => {
   const was = editorSrc, now = b.dataset.src, f = srcFromField();
+  const why = srcLockedWhy(now); if (why) { toast(why, true); return; }
+  if (was !== now) srcSwap(was, now);
   editorSrc = now;
   // What doesn't fit the new choice goes (an own installer has no ID; a Winget ID isn't a Store ID).
   if (f && f !== now) { $('aWinget').value = ''; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); }
-  showManagedState(); if (now === 'office') { if (was !== now) { $('oChannel').focus(); officeFromIntune(); } } else if (now !== 'own' && was !== now) $('aWinget').focus();
+  // Its Winget (or Store) ID back, when this choice had one before (2.38.73).
+  const back = srcStash[now];
+  if (back && back.id && !$('aWinget').value.trim() && (isStoreId(back.id) ? 'store' : 'winget') === now) { $('aWinget').value = back.id; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); }
+  showManagedState();
+  // Managed updates, turned off by a Store or Microsoft 365 choice, come back with Winget or its own installer (2.38.73).
+  if ((now === 'winget' || now === 'own') && srcStash.managed) { srcStash.managed = false; $('aManaged').checked = true; showManagedState(); } if (now === 'office') { if (was !== now) { $('oChannel').focus(); officeFromIntune(); } } else if (now !== 'own' && was !== now) $('aWinget').focus();
   if (typeof updateReady === 'function') updateReady();
 });
+// 2.38.73: each "Installs from" keeps its own commands. Going from Winget to its own installer left the winget commands
+// (and the detection made for winget) in an app that has no Winget ID any more; going back left setup.exe in a Winget
+// app. They are put aside per choice and come back with it - a choice never used before starts empty (a Winget app's
+// commands and detection are then made from its ID when it is sent).
+let srcStash = {};
+function srcSwap(was, now) {
+  const set = (id, v) => { if ($(id).value !== v) { $(id).value = v; $(id).dispatchEvent(new Event('input', { bubbles: true })); } };
+  const madeForWinget = $('xType').value === 'Script' && /\$AppToDetect = '/.test($('xScript').value);
+  if ((now === 'store' || now === 'office') && $('aManaged').checked) srcStash.managed = true;
+  srcStash[was] = { id: $('aWinget').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, wingetScript: madeForWinget ? $('xScript').value : '' };
+  const back = srcStash[now] || { install: '', uninstall: '', wingetScript: '' };
+  set('mInstallCommand', back.install); set('mUninstallCommand', back.uninstall);
+  // The detection made for winget leaves with Winget, and comes back with it; a rule of its own stays.
+  if (madeForWinget && now !== 'winget') { $('xType').value = ''; $('xScript').value = ''; }
+  if (now === 'winget' && back.wingetScript && !$('xType').value) { $('xType').value = 'Script'; $('xScript').value = back.wingetScript; }
+  showDetFields();
+  // Folded as it fits now (a rule made for winget as one line; none at all asks for one) - not as "a rule of its own".
+  if (window.edFoldsReset) edFoldsReset();
+  deployTouched = true;
+}
 function showManagedState() {
   const f = srcFromField(); if (f) editorSrc = f; else if (!['winget', 'store', 'office'].includes(editorSrc)) editorSrc = 'own';
   showSrc();
@@ -359,7 +410,7 @@ let methodSeq = 0, methodTimer = null, editorInstaller = null, editorWingetOffer
 function showPkgInfo() {
   const box = $('aPkgInfo'), v = $('mAppVersion').value.trim(), i = editorInstaller, row = apps.find(a => a.name === editingName);
   // Not for Microsoft's own apps (nothing to package) - and only for an app with a name already saved.
-  box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint) || editorSrc === 'office';
+  box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint) || editorSrc !== 'own';
   if (box.hidden) return;
   // A script app runs powershell.exe -File <script>.ps1 - the .exe in it is PowerShell, not an installer (2.38.67).
   const script = /-File\s+\S*\.ps1\b/i.test($('mInstallCommand').value) || (/\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value));
@@ -661,6 +712,7 @@ async function openEditor(name) {
   // A minimised editor comes back as it was (2.38.23: its "Installs from" too - reset first, Microsoft 365 was lost on Save).
   if (wcResume('dlgApp')) return;
   appVerPick.reset(); editorSrc = name ? 'own' : 'winget';   // a new app starts on Winget (most are)
+  srcStash = {};
   editingName = name || ''; editingVersion = '';
   if (name) {
     const r = await api('/api/app-get', { name });
@@ -687,6 +739,8 @@ async function openEditor(name) {
   $('btnRemoveApp').hidden = !name;
   $('btnAppHistory').hidden = !name;
   $('btnAppMore').hidden = !name;
+  // What it is when opened: an app in Intune keeps its kind (srcAllowed).
+  editorSrcAtOpen = editorSrc; showSrc();
   $('dlgApp').showModal();
   if (typeof fillBtnSync === 'function') fillBtnSync();
   editorSnapshot = editorState();
@@ -1472,8 +1526,8 @@ function openMenu(x, y, right = false) {
     managed: any,
     rollback: !!(one && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && ((one.previousVersions || []).length > 1 || (one.rolledBackVersions || []).length)) };
   const why = {
-    replacepkg: !one ? 'Select exactly one app.' : !one.hasAppId ? 'This app isn\'t in Intune yet - Send to Intune uploads its package.' : (one.wingetId || one.office) ? 'Only for an app with its own package.' : 'Build its package first (Build package).',
-    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', export: 'Select one or more apps first - Catalog > Export library exports all of them.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    replacepkg: !one ? 'Select exactly one app.' : !one.hasAppId ? 'This app isn\'t in Intune yet - Send to Intune uploads its package.' : (one.wingetId || one.office) ? 'Only for an app with a custom package.' : 'Build its package first (Build package).',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', export: 'Select one or more apps first - Catalog > Export library exports all of them.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for a custom package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
     deploy: 'Select one or more apps first.', batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
@@ -1515,7 +1569,7 @@ function openMenu(x, y, right = false) {
   settle();
   // No rule before the first section that is shown.
   const firstShown = [...menu.children].find(n => !n.hidden); if (firstShown && firstShown.tagName === 'HR') firstShown.hidden = true;
-  menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
+  menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with a custom installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
   const allManaged = sel.length && sel.every(a => a.managed);
   menu.querySelector('[data-act=managed]').textContent = allManaged ? 'Turn off managed updates...' : 'Turn on managed updates...';
   menu.querySelector('[data-act=managed]').dataset.on = allManaged ? '0' : '1';
@@ -1557,7 +1611,7 @@ async function menuAction(act) {
   const names = [...selected], one = oneSelected(), sel = () => names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   switch (act) {
     case 'package':
-      runDialog('Package', names.length ? `Building the .intunewin for ${nWord(names.length, 'app')} with their own installer.` : 'Building every app with its own installer.');
+      runDialog('Package', names.length ? `Building the .intunewin for ${nWord(names.length, 'app')} with a custom installer.` : 'Building every app with a custom installer.');
       runJob({ names }, (ok, res, after) => { toast(ok ? (after && after.failed ? `Packaging finished - ${after.failed} failed, see the log.` : 'Packaging finished.') : 'Packaging failed - see the log.', !ok || (after && after.failed)); loadApps(); },
         { path: '/api/package-start', log: 'runLog', startText: 'Packaging...' });
       break;
@@ -1591,7 +1645,7 @@ async function menuAction(act) {
     }
     case 'managed': {
       const on = menu.querySelector('[data-act=managed]').dataset.on === '1', ws = sel().map(a => a.name);
-      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Pin winget\'s newest version before the first send). Own packages: their detection rule must compare a version - a release updates it. Send settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
+      if (!(await ask(`Managed updates ${on ? 'on' : 'off'} for ${ws.length} app${ws.length === 1 ? '' : 's'}?\n\n${on ? 'Each installs exactly its App version, and new versions go to the pilot groups first (More > Release new version). Winget apps: the install command and detection rule follow the App version (set one with More > Pin winget\'s newest version before the first send). Custom packages: their detection rule must compare a version - a release updates it. Send settings sends the change to apps already in Intune.' : 'Their commands stay pinned to the current version until you change the install method (the editor\'s Install with).'} Undo takes it back.`, { ok: on ? 'Turn on' : 'Turn off', danger: false }))) return;
       const r = await api('/api/managed-updates', { names: ws, on });
       toast(r.ok ? `Managed updates ${on ? 'on' : 'off'} for ${nWord(r.changed.length, 'app')}.${r.skipped.length ? ' Skipped: ' + r.skipped.join(', ') : ''}` : r.error, !r.ok); loadApps();
       break;
@@ -1926,11 +1980,13 @@ $('aAppLink').addEventListener('focus', fillAppLink);
 $('aAppLink').addEventListener('pointerdown', fillAppLink);
 $('aAppLink').addEventListener('change', () => {
   const v = $('aAppLink').value, f = $('aAppId');
-  if (v === '__unlink') f.value = '';
+  if (v === '__unlink') { f.value = ''; editorIntuneType = ''; }
   else if (v === '__type') { f.readOnly = false; f.focus(); f.select(); }
-  else if (v) f.value = v;
+  // One of the Windows apps in Intune: a Win32 app - Winget or its own installer (2.38.73).
+  else if (v) { f.value = v; editorIntuneType = 'Windows app (Win32)'; editorSrcAtOpen = editorSrc === 'winget' || editorSrc === 'own' ? editorSrc : 'own'; }
   $('aAppLink').value = '';
   f.dispatchEvent(new Event('input', { bubbles: true }));
+  showSrc();
 });
 $('aAppId').addEventListener('blur', () => { $('aAppId').readOnly = true; });
 

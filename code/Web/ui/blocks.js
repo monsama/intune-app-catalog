@@ -97,25 +97,15 @@ function renderBlockBar(host, model, opts = {}) {
   const where = { aMethod: 'Install with', xContext: 'Install for', mAppVersion: 'App version', aWinget: 'Winget ID' };
   const card = el('div', { class: 'brec' });
   host.append(card);
-  // The fixed parts (the same for every app) folded into one line - this app's values and links stay in view.
-  const fixedN = model.blocks.filter(b => b.kind === 'lock').length;
-  let showFixed = false; try { showFixed = localStorage.getItem('blocksShowFixed') === '1'; } catch (e) { }
-  card.classList.toggle('showfixed', showFixed);
-  if (fixedN) card.append(el('button', { type: 'button', class: 'bfixed', 'aria-expanded': String(showFixed),
-    text: showFixed ? `Hide the ${fixedN} fixed part${fixedN === 1 ? '' : 's'}` : `${fixedN} fixed part${fixedN === 1 ? '' : 's'} - the same for every app`,
-    title: 'What the tool writes the same way for every app - shown for reading, not for changing',
-    onclick: e => { const on = !card.classList.contains('showfixed'); card.classList.toggle('showfixed', on); try { localStorage.setItem('blocksShowFixed', on ? '1' : '0'); } catch (x) { }
-      e.currentTarget.setAttribute('aria-expanded', String(on)); e.currentTarget.textContent = on ? `Hide the ${fixedN} fixed part${fixedN === 1 ? '' : 's'}` : `${fixedN} fixed part${fixedN === 1 ? '' : 's'} - the same for every app`; } }));
+  // 2.38.73: the fixed parts (the same for every app) always show - greyed, for reading - so everything Intune runs is
+  // in view: before, they folded into one line, and a winget app's whole uninstall with them.
+  card.classList.add('showfixed');
   let part = '';
   for (const b of model.blocks) {
     if (b.part !== part) {
-      // The Uninstall heading: folded with the fixed parts when all of the uninstall is fixed (a winget uninstall).
-      const onlyFixed = !model.blocks.some(x => x.part === b.part && x.kind !== 'lock');
-      if (part && b.part === 'uninstall') card.append(el('div', { class: 'bsec' + (onlyFixed ? ' onlyfixed' : ''), text: 'Uninstall' }));
-      // ...but the uninstall itself always shows (2.38.72): one line of what Intune runs, also while the fixed parts
-      // are folded - a winget app's uninstall was hidden entirely behind "3 fixed parts".
-      if (part && b.part === 'uninstall' && onlyFixed) card.append(el('div', { class: 'blk lock usum', title: 'Made from the Winget ID - the same for every winget app. Edit as text to change it.' },
-        el('span', { class: 'blab', text: 'Uninstall' }), el('span', { class: 'bval', text: model.blocks.filter(x => x.part === 'uninstall').map(x => x.text).join(' ') })));
+      // Install and Uninstall each under a heading, when the commands have both.
+      if (!part && b.part === 'install' && model.blocks.some(x => x.part === 'uninstall')) card.append(el('div', { class: 'bsec', text: 'Install' }));
+      if (part && b.part === 'uninstall') card.append(el('div', { class: 'bsec', text: 'Uninstall' }));
       part = b.part;
     }
     const tip = b.help || '';

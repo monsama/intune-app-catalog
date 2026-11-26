@@ -516,11 +516,12 @@ try {
         const chipAdded = (await page.inputValue('#gAvailable')).split('\n').includes('SG-ZZ-Chip');
         await page.click('#gAvailableBox .chip.tag .x');
         check(chipAdded && !(await page.inputValue('#gAvailable')).includes('SG-ZZ-Chip'), `${label}: a group is added as a chip and removed with its x`, await page.inputValue('#gAvailable'));
-        // 2.30.0: Requirements is on Install & detection, folded to one line - Change brings the fields out.
+        // 2.38.73: Requirements on a part of its own - the fields show at once (no folded line with Change there).
+        await page.click('.edtab[data-i="5"]');
+        check(await page.evaluate(() => document.querySelectorAll('.edtab').length === 6 && !!document.getElementById('xTime').offsetParent && !!document.getElementById('xCodesRows').offsetParent && !document.querySelector('[data-sum="req"]').offsetParent), `${label}: the Requirements part shows its fields at once`);
         await page.click('.edtab[data-i="4"]');
-        check(await page.evaluate(() => document.querySelectorAll('.edtab').length === 5 && !document.getElementById('xTime').offsetParent && /for the device/.test(document.querySelector('[data-sum="req"]').textContent)), `${label}: the requirements show as one line until Change`);
-        check(await page.evaluate(() => !document.getElementById('xType').offsetParent && /Made for winget/.test(document.querySelector('[data-sum="det"]').textContent)), `${label}: a winget app's detection shows as one line`);
-        await page.click('[data-sum="req"] button');
+        check(await page.evaluate(() => !document.getElementById('xType').offsetParent && /Made for winget/.test(document.querySelector('[data-sum="det"]').textContent) && !document.getElementById('xTime').offsetParent), `${label}: a winget app's detection shows as one line; the requirements are not on Install & detection`);
+        await page.click('.edtab[data-i="5"]');
         await page.click('#xCodesRows > button');
         await page.fill('#xCodesRows .coderow:last-of-type input', '1707');
         check((await page.inputValue('#xCodes')).split('\n').includes('1707 = success'), `${label}: a return code is added as a row`, await page.inputValue('#xCodes'));
@@ -634,7 +635,7 @@ try {
         check(await page.evaluate(() => !document.getElementById('aOfficeBox').hidden && document.getElementById('aWingetRow').hidden && document.getElementById('oChannel').value === 'monthlyEnterprise' && document.querySelector('[data-oapp="word"]').checked && !document.querySelector('[data-oapp="lync"]').checked), `${label}: Installs from Microsoft 365 shows its settings, with the defaults`);
         await unnamed('the Microsoft 365 settings'); await a11y('the Microsoft 365 settings');
         check(await page.evaluate(() => !!document.querySelector('#appMenu [data-act="deploy"], [role="menu"] [data-act="deploy"]')), `${label}: the app menu has Send to Intune (2.38.22)`);
-        check(await page.evaluate(() => document.querySelector('.edtab[data-i="4"]').hidden && document.querySelector('.edtab[data-i="1"]').hidden && getComputedStyle(document.getElementById('mAppVersion').closest('label')).display === 'none'), `${label}: Microsoft 365 Apps - no Install & detection tab and no App version (2.38.22)`); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
+        check(await page.evaluate(() => document.querySelector('.edtab[data-i="4"]').hidden && document.querySelector('.edtab[data-i="5"]').hidden && document.querySelector('.edtab[data-i="1"]').hidden && getComputedStyle(document.getElementById('mAppVersion').closest('label')).display === 'none'), `${label}: Microsoft 365 Apps - no Install & detection tab and no App version (2.38.22)`); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
         await page.selectOption('#oChannel', 'current'); await page.uncheck('[data-oapp="teams"]');
         await page.click('#btnSaveApp'); await page.waitForFunction(() => !document.getElementById('dlgApp').open, null, { timeout: 15000 });
         // The dialog closes before the list is read again - wait for the row as it is now.
@@ -721,14 +722,11 @@ try {
         check((await page.inputValue('#gRequired')).split('\n').includes('SG-ZZ-UI'), `${label}: Add groups saved the group`, await page.inputValue('#gRequired'));
         // Blocks (2.26): the winget commands as locked and editable blocks; an option added there lands in the command.
         await page.click('.edtab[data-i="4"]');
-        await page.waitForSelector('#instBlocks:not([hidden]) .bfixed', { timeout: 8000 });
+        await page.waitForSelector('#instBlocks:not([hidden]) .brec', { timeout: 8000 });
         check(await page.evaluate(() => document.getElementById('mInstallCommand').readOnly && document.querySelectorAll('#instBlocks .blk.lock').length >= 3), `${label}: the commands show as blocks, the text read-only`);
-        // 2.29.1: the fixed parts fold into one line, the raw commands under the blocks; both open on request.
-        check(await page.evaluate(() => !document.getElementById('instRaw').open && [...document.querySelectorAll('#instBlocks .blk.lock:not(.usum)')].every(b => !b.offsetParent) && !!document.querySelector('#instBlocks .blk.usum')?.offsetParent), `${label}: the fixed parts and the raw commands are folded away - the uninstall still shows as one line (2.38.72)`);
-        await page.click('#instBlocks .bfixed');
-        check(await page.evaluate(() => [...document.querySelectorAll('#instBlocks .blk.lock:not(.usum)')].every(b => !!b.offsetParent) && !document.querySelector('#instBlocks .blk.usum')?.offsetParent), `${label}: the fixed parts show on a click (the uninstall line then in its parts)`);
-        await page.click('#instBlocks .bfixed');
-        await page.evaluate(() => { try { localStorage.removeItem('blocksShowFixed'); } catch (e) { } });
+        // 2.38.73: the fixed parts always show (greyed), under Install and Uninstall headings; the raw commands stay folded.
+        check(await page.evaluate(() => !document.getElementById('instRaw').open && [...document.querySelectorAll('#instBlocks .blk.lock')].every(b => !!b.offsetParent) && !document.querySelector('#instBlocks .bfixed')
+          && [...document.querySelectorAll('#instBlocks .bsec')].map(h => h.textContent).join(',') === 'Install,Uninstall'), `${label}: every part of the commands shows, under Install and Uninstall; the raw commands are folded`);
         await unnamed('the blocks'); await shot('blocks');
         await page.selectOption('#instBlocks select.badd', '--override');
         await page.fill('#instBlocks input[aria-label="--override value"]', '/S');

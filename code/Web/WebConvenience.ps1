@@ -242,7 +242,7 @@ function Global:Get-WebAttention {
     # Not yet in Intune - or Company Portal linked without its Store ID (2.38.20: the button sets that too).
     $builtIn = @($apps | Where-Object { (-not $_.appId -or (-not $_.wingetId -and (Test-CompanyPortalName $_.appName))) -and (Get-NonPackageAppHint $_) })
     $noPkg = @($apps | Where-Object { -not $_.wingetId -and -not $_.appId -and -not $_.office -and -not (Get-NonPackageAppHint $_) -and -not (Resolve-AppPackagePath -AppName $_.appName -Uncommon $true -PackagePath $_.packagePath).Found })
-    if ($noPkg.Count) { & $add 'warn' "$(Format-Count ($noPkg.Count) 'own package') not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Build package (More).') 'apps:all' }
+    if ($noPkg.Count) { & $add 'warn' "$(Format-Count ($noPkg.Count) 'custom package') not built" ((@($noPkg | Select-Object -First 5 | ForEach-Object { $_.appName }) -join ', ') + ' - select them and use Build package (More).') 'apps:all' }
     # Company Portal can be fixed here (its Store ID); Microsoft 365 Apps by its editor (Installs from > Microsoft 365).
     $portal = @($builtIn | Where-Object { -not $_.wingetId -and (Test-CompanyPortalName $_.appName) })
     if ($builtIn.Count) { & $add 'info' "$(Format-Count ($builtIn.Count) 'Microsoft app') that aren't packages" ((@($builtIn | Select-Object -First 3 | ForEach-Object { Get-NonPackageAppHint $_ }) -join ' ') + $(if ($portal.Count) { ' The button sets Company Portal up as the Store app.' } else { '' })) $(if ($portal.Count) { 'do:portalstore' } else { 'apps:all' }) }

@@ -290,7 +290,7 @@ function Global:Get-WebLibraryImportPreview {
             }
         }
         [ordered]@{ name = [string]$a.Name; state = $(if ($why) { 'blocked' } else { $state }); why = $why
-            kind = $(if (-not $rec) { '' } elseif ($rec.office -and -not $rec.wingetId) { 'Microsoft 365 Apps' } elseif ($rec.wingetId) { 'Winget' } else { 'Own package' })
+            kind = $(if (-not $rec) { '' } elseif ($rec.office -and -not $rec.wingetId) { 'Microsoft 365 Apps' } elseif ($rec.wingetId) { 'Winget' } else { 'Custom package' })
             files = [int]$a.Files; bytes = [long]$a.Bytes; hasAppId = [bool]($rec -and $rec.appId)
             groups = $(if ($rec) { @(@($rec.requiredFor) + @($rec.availableFor) + @($rec.uninstallFor) + @($rec.excludeFor) | Where-Object { $_ } | Select-Object -Unique).Count } else { 0 })
             # What it would do on devices (2.38.66) - shown before it is added: its groups by role and its install command.

@@ -22,7 +22,7 @@ function updatesText(a, managed) {
   if (a.msHint && !a.wingetId) return 'Microsoft keeps it updated (created in Intune)';
   if (a.office && !a.wingetId) return 'Microsoft keeps it updated on its update channel';
   if (a.wingetId && isStoreId(a.wingetId)) return 'the Microsoft Store keeps it updated';
-  if (!a.wingetId) return 'its own installer - the version you package';
+  if (!a.wingetId) return 'a custom installer - the version you package';
   return "winget's newest at install time, not updated afterwards";
 }
 function stageOf(a) {
@@ -36,7 +36,7 @@ function stageOf(a) {
   if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint };
   if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showChecksFor(a.name) } };
   if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install & detection).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
-  if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses an own package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
+  if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses a custom package without one.', next: { label: 'Edit', title: 'Set its detection rule (Install & detection)', run: () => openEditor(a.name) } };
   if (own && a.packageMissing) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'Its installer isn\'t packaged yet.', next: { label: 'Build', title: 'Build the .intunewin from its packages folder', run: () => onApp(a, 'package') } };
   // Built, but a file in its packages folder changed since (2.38.53): Intune gets the old package until it is built again.
   if (own && a.packageStale && !a.packageMissing) return { key: 'rebuild', label: 'Rebuild package', cls: 'warn', why: `Files in its packages folder changed after its package was built (${fmtWhen(a.packageBuilt)}) - ${a.hasAppId ? 'Intune still has the old one' : 'the package still holds the old ones'}.`, next: { label: 'Build', title: 'Build the .intunewin again from its packages folder', run: () => onApp(a, 'package') } };
@@ -195,7 +195,7 @@ async function fillPanel(a) {
         });
         return el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Version' }), el('span', { class: 'pverwrap' }, sel, extra ? el('span', { class: 'muted pverx', text: extra }) : ''));
       })(),
-      fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
+      fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'a custom installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       // Whether its installer is packaged, and when (2.38.53) - only for an app that installs from its own package.
       fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - newer than the one in Intune, send it' : a.packageReplace ? ' - newer than the one in Intune: More > Replace package' : ''}` : '') : ''),
@@ -437,7 +437,8 @@ function renderWhere() {
   const [left, right] = form.querySelectorAll(':scope > .formgrid > section');
   const [dLeft, dRight] = dsec.querySelectorAll(':scope > .formgrid > section');
   // 2.38.67: five parts - what the app is, how its versions reach devices, who gets it, what Intune shows, how it installs.
-  const names = ['App', 'Updates', 'Who gets it', 'Details', 'Install & detection'];
+  // 2.38.73: and a sixth - when and in which order (requirements, dependencies, supersedence), out of Install & detection.
+  const names = ['App', 'Updates', 'Who gets it', 'Details', 'Install & detection', 'Requirements'];
   const pageOf = new Map();
   // Install & detection holds all of how it installs: the commands, the detection rule, the requirements, then the
   // dependencies and supersedence (moved under the requirements - one column, in the order they are looked at).
@@ -487,7 +488,7 @@ function renderWhere() {
   window.edRevealFor = msg => {
     const m = String(msg || ''), hit = [[/supersed|depend/i, 'dep'], [/detection|product code|registry|file detection/i, 'det'],
       [/install time|architecture|return code|disk|memory|processor|cpu|operating system|minimum os|restart/i, 'req']].find(([re]) => re.test(m));
-    if (hit) { unfold(hit[1]); setPage(4); }
+    if (hit) { unfold(hit[1]); setPage(hit[1] === 'det' ? 4 : 5); }
   };
   // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
   // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
@@ -502,11 +503,11 @@ function renderWhere() {
       // By Intune's own app type only (2.38.23): an app named like Office but packaged by hand (an Office Deployment Tool
       // package without its detection yet) needs this tab to get its commands and detection.
       const special = st || !!(!$('aWinget').value.trim() && row && row.msHint && row.hasAppId);
-      bar.children[4].hidden = special;
+      bar.children[4].hidden = special; bar.children[5].hidden = special;
       // Microsoft 365 and Store apps: Microsoft or the Store updates them - no Updates part either (2.38.67).
       bar.children[1].hidden = st;
       $('dlgApp').classList.toggle('is-special', special);
-      if ((special && cur === 4) || (st && cur === 1)) setPage(0);
+      if ((special && cur >= 4) || (st && cur === 1)) setPage(0);
     } catch (e) { }
     return st;
   };
@@ -530,7 +531,9 @@ function renderWhere() {
   const assign = (section, start, switches) => { let p = start; for (const c of section.children) { const sw = switches.find(([test]) => test(c)); if (sw) p = sw[1]; pageOf.set(c, p); } };
   assign(left, 0, [[c => c.id === 'aUpdHead', 1], [c => c.matches('h3.withtool'), 2]]);
   assign(right, 3, []);
-  for (const c of [...dLeft.children, ...dRight.children]) pageOf.set(c, 4);
+  for (const c of dLeft.children) pageOf.set(c, 4);
+  // Requirements and dependencies: their own part (2.38.73).
+  for (const c of dRight.children) pageOf.set(c, 5);
   // The install and uninstall commands belong with the detection rule.
   pageOf.set($('instRaw'), 4);
   pageOf.set($('instBlocks'), 4);
@@ -558,6 +561,8 @@ function renderWhere() {
     dsec.classList.toggle('offpage', i < 4);
     form.dataset.pg = String(i);
     if (i >= 4) dsec.open = true;
+    // Its own part (2.38.73): the requirements and dependencies show as fields at once - no line with Change to open first.
+    if (i === 5) { unfold('req'); unfold('dep'); }
     mark(i); dlg.scrollTop = 0;
   }
   // The page a field is on, brought up - for "go to the field" links and a required field left empty.
