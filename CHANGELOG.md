@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.52
+
+- **Store apps and Microsoft 365 Apps keep Microsoft's text**: their
+  description, publisher and links come from Microsoft and are kept up there.
+  An update from the catalog no longer overwrites them with the catalog's copy
+  (often an older one) - only a field you changed in the editor goes to
+  Intune. Pull takes Microsoft's text without asking, and Changes to send
+  doesn't list it. The organisation's own fields - owner, developer, notes,
+  Featured - and Microsoft 365's settings go as before.
+
 ## 2.38.51
 
 - **Radio buttons you can read**: the chosen one shows its dot again (a rule

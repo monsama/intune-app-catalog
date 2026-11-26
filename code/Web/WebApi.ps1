@@ -993,6 +993,9 @@ function Global:Get-WebAppSentValues {
     $m = $App.metadata
     $skip = if ($App.managedUpdates) { @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes') } else { @() }
     $o = [ordered]@{ name = [string]$App.appName }
+    # A Store app's or Microsoft 365 Apps' text and links from Microsoft (2.38.52): not sent unless changed here, so not
+    # a change to send either (Test-OwnContentField). Which fields are its own is bookkeeping, not something Intune gets.
+    $skip = @($skip) + @('ownFields') + @(Get-OwnContentFieldNames | Where-Object { -not (Test-OwnContentField $App $_) })
     if ($m) { foreach ($p in @($m.PSObject.Properties | Sort-Object Name)) { if ($skip -notcontains $p.Name) { $o[$p.Name] = $p.Value } } }
     # Microsoft 365 Apps (2.38.21): its settings are what Intune gets - in words, so Changes to send can show them.
     if ($App.office) { $o['office'] = [string](Get-OfficeSettingsSummary $App.office) }
