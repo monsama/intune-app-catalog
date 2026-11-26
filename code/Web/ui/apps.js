@@ -1060,7 +1060,8 @@ $('filter').addEventListener('change', () => {
 $('search').addEventListener('input', updateViewButtons);
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !$('viewApps').hidden && !document.querySelector('dialog[open]:not(#dlgRun):not(.minimized)')) { e.preventDefault(); $('search').focus(); }
-  if (e.key === 'F5') { e.preventDefault(); loadApps(); loadState(); }
+  // Reload starts from nothing selected (2.38.62), like the button.
+  if (e.key === 'F5') { e.preventDefault(); selected.clear(); lastClicked = null; loadApps(); loadState(); }
   // Ctrl+S in the app editor saves it (the form's own submit, with its checks).
   // Only when the editor is the dialog on top - not under a question, the history or the code editor.
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && $('dlgApp').open && wcStack.filter(d => d.open && !d.classList.contains('minimized')).pop() === $('dlgApp')) { e.preventDefault(); $('appForm').requestSubmit(); return; }
@@ -1887,6 +1888,8 @@ $('dlgRecent').addEventListener('wcrestore', () => openRecent());
 // Reload: the catalog, and Intune's App IDs and install state, read again.
 $('btnAppsReload').addEventListener('click', async () => {
   const b = $('btnAppsReload'); b.disabled = true; b.classList.add('spin');
+  // A fresh start (2.38.62): the ticks go - an action afterwards mustn't hit apps ticked before the reload.
+  selected.clear(); lastClicked = null; renderApps(); updateActions();
   try { await Promise.all([loadApps(), loadIntuneIds(true), loadState()]); toast('Read again.'); } finally { b.disabled = false; b.classList.remove('spin'); }
 });
 
