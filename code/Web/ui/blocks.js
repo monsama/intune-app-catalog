@@ -111,6 +111,11 @@ function renderBlockBar(host, model, opts = {}) {
     if (b.part !== part) {
       // The Uninstall heading: folded with the fixed parts when all of the uninstall is fixed (a winget uninstall).
       const onlyFixed = !model.blocks.some(x => x.part === b.part && x.kind !== 'lock');
+      // An Install heading too (2.38.73), as Uninstall has one - shown and folded together with it.
+      if (!part && b.part === 'install' && model.blocks.some(x => x.part === 'uninstall')) {
+        const uFixed = !model.blocks.some(x => x.part === 'uninstall' && x.kind !== 'lock');
+        card.append(el('div', { class: 'bsec' + (uFixed ? ' onlyfixed' : ''), text: 'Install' }));
+      }
       if (part && b.part === 'uninstall') card.append(el('div', { class: 'bsec' + (onlyFixed ? ' onlyfixed' : ''), text: 'Uninstall' }));
       // ...but the uninstall itself always shows (2.38.72): one line of what Intune runs, also while the fixed parts
       // are folded - a winget app's uninstall was hidden entirely behind "3 fixed parts".
