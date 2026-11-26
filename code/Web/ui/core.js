@@ -368,8 +368,9 @@ async function loadState() {
   if (r.testMode) setBadge('warn', 'TEST MODE', 'Graph answers come from a test file, not from a tenant. Started with INTUNE_CATALOG_TEST_GRAPH set - restart the app without it.');
   else if (!r.configured) setBadge('none', 'Not connected - set up', 'Nothing is read from or sent to Intune until the connection is set up - click for the setup guide.');
   else checkConnection();
-  // 2.32.0: no banner on every page - the badge says it (and leads to the setup guide), each page says what it can't do.
-  $('setupBanner').hidden = true;
+  // 2.38.67: one banner on every page that needs the connection (not Home - Getting started says it - nor Settings,
+  // where it is set up) instead of each page saying it in its own way.
+  $('setupBanner').hidden = !!(r.testMode || r.configured);
   $('testBanner').hidden = !r.testMode;
   // Connection fields changed and not saved yet (a new certificate chosen, then an old one deleted): kept - only
   // whether they still differ from what's saved is worked out again.

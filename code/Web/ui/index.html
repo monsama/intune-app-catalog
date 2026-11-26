@@ -49,8 +49,8 @@
 
 <div class="banner warn" id="testBanner" role="region" aria-label="Test mode" hidden><span><b>Test mode.</b> Nothing here comes from a tenant: Graph answers are read from a test file (INTUNE_CATALOG_TEST_GRAPH), and settings are not saved. Restart the app without that variable.</span></div>
 <div class="banner warn" id="setupBanner" role="region" aria-label="Setup" hidden>
-  <span>No Graph connection set up yet - Intune and Entra ID features won't work until it is.</span>
-  <button class="btn small" id="bannerSettings" title="Fill in the connection and follow the setup guide">Open Settings and the setup guide</button>
+  <span><b>Not connected.</b> Nothing is read from or sent to Intune and Entra ID until the connection is set up.</span>
+  <button class="btn small" id="bannerSettings" title="Fill in the connection and follow the setup guide">Set up the connection</button>
 </div>
 
 <main>
@@ -237,14 +237,16 @@
     <div class="gsplit">
       <div class="panel side">
         <div class="toolbar tight">
-          <input type="search" id="groupSearch" placeholder="Search groups" title="Part of a name, or * as a wildcard" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
-          <button class="btn" id="btnGroupOpen" title="Search all of Entra ID for this text (Enter)">Search Entra ID</button>
-        </div>
-        <div class="gfilter">
-          <select id="groupShow" aria-label="Which groups to show" title="The groups the catalog uses (all, or those Entra ID has or lacks), or every group in Entra ID">
+          <input type="search" id="groupSearch" placeholder="Search groups - Enter searches all of Entra ID" title="Part of a name, or * as a wildcard. Enter searches all of Entra ID" aria-label="Search the groups" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+          <button class="btn" id="btnGroupOpen" hidden title="Search all of Entra ID for this text (Enter)">Search Entra ID</button>
+          <select class="gscope" id="groupShow" aria-label="Which groups to show" title="The groups the catalog uses (all, or those Entra ID has or lacks), or every group in Entra ID">
             <option value="">Used by the catalog</option><option value="missing">Used, not in Entra ID</option><option value="found">Used, in Entra ID</option><option value="entra">All groups in Entra ID</option>
           </select>
+        </div>
+        <div class="gfilter">
           <span class="muted" id="groupStatusNote" aria-live="polite"></span>
+          <span class="spacer"></span>
+          <button class="btn small" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
         </div>
         <div class="gselbar" id="groupSelBar" hidden>
           <span id="groupSelCount"></span>
@@ -254,10 +256,7 @@
           <button class="btn small" id="btnGroupSelClear" title="Clear the selection (Escape)">Clear</button>
         </div>
         <ul class="glist" id="groupList" role="listbox" aria-multiselectable="true" tabindex="0" aria-label="Groups used by the catalog"></ul>
-        <div class="actions">
-          <button class="btn" id="btnGroupNew" title="Create a security group in Entra ID">New group</button>
-          <button class="btn" id="btnGroupsReload" title="Read the groups, their status in Entra ID and the open group's members again">Reload</button>
-        </div>
+        <button class="btn" id="btnGroupsReload" title="Read the groups, their status in Entra ID and the open group's members again">Reload</button>
       </div>
       <section class="panel" id="groupPane">
         <div class="empty" id="groupEmpty"><h2>Pick a group</h2><p>The groups your apps are assigned to are listed on the left, with whether Entra ID has them. Pick one to see its apps and members, or search all of Entra ID on the left. New group starts a new one.</p></div>
@@ -554,23 +553,27 @@
         <article class="card">
           <h2>Nightly run</h2>
           <p class="sub" id="runSchedule">Checks every managed app: promotes or holds versions in pilots by the release rule (Managed updates), and releases new winget versions - each only when its switch is on; otherwise it reports what it would do.</p>
+          <h3>Schedule</h3>
           <div class="toolbar tight">
             <label class="inline">Every day at <input id="runAt" type="time" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
             <button class="btn" id="btnSchedule" title="Create or change the Windows scheduled task that runs IntuneDeployment.ps1 -RunUpdates every day (as you)">Schedule</button>
             <button class="btn" id="btnUnschedule" title="Remove the scheduled task">Remove</button>
           </div>
+          <h3>Run</h3>
           <div class="actions">
             <button class="btn" id="btnRunPlan" title="Decide and report what would happen - changes nothing">Plan only</button>
             <button class="btn" id="btnRunNow" title="Run it now, as the nightly task would - may release and promote, if those switches are on">Run now</button>
-            <button class="btn" id="btnRunReload" title="Read the last runs again">Reload</button>
-            <button class="desktoponly btn" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
+            <button class="btn" id="btnHealth" title="What the nightly run checks first: the certificate, signing in, the packages, disk space">Check health now</button>
+            <span class="spacer"></span>
+            <button class="btn ghost" id="btnRunReload" title="Read the last runs again">Reload</button>
           </div>
           <div id="runList" class="runlist" aria-live="polite"></div>
-          <div class="actions">
-            <button class="btn" id="btnHealth" title="What the nightly run checks first: the certificate, signing in, the packages, disk space">Check health now</button>
-            <button class="btn" id="btnMonthly" title="Last month's report, from the nightly runs - downloaded here as HTML, also kept in Logs\reports and sent when alerts are set up">Create last month's report</button>
-          </div>
           <ul id="healthList" class="healthlist" aria-live="polite" hidden></ul>
+          <h3>Reports</h3>
+          <div class="actions">
+            <button class="btn" id="btnMonthly" title="Last month's report, from the nightly runs - downloaded here as HTML, also kept in Logs\reports and sent when alerts are set up">Create last month's report</button>
+            <button class="desktoponly btn" id="btnReports" title="Open the folder with every run's report (HTML and JSON)">Open reports folder</button>
+          </div>
           <h3 class="desktoponly">Run while nobody is signed in</h3>
           <ul id="unattSteps" class="desktoponly healthlist"></ul>
           <div class="actions">
@@ -860,7 +863,7 @@
   <h2 id="histTitle">History</h2>
   <h3>Changes</h3>
   <p class="sub">Every change to the app in the catalog - which field, from what to what, and where it came from - and every step that changed it in Intune. Undo puts one change back.</p>
-  <ol id="histChanges"></ol>
+  <ol class="recentlist" id="histChanges"></ol>
   <p class="sub" id="histChangesNote"></p>
   <details id="histVersions"><summary>Earlier versions (whole files)</summary>
   <p class="sub">A copy is kept every time the app's file is saved or removed (Settings &gt; Folders &gt; Catalog backups). Restoring keeps the current version as a copy too.</p>
@@ -974,10 +977,10 @@
         <label class="chk" id="aManagedRow" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
         <label class="chk" id="aSelfRow" hidden title="The app keeps itself up to date on the device (its own updater) - Intune installs winget's latest once, and Home doesn't suggest managed updates for it"><input type="checkbox" id="aSelfUpd">Updates itself <span class="muted">- winget's latest, no version pinned (browsers, meeting apps)</span></label>
         <div class="methodrow" id="aMethodRow" hidden>
-          <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest, not updated</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
+          <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest when installed, not updated</option><option value="Self">The winget command - the app keeps itself up to date</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
         </div>
-        <p class="hint" id="aSelfHint" hidden>This app updates itself on the devices - a pinned version falls behind within days and winget soon drops it. Choose Install with: The winget command (winget's latest) - that usually fits it better.</p>
+        <p class="hint" id="aSelfHint" hidden>This app updates itself on the devices - a pinned version falls behind within days and winget soon drops it. Choose Install with: The winget command - the app keeps itself up to date. That usually fits it better.</p>
         <label id="aVerRow">App version<span class="inputrow"><input autocomplete="off" id="mAppVersion" placeholder="Pick or type a version" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="mAppVersionPick" class="verpick" aria-label="Pick from winget's versions" title="winget's versions, newest first"><option value="">Pick...</option></select></span></label>
         <fieldset class="ownrule" id="aRuleBox" hidden>
           <legend>Release rule <span class="muted">- this app's own; empty fields: Settings' rule</span></legend>

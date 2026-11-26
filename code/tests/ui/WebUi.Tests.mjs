@@ -158,8 +158,8 @@ try {
       // Apps: an unconfigured app opens on Settings; the Apps list is empty but explained.
       await page.click('#tabApps');
       await page.waitForSelector('#emptyState:not([hidden]), #gridBody tr');
-      // 2.32.0: no banner - the sidebar badge says it and leads to the setup guide.
-      check(!(await page.isVisible('#setupBanner')) && /Not connected - set up/.test(await page.textContent('#connBadge')), `${label}: "not connected" is the sidebar badge, not a banner on every page`, await page.textContent('#connBadge'));
+      // 2.38.67: one banner on the pages that need the connection (and the sidebar badge) - not each page in its own words.
+      check(await page.isVisible('#setupBanner') && /Not connected/.test(await page.textContent('#setupBanner')) && /Not connected - set up/.test(await page.textContent('#connBadge')) && !/Not connected/.test(await page.textContent('#viewApps')), `${label}: "not connected" is one banner (and the badge), not a line of the Apps page`, await page.textContent('#connBadge'));
       await noOverflow('Apps'); await unnamed('Apps'); await a11y('Apps'); await shot('apps');
       // 2.38.3: an app in a later release ring, before the settings are read: the list still shows (it stayed empty).
       const ringOk = await page.evaluate(() => { const keep = prefs; prefs = null; apps.push({ ...(apps[0] || {}), name: 'ZZ ring app', pilotVersion: '2.0', pilotRing: 1, groups: [] });
@@ -312,7 +312,7 @@ try {
       // Updates: no app has managed updates yet - the page says how to start.
       await page.click('#tabUpdates');
       await page.waitForFunction(() => !/Reading/.test(document.getElementById('updNote').textContent));
-      check(await page.isVisible('#updEmpty') && /Not connected/i.test(await page.textContent('#updNote')), `${label}: Updates explains the empty page and that there are no counts without a connection`, await page.textContent('#updNote'));
+      check(await page.isVisible('#updEmpty') && await page.isVisible('#setupBanner') && !/Not connected/i.test(await page.textContent('#updNote')), `${label}: Updates explains the empty page; the banner says it isn't connected`, await page.textContent('#updNote'));
       await noOverflow('Updates'); await unnamed('Updates'); await a11y('Updates'); await shot('updates');
 
       // Checks: runs, and says Intune wasn't checked.
@@ -416,7 +416,7 @@ try {
       await noOverflow('Groups'); await unnamed('Groups'); await a11y('Groups'); await shot('groups');
       await page.click('#tabScripts');
       await page.waitForFunction(() => !/Reading/.test(document.getElementById('scriptNote').textContent));
-      check(/Not connected/i.test(await page.textContent('#scriptNote')), `${label}: Platform scripts says only local copies are shown`);
+      check(await page.isVisible('#setupBanner') && !(await page.getAttribute('#scriptNote', 'class')).includes('warntext'), `${label}: Platform scripts - the banner says it isn't connected, the page's note isn't a warning`);
       await noOverflow('Platform scripts'); await unnamed('Platform scripts'); await a11y('Platform scripts'); await shot('scripts');
 
       // Settings: diagnostics, prerequisites, the guide.

@@ -17,7 +17,7 @@ async function loadUpdates(force) {
     if (!r.ok) { $('updNote').textContent = r.error; if (!updRows.length) { $('updBody').replaceChildren(); $('updTiles').replaceChildren(); $('updTiles').hidden = true; } return; }
     updRows = r.rows; updLoadedAt = Date.now(); updRings = (r.rings || []).map(x => x.name);
     const rings = (r.rings || []).length > 1 ? ` Release rings: ${r.rings.map(x => x.name).join(' > ')} > everyone.` : '';
-    $('updNote').textContent = `${r.rows.length} app${r.rows.length === 1 ? '' : 's'} with managed updates${r.notManaged ? `, ${r.notManaged} without` : ''}.${r.connected ? ` Counts read at ${r.at}.` : ' Not connected - no counts from Intune.'}${rings}${r.note ? ' ' + r.note : ''}`;
+    $('updNote').textContent = `${r.rows.length} app${r.rows.length === 1 ? '' : 's'} with managed updates${r.notManaged ? `, ${r.notManaged} without` : ''}.${r.connected ? ` Counts read at ${r.at}.` : state && state.configured ? ' No counts from Intune right now.' : ''}${rings}${r.note ? ' ' + r.note : ''}`;
     const s = r.summary;
     const tile = (n, label, cls, title) => el('div', { class: 'stat ' + (cls || ''), title: title || '' }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: label }));
     $('updTiles').replaceChildren(

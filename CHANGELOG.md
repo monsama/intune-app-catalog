@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.38.68
+
+- **"Not connected" is said once:** one banner on the pages that need the connection, with Set up the connection.
+  - Apps, Updates, Groups, Platform scripts and Checks no longer say it each in their own words.
+  - Home and Settings don't show the banner.
+  - A group that couldn't be checked for want of a connection says "Not checked", not an error.
+- **Groups:**
+  - One search row: the text, and which groups it looks in (catalog, missing, in Entra ID, all of Entra ID). Enter
+    searches all of Entra ID.
+  - New group sits beside the status.
+  - An empty members list says why.
+- **Settings > Nightly run:** three parts, each with its own heading and one row of buttons:
+  - **Schedule**
+  - **Run:** Plan only, Run now and Check health now.
+  - **Reports**
+- **Editor > Updates:** "Updates itself" is a choice of Install with ("The winget command - the app keeps itself up
+  to date"), not a tick box beside it. One control says how a Winget app's versions reach devices.
+- **History looks like Recent changes:** one line per change (when, where from, what), opened for its fields, with
+  Undo inside.
+
 ## 2.38.67
 
 - **The app editor, simplified.** It now has five parts:

@@ -49,7 +49,7 @@ async function loadGroupsStatus() {
     entra = new Map((r.found || []).map(f => [lc(f.name), f.id]));
     const missing = groups.filter(g => !entra.has(lc(g.name))).length;
     entraNote = missing ? `${missing} of ${groups.length} not in Entra ID` : groups.length ? 'All in Entra ID' : '';
-  } else entraNote = r.ok && r.state === 'none' ? 'Not connected - Entra ID not checked' : 'Entra ID not checked: ' + (r.error || r.state || '');
+  } else entraNote = r.ok && r.state === 'none' ? '' : 'Entra ID not checked: ' + (r.error || r.state || '');
   if (!entraMode()) { $('groupStatusNote').textContent = entraNote; $('groupStatusNote').title = entraNote; }
   renderGroupList();
 }
@@ -283,8 +283,12 @@ async function openGroup(name, again) {
   const r = await api('/api/group-get', { name });
   if (!group || group.name !== name) return;
   if (!r.ok) {
-    $('gState').className = 'pill err'; $('gState').textContent = 'Not read';
+    // Not connected: not checked, not an error - the banner says why (2.38.67).
+    const off = !!(state && !state.configured && !state.testMode);
+    $('gState').className = off ? 'pill muted' : 'pill err'; $('gState').textContent = off ? 'Not checked' : 'Not read';
     setGroupBusy(false);
+    // The members table says why it is empty (2.38.67: only its headings showed).
+    $('gMembers').replaceChildren(el('tr', {}, el('td', { class: 'muted', colspan: '4', text: off ? 'Members are read from Entra ID once the connection is set up.' : `Members couldn't be read: ${r.error}` })));
     $('gNote').textContent = r.error; setEnabled($('btnGroupSave'), false, r.error); setEnabled($('btnGroupDescSave'), false, r.error); setEnabled($('btnGroupCreate'), false, r.error); return;
   }
   // Created a moment ago and Entra ID is still copying it: say so and look again shortly, instead of "Not in Entra ID".
