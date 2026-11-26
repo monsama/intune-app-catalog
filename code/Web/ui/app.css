@@ -995,7 +995,7 @@ dialog.maxed { width: calc(100vw - 16px) !important; max-width: none !important;
 table.mx { width: max-content; }
 table.mx th.ah { font-weight: 500; padding: 4px 14px 4px 10px; }
 table.mx th.corner { padding: 8px 10px; font-size: 12px; }
-table.mx tbody tr:nth-child(even) > * { background: var(--surface2, var(--bg)); }
+/* 2.38.67: no striping in the grid - empty cells changed colour from row to row. */
 table.mx tbody tr:hover > * { background: var(--hover); }
 table.mx td { text-align: center; }
 td.mxempty { padding: 28px 16px !important; text-align: left !important; font-size: 13px; }
@@ -1979,3 +1979,20 @@ body:has(#appPanel:not([hidden])) #gridBody td.stagecol .pill { min-width: 0; pa
 .advfold > summary .muted { font-weight: 400; }
 .advfold[open] > summary { margin-bottom: 6px; }
 #dlgApp #aUpdHead { margin-top: 2px; padding-top: 0; border-top: 0; }
+/* 2.38.67 GUI pass */
+/* File pickers: no text-box padding (it cut the picker's button off at the bottom). */
+input[type=file] { padding: 0; height: auto; border: 0; background: none; box-shadow: none; }
+#palList li { align-items: baseline; }
+input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
+.pullapp td { vertical-align: middle; }
+/* Add apps on a narrow window: the tabs wrap onto a second line - every tab stays visible. */
+@media (max-width: 900px) { dialog.addapps .subtabs { flex-wrap: wrap; mask-image: none; } }
+/* Home on a narrow window: Getting started first while it is open - it was below Needs attention. */
+@media (max-width: 1000px) { .homegrid:has(#homeSetup:not([hidden])) > .homeside { order: -1; } }
+/* Groups on a narrower window (2.38.67): the list above the group, not a 40 % column with app names over six lines. */
+@media (max-width: 1000px) { .gsplit { grid-template-columns: 1fr; } }
+/* One stat tile (2.38.67): Home and Updates had two copies of the rule, at different heights. */
+#homeStats .stat .l { min-height: 2.6em; }
+/* Details: Publisher, Owner and Developer in one row on wide windows (Developer sat alone on its row). */
+@media (min-width: 1100px) { #dlgApp .two:has(#mDeveloper) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.readypop { left: 0; }

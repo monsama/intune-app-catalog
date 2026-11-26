@@ -212,7 +212,7 @@ async function fillPanel(a) {
     el('div', { class: 'pacts' }, btn('Edit', 'Open it in the editor', () => openEditor(a.name)),
       a.hasAppId ? btn('Install status', 'Every device\'s install state', () => openStatus(a.name)) : '',
       // Opened right here (the same click reaching the page would close the menu again at once).
-      btn('More...', 'Every action for this app', e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4); })));
+      btn('More ▾', 'Every action for this app', e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); openMenu(r.left, r.bottom + 4); })));
   p.hidden = false;
   if (panelRefocus) { const t = [...p.querySelectorAll('[aria-label]')].find(x => x.getAttribute('aria-label') === panelRefocus); panelRefocus = ''; if (t) t.focus(); }
 }
@@ -280,7 +280,7 @@ function updateReady() {
   $('readyBox').querySelector('h3').textContent = done === items.length ? 'Ready to send to Intune' : `Ready to send? ${done} of ${items.length}`;
   // The footer's chip (2.38.67): on every part of the editor - what is still missing, the list a click away.
   const first = items.find(i => !i[0]);
-  $('readyChip').textContent = done === items.length ? '✓ Ready to send' : `${done} of ${items.length} · ${String(first[1]).replace(/ \(.*$/, '').replace(/ - .*$/, '')}`;
+  $('readyChip').textContent = done === items.length ? '✓ Ready to send' : `${done} of ${items.length} · Still needs: ${String(first[1]).replace(/ \(.*$/, '').replace(/ - .*$/, '').replace(/^./, c => c.toLowerCase())}`;
   $('readyChip').classList.toggle('allok', done === items.length);
   $('readyBox').classList.toggle('allok', done === items.length);
   $('readyList').replaceChildren(...items.map(([ok, text, field, act]) => el('li', { class: ok ? 'ok' : 'todo' },
@@ -289,7 +289,7 @@ function updateReady() {
     : field && !ok ? el('button', { type: 'button', class: 'linkish', text, title: 'Go to the field', onclick: () => { readyPopShow(false); const f = $(field); edPageFor(f); const d = f.closest('details'); if (d) d.open = true; ((f.hidden && $(field + 'Chips')) || f).focus(); } }) : el('span', { text }))));
 }
 // The list behind the chip: opened and closed by it, closed by Escape, a click elsewhere or going to a field.
-function readyPopShow(on) { $('readyPop').hidden = !on; $('readyChip').setAttribute('aria-expanded', String(on)); }
+function readyPopShow(on) { $('readyPop').hidden = !on; $('readyChip').setAttribute('aria-expanded', String(on)); if (on) $('readyPop').style.left = $('readyChip').offsetLeft + 'px'; }
 $('readyChip').addEventListener('click', e => { e.stopPropagation(); readyPopShow($('readyPop').hidden); });
 $('dlgApp').addEventListener('click', e => { if (!$('readyPop').hidden && !e.target.closest('#readyPop, #readyChip')) readyPopShow(false); });
 $('dlgApp').addEventListener('keydown', e => { if (e.key === 'Escape' && !$('readyPop').hidden) { e.preventDefault(); e.stopPropagation(); readyPopShow(false); $('readyChip').focus(); } }, true);
@@ -309,11 +309,13 @@ $('btnAppMore').addEventListener('click', e => {
 });
 $('appEdMenu').addEventListener('click', () => { $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); });
 $('dlgApp').addEventListener('click', e => { if (!$('appEdMenu').hidden && !e.target.closest('#appEdMenu, #btnAppMore')) { $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); } });
-$('appEdMenu').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); $('btnAppMore').focus(); } else if (typeof menuStep === 'function') menuStep(e, $('appEdMenu')); });
+$('appEdMenu').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); $('appEdMenu').hidden = true; $('btnAppMore').setAttribute('aria-expanded', 'false'); $('btnAppMore').focus(); } });
 // The assignment filter folded into one line (2.38.67) - open when one is set.
 function filterSummary() { const f = $('aFilter').value.trim(); $('aFilterSum').textContent = f ? `- ${f} (${$('aFilterMode').value === 'exclude' ? 'excluded' : 'included'})` : '- none'; }
 $('aFilter').addEventListener('input', filterSummary); $('aFilterMode').addEventListener('change', filterSummary);
 $('appForm').addEventListener('input', () => updateReady());
+// The error of a refused save goes once something is changed (2.38.67: it stayed until the next save).
+$('appForm').addEventListener('input', () => { $('appError').hidden = true; });
 $('appForm').addEventListener('change', () => updateReady());
 
 // ---------------------------------------------------------------- the "?" explanations
@@ -482,7 +484,7 @@ function renderWhere() {
   // A Microsoft Store app (2.38.3): no commands and no detection of its own - the Store does both; the fields went
   // on showing (empty, or a rule made for winget) while "Ready to send?" said it needs none.
   const storeState = () => {
-    const st = (typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim())) || (typeof editorSrc !== 'undefined' && editorSrc === 'office' && !$('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
+    const st = (typeof isStoreId === 'function' && isStoreId($('aWinget').value.trim())) || (typeof editorSrc !== 'undefined' && (editorSrc === 'store' || editorSrc === 'office') && !$('aWinget').value.trim()), was = $('dlgApp').classList.contains('is-store');
     $('dlgApp').classList.toggle('is-store', st);
     if (st !== was) { try { setPage(cur); } catch (e) { } }   // the page's sections follow (not before the editor is set up)
     // Store, Microsoft 365 and Microsoft's own apps in Intune (2.38.22): no Install & detection tab - no commands, detection,
@@ -528,8 +530,8 @@ function renderWhere() {
   const bar = el('nav', { class: 'edtabs', 'aria-label': 'Parts of the app' }, ...names.map((name, i) => el('button', { type: 'button', class: 'edtab', 'data-i': i, text: name, onclick: () => {
     setPage(i);
     const sel = 'input:not([type=checkbox]):not([hidden]), select, textarea:not([hidden]), .chipinput';
-    const f = [...pageOf].find(([c, p]) => p === i && !c.matches('.ready, h3') && c.querySelector(sel));
-    const field = f && f[0].querySelector(sel);
+    // The first field that shows on the page (2.38.67: a hidden row's - Install with on an own app - took it, focus stayed on the tab).
+    const field = [...pageOf].filter(([c, p]) => p === i && !c.matches('.ready, h3') && !c.hidden).flatMap(([c]) => [...c.querySelectorAll(sel)]).find(x => x.offsetParent);
     // Only while the tab still has the focus - a field clicked right after keeps it (typing went to the wrong field).
     const tab = document.activeElement;
     if (field) setTimeout(() => { if (document.activeElement === tab || document.activeElement === document.body) field.focus({ preventScroll: true }); }, 30);
@@ -564,14 +566,14 @@ function multiPanel(sel) {
   const p = $('appPanel'), names = sel.map(a => a.name), inIntune = sel.filter(a => a.hasAppId).length;
   const btn = (text, title, run, primary) => el('button', { class: 'btn small' + (primary ? ' primary' : ''), text, title, onclick: run });
   p.replaceChildren(
-    el('div', { class: 'phead' }, el('h2', { text: `${sel.length} apps selected` }), el('button', { class: 'btn small ghost', text: 'Clear', title: 'Select none', onclick: () => { selected.clear(); renderApps(); updateViewButtons(); } })),
+    el('div', { class: 'phead' }, el('h2', { text: `${sel.length} apps selected` }), el('button', { class: 'btn small ghost', text: 'Close', title: 'Select none and close this panel', onclick: () => { selected.clear(); renderApps(); updateViewButtons(); } })),
     el('div', { class: 'pfacts' },
       el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { text: `${inIntune} of ${sel.length}` })),
       el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Managed' }), el('span', { text: `${sel.filter(a => a.managed).length} of ${sel.length}` })),
       el('div', { class: 'kv' }, el('span', { class: 'k', text: 'Apps' }), el('span', { class: 'muted', text: names.slice(0, 12).join(', ') + (names.length > 12 ? `, ... ${names.length - 12} more` : '') }))),
     el('div', { class: 'pacts' }, btn('Send to Intune', 'Create or update them in Intune', () => openDeploy(names), true),
       btn('Add groups...', 'Add groups to all of them', () => openGroupsBatch('add', names)), btn('Batch edit...', 'Change fields on all of them', () => openBatch(names)),
-      btn('More...', 'Every action for the selected apps', () => $('btnMore').click())));
+      btn('More ▾', 'Every action for the selected apps', () => $('btnMore').click())));
   p.hidden = false;
 }
 

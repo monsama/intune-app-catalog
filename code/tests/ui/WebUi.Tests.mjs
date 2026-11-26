@@ -671,7 +671,7 @@ try {
         await page.click(`#gridBody tr[data-name="${testApp}"]`); await page.waitForSelector('#appPanel:not([hidden]) .pfacts');
 
         // 2.32.2: the side panel's More... opens the actions menu (the same click used to close it again at once).
-        await page.click('#appPanel .pacts button:has-text("More...")');
+        await page.click('#appPanel .pacts button:has-text("More ▾")');
         check(await page.isVisible('#appMenu'), `${label}: the side panel's More... opens the actions menu`);
         await page.keyboard.press('Escape');
         // Without groups (the chip above was taken off again) its stage says so: "Ready - no groups" (no button - Who gets it is in the editor).

@@ -93,6 +93,8 @@ function wcSetup(d) {
   strip.innerHTML = `<button type="button" class="wc-min" title="Minimize" aria-label="Minimize">${wcIcon.min}</button><button type="button" class="wc-max" title="Maximize" aria-label="Maximize">${wcIcon.max}</button><button type="button" class="wc-close" title="Close (Esc)" aria-label="Close">${wcIcon.close}</button>`;
   strip.querySelector('.wc-min').addEventListener('click', () => wcMinimize(d));
   strip.querySelector('.wc-max').addEventListener('click', () => wcMax(d));
+  // A small dialog has nothing to gain from filling the window (2.38.67) - only the wide ones offer Maximize.
+  if (!d.classList.contains('wide') && !d.classList.contains('addapps')) strip.querySelector('.wc-max').hidden = true;
   strip.querySelector('.wc-close').addEventListener('click', () => wcClose(d));
   // Last in the dialog: opening it focuses its first field, not Minimize.
   d.classList.add('haswctl'); d.append(strip);
