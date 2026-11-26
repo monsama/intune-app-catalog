@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.72
+
+- **The uninstall command shows again in the editor for Winget apps** (Install & detection). All of its parts are
+  fixed, so it sat folded under "3 fixed parts" and couldn't be seen. It is now its own line under Install, Version,
+  For and Extra winget options: `winget uninstall --id <ID> -e --silent`. To change it, use Edit as text.
+
 ## 2.38.71
 
 Sweep of 2.38.66–2.38.70, plus CI.
