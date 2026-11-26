@@ -2562,10 +2562,12 @@ function Global:Get-PackageConsistencyWarnings {
     # Files whose names differ only in capitals (2.38.64): two files on the server (Linux), one on a PC - which one the
     # device gets is chance ("Uninstall.ps1" beside "uninstall.ps1").
     # 2.38.74: said plainly - what the folder holds, why it matters, which one the commands run, and where to delete.
-    $cmdText = "$([string]$Metadata.installCommand) $([string]$Metadata.uninstallCommand)"
+    # The files the commands name (Get-CommandPackageFiles), compared case-sensitively - not any text in them (review:
+    # "MyApp.msi" counted as running App.msi).
+    $cmdFiles = @(@(Get-CommandPackageFiles ([string]$Metadata.installCommand)) + @(Get-CommandPackageFiles ([string]$Metadata.uninstallCommand)) | ForEach-Object { [string]$_ -replace '/', '\' })
     foreach ($grp in @(@($Files | Where-Object { $_ } | ForEach-Object { [string]$_ -replace '/', '\' }) | Group-Object { $_.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) {
         $names = @($grp.Group | Sort-Object)
-        $used = @($names | Where-Object { $cmdText.Contains(($_ -split '\\')[-1]) })
+        $used = @($names | Where-Object { $n = $_; $leaf = ($n -split '\\')[-1]; @($cmdFiles | Where-Object { $_ -ceq $n -or ($_ -split '\\')[-1] -ceq $leaf }).Count -gt 0 })
         $keep = if ($used.Count -eq 1) { $used[0] } else { '' }
         $drop = @($names | Where-Object { $_ -cne $keep })
         $w.Add("Its packages folder has $($names.Count) files with the same name in different capitals: $($names -join ', '). Windows treats them as one file, so the package can hold only one of them - which one the device gets is chance. " +

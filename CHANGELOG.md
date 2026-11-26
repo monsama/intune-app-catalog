@@ -18,8 +18,17 @@
   - Files whose names differ only in capitals are marked "Same name". Windows sees one file, as with uninstall.ps1 and
     Uninstall.ps1.
   - Subfolders are quieter than the file name.
+- **Review of 2.38.73 (Installs from):**
+  - The choice an app has now is always offered. Company Portal, in Intune as a Store app, had its chosen button
+    hidden, so nothing showed as chosen.
+  - An MSI line-of-business app offers Winget and Custom installer. Send to Intune makes a new Win32 app from it.
+  - Linking an App ID (from the list or typed) takes the linked app's own Intune type: Store, Microsoft 365, MSI or
+    Win32. Before, every link counted as a Win32 app.
+  - Back on Winget, the detection made for winget folds to its one line again.
+  - The Remove-from-catalog prompt says "custom installer" too.
 - **The package check says plainly what a same-name pair means.** It names which file the commands run and which to
-  delete, and where to delete it.
+  delete, and where to delete it. Only files the commands name count; a name inside another, such as MyApp.msi for
+  App.msi, does not.
 
 ## 2.38.73
 

@@ -261,9 +261,22 @@ let editorSrc = 'own', editorSelfKnown = false, editorIntuneType = '', editorSrc
 function srcAllowed() {
   if (!$('aAppId').value.trim()) return null;
   const t = editorIntuneType, at = editorSrcAtOpen;
-  const kind = /365|office/i.test(t) ? 'office' : /store/i.test(t) ? 'store' : /win32/i.test(t) ? 'win32' : t ? 'other'
+  // An MSI line-of-business app: Send to Intune makes a new Win32 app from it (WebDeploy) - Winget or Custom installer.
+  const kind = /365|office/i.test(t) ? 'office' : /store/i.test(t) ? 'store' : /win32|line-of-business/i.test(t) ? 'win32' : t ? 'other'
     : at === 'office' ? 'office' : at === 'store' ? 'store' : 'win32';
-  return kind === 'win32' ? ['winget', 'own'] : kind === 'other' ? [at || editorSrc] : [kind];
+  const ok = kind === 'win32' ? ['winget', 'own'] : kind === 'other' ? [at || editorSrc] : [kind];
+  // What it is now is always offered (review 2.38.74): a Microsoft app with no ID (Company Portal) is 'own' while Intune
+  // has it as a Store app - the chosen button was hidden and nothing showed as chosen.
+  for (const s of [at, editorSrc]) if (s && !ok.includes(s)) ok.push(s);
+  return ok;
+}
+// Intune's app type (Graph's @odata.type) in the words the server uses (Get-FriendlyIntuneAppType) - for an app linked here.
+const intuneTypeWords = t => ({ win32LobApp: 'Windows app (Win32)', win32CatalogApp: 'Windows app (Win32)', winGetApp: 'Microsoft Store app (new)',
+  officeSuiteApp: 'Microsoft 365 Apps (Windows 10 and later)', windowsMobileMSI: 'Windows MSI line-of-business app', windowsMicrosoftEdgeApp: 'Microsoft Edge, version 77 and later',
+  windowsStoreApp: 'Microsoft Store app (legacy)', windowsUniversalAppX: 'Microsoft Store app (legacy)' })[String(t || '').replace(/^#?microsoft\.graph\./, '')] || '';
+function linkedIntuneType(id) {
+  const x = (typeof intuneApps !== 'undefined' && intuneApps || []).find(a => String(a.id).toLowerCase() === String(id || '').trim().toLowerCase());
+  return x ? intuneTypeWords(x.type) : '';
 }
 const srcNames = { winget: 'a Winget app', own: 'an app with a custom installer', store: 'a Microsoft Store app', office: 'Microsoft 365 Apps' };
 function srcLockedWhy(src) {
@@ -344,7 +357,9 @@ for (const b of document.querySelectorAll('.srcpick [data-src]')) b.addEventList
   if (back && back.id && !$('aWinget').value.trim() && (isStoreId(back.id) ? 'store' : 'winget') === now) { $('aWinget').value = back.id; $('aWinget').dispatchEvent(new Event('input', { bubbles: true })); }
   showManagedState();
   // Managed updates, turned off by a Store or Microsoft 365 choice, come back with Winget or its own installer (2.38.73).
-  if ((now === 'winget' || now === 'own') && srcStash.managed) { srcStash.managed = false; $('aManaged').checked = true; showManagedState(); } if (now === 'office') { if (was !== now) { $('oChannel').focus(); officeFromIntune(); } } else if (now !== 'own' && was !== now) $('aWinget').focus();
+  if ((now === 'winget' || now === 'own') && srcStash.managed) { srcStash.managed = false; $('aManaged').checked = true; showManagedState(); }
+  // Folded as it fits now - once the Winget ID is back (review 2.38.74: folded before, a restored winget rule showed open).
+  if (was !== now && window.edFoldsReset) edFoldsReset(); if (now === 'office') { if (was !== now) { $('oChannel').focus(); officeFromIntune(); } } else if (now !== 'own' && was !== now) $('aWinget').focus();
   if (typeof updateReady === 'function') updateReady();
 });
 // 2.38.73: each "Installs from" keeps its own commands. Going from Winget to its own installer left the winget commands
@@ -363,8 +378,6 @@ function srcSwap(was, now) {
   if (madeForWinget && now !== 'winget') { $('xType').value = ''; $('xScript').value = ''; }
   if (now === 'winget' && back.wingetScript && !$('xType').value) { $('xType').value = 'Script'; $('xScript').value = back.wingetScript; }
   showDetFields();
-  // Folded as it fits now (a rule made for winget as one line; none at all asks for one) - not as "a rule of its own".
-  if (window.edFoldsReset) edFoldsReset();
   deployTouched = true;
 }
 function showManagedState() {
@@ -1716,7 +1729,7 @@ async function menuAction(act) {
       break;
     }
     case 'remove': {
-      if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : `${names.length} apps`} from the catalog?\n\n${names.length > 1 ? names.slice(0, 15).join('\n') + (names.length > 15 ? `\n... and ${names.length - 15} more` : '') + '\n\n' : ''}Only the catalog changes - nothing in Intune. A copy of each file goes to the Backups folder (an own installer's packages folder too).`))) return;
+      if (!(await ask(`Remove ${names.length === 1 ? `"${names[0]}"` : `${names.length} apps`} from the catalog?\n\n${names.length > 1 ? names.slice(0, 15).join('\n') + (names.length > 15 ? `\n... and ${names.length - 15} more` : '') + '\n\n' : ''}Only the catalog changes - nothing in Intune. A copy of each file goes to the Backups folder (a custom installer's packages folder too).`))) return;
       const failed = [];
       for (const n of names) { const r = await api('/api/app-remove', { name: n }); if (r.ok) selected.delete(n); else failed.push(`${n}: ${r.error}`); }
       toast(failed.length ? 'Not removed: ' + failed.join('; ') : `Removed ${nWord(names.length, 'app')} from the catalog.`, failed.length > 0); loadApps();
@@ -1995,13 +2008,16 @@ $('aAppLink').addEventListener('change', () => {
   const v = $('aAppLink').value, f = $('aAppId');
   if (v === '__unlink') { f.value = ''; editorIntuneType = ''; }
   else if (v === '__type') { f.readOnly = false; f.focus(); f.select(); }
-  // One of the Windows apps in Intune: a Win32 app - Winget or its own installer (2.38.73).
-  else if (v) { f.value = v; editorIntuneType = 'Windows app (Win32)'; editorSrcAtOpen = editorSrc === 'winget' || editorSrc === 'own' ? editorSrc : 'own'; }
+  // Linked to an app in Intune: its own type, as Intune has it (review 2.38.74: the list holds Store, Microsoft 365,
+  // MSI and Edge apps too - each was taken for a Win32 app).
+  else if (v) { f.value = v; editorIntuneType = linkedIntuneType(v); editorSrcAtOpen = editorSrc; }
   $('aAppLink').value = '';
   f.dispatchEvent(new Event('input', { bubbles: true }));
   showSrc();
 });
 $('aAppId').addEventListener('blur', () => { $('aAppId').readOnly = true; });
+// A typed App ID: its type looked up the same way, then what it can be shown again.
+$('aAppId').addEventListener('change', () => { editorIntuneType = linkedIntuneType($('aAppId').value); editorSrcAtOpen = editorSrc; showSrc(); });
 
 $('dlgRecent').addEventListener('wcrestore', () => openRecent());
 
