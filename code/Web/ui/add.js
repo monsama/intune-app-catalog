@@ -106,7 +106,10 @@ async function searchAdd() {
   const r = await api(mode === 'store' ? '/api/store-search' : '/api/winget-search', { q });
   if (mode !== awMode) return;
   if (seq !== awSeq) return;   // a newer search is under way
-  if (!r.ok) { $('awNote').textContent = r.error; return; }
+  // The error in the list's place (2.38.67) - not "Search results appear here" under it.
+  const aw = $('awWrap'); if (aw._empty === undefined) aw._empty = aw.dataset.empty;
+  if (!r.ok) { $('awNote').textContent = r.error; aw.dataset.empty = 'No results - see above.'; return; }
+  aw.dataset.empty = aw._empty;
   const have = new Map(apps.filter(a => a.wingetId).map(a => [a.wingetId.toLowerCase(), a.name]));
   $('awNote').textContent = r.rows.length ? `${nWord(r.rows.length, mode === 'store' ? 'app' : 'package')}${awPicked.size ? ` - ${awPicked.size} picked` : ''}.` : (mode === 'store' ? 'The Store found nothing - try a shorter name.' : 'winget found nothing - try a shorter name or the publisher.');
   $('awRows').replaceChildren(...r.rows.map(x => {

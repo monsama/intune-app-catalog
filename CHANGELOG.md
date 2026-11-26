@@ -1,5 +1,73 @@
 # Changelog
 
+## 2.38.67
+
+- **The app editor, simplified.** It now has five parts:
+  - **App:** name, where it installs from, ID, link to Intune, icon, and its own installer.
+  - **Updates:** how new versions reach devices, the App version, and the release rule.
+  - **Who gets it:** the assignments.
+  - **Details:** what Intune and the Company Portal show.
+  - **Install & detection:** commands, detection, requirements and dependencies.
+- **Winget apps** have one control for how new versions reach devices ("Install with": managed updates, or the
+  winget command), not also a "Managed updates" tick box. A version in pilot or kept as superseded is said under
+  the choice.
+- **A detection rule made for winget** folds to one line like none at all - nothing to set there.
+- **"Ready to send?"** is a chip in the footer, on every part: what is still missing, with the list one click away
+  and each item a link to its field.
+- **History and Remove from catalog** are under More in the footer; Cancel and Save stand alone on the right.
+- **The assignment filter** folds into one line under the groups, open when one is set. The list of groups used in
+  the catalog is gone: the group boxes suggest them while you type.
+- **Empty install and uninstall commands** say what goes there: for a Winget app they are made when it is sent.
+
+### Editor fixes (review)
+
+- **The icon's menu (From Intune, Find one, Remove) works in the editor.** It opened behind the dialog.
+- **Arrow keys work in the footer's More menu.**
+- **Focus returns to More** after History closes or a removal is cancelled.
+- **A Winget app not sent yet shows its method** ("the winget command" or managed updates) - not "edited by hand".
+- **A script app is no longer told to upload an .msi or .exe.**
+- **A refused download address opens its field** on Updates.
+- **The ready chip says "Still needs: ..."**, and its list opens under it.
+- **A tab gives focus to its first visible field.**
+- **Microsoft Store without an ID yet** shows only its own parts.
+- **A refused save's error goes** once something is changed.
+- **Wording:** the icon's menu is "Icon"; Publisher, Owner and Developer share one row on wide windows; the hints
+  point to the controls that are there.
+
+### The rest of the app (GUI review)
+
+- **Settings:** every card's button is one primary "Save". On Connection, Save comes first and Test connection is
+  a normal button.
+- **Home:**
+  - Getting started comes first on a narrow window while it is open.
+  - The top line no longer repeats the Needs attention count.
+  - The Reload button is gone (F5 does it).
+- **Catalog menu:** the grid and Check winget are under All apps.
+- **More menu:**
+  - Batch edit is in the first section.
+  - "Turn on/off managed updates..." says what it does.
+- **Side panel:**
+  - Close and More ▾ are named the same way for one app and for several.
+  - "not pinned yet" is orange only for an app in Intune.
+- **Read from Intune:**
+  - It names the fields as the editor does, not by their keys.
+  - Its buttons say "Keep catalog values" and "Take all from Intune".
+- **Add groups:**
+  - "No favourites yet" is said once, with how to add a group.
+  - PSADT says Publisher.
+- **Add apps:**
+  - On a narrow window the tabs wrap, so every tab stays visible.
+  - A failed winget search no longer says "results appear here".
+- **File pickers** (CSV, Import library) are no longer cut off.
+- **Command palette, grid and other dialogs:**
+  - The palette's labels sit on their line.
+  - The groups-and-apps grid has no striping.
+  - Send groups has a framed table.
+  - Small dialogs don't offer Maximize.
+  - Apps worth adding focuses its first Add button.
+  - The Source column option says it shows on wide windows.
+- **Groups page:** on a narrower window the list stands above the group.
+
 ## 2.38.66
 
 - **TeamViewer and TeamViewer QuickSupport in the starter set (recommended) are fetched from TeamViewer, not

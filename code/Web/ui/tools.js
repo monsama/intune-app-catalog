@@ -522,6 +522,8 @@ async function openSuggest() {
     el('td', { class: 'name', text: s.name }), el('td', { class: 'num', text: String(s.devices) }), el('td', { class: 'mono', text: s.versions.join(', ') }),
     el('td', { class: 'act' }, el('button', { class: 'btn small', text: 'Add...', title: `Add ${s.name} to the catalog - winget is searched for it`, onclick: () => addSuggested(s.name) }))))
     : [el('tr', {}, el('td', { colspan: 4, class: 'muted', text: 'Nothing to suggest - every app on several devices is in the catalog.' }))]));
+  // The first Add..., not the table, has the focus (2.38.67: a thick ring round the whole list).
+  const firstAdd = $('sgRows').querySelector('button'); if (firstAdd) firstAdd.focus();
 }
 async function addSuggested(name) {
   $('dlgSuggest').close();

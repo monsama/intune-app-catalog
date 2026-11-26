@@ -995,7 +995,7 @@ dialog.maxed { width: calc(100vw - 16px) !important; max-width: none !important;
 table.mx { width: max-content; }
 table.mx th.ah { font-weight: 500; padding: 4px 14px 4px 10px; }
 table.mx th.corner { padding: 8px 10px; font-size: 12px; }
-table.mx tbody tr:nth-child(even) > * { background: var(--surface2, var(--bg)); }
+/* 2.38.67: no striping in the grid - empty cells changed colour from row to row. */
 table.mx tbody tr:hover > * { background: var(--hover); }
 table.mx td { text-align: center; }
 td.mxempty { padding: 28px 16px !important; text-align: left !important; font-size: 13px; }
@@ -1403,7 +1403,7 @@ input[type=checkbox]:not([hidden]) { box-sizing: border-box !important; padding:
 #dlgApp .formgrid > section > .checks + * { margin-top: 10px; }
 #dlgApp .formgrid > section > label.chk + .methodrow, #dlgApp .formgrid > section > label.chk + * { margin-top: 10px; }
 /* The install card and the detection rule card: apart, not sharing an edge. */
-#appForm[data-pg="3"] > .formgrid + details#deploySec { margin-top: 12px; }
+#appForm[data-pg="4"] > .formgrid + details#deploySec { margin-top: 12px; }
 /* The first thing on a tab starts at the same height on every tab. */
 #dlgApp .formgrid > section > .pgfirst { margin-top: 0 !important; }
 /* Boxes with a heading (this app's release rule, Add apps' detection): the heading inside the box, not cut into its border. */
@@ -1581,7 +1581,7 @@ body.loginpage { display: grid; place-items: center; min-height: 100vh; padding:
 .brec .blk.inline select { width: auto; max-width: 100%; }
 
 /* Install & detection as one page (2.30.0): one column; detection, requirements, dependencies fold to a line */
-#appForm[data-pg="3"] #deploySec > .formgrid { grid-template-columns: 1fr; }
+#appForm[data-pg="4"] #deploySec > .formgrid { grid-template-columns: 1fr; }
 #deploySec .foldsum { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 1px solid var(--bd2); border-radius: var(--r-m); background: var(--surface); font-size: 13px; color: var(--muted); }
 #deploySec .foldsum .fstext { flex: 1; min-width: 0; }
 #deploySec .formgrid:not(.f-det) [data-sum="det"], #deploySec .formgrid:not(.f-req) [data-sum="req"], #deploySec .formgrid:not(.f-dep) [data-sum="dep"] { display: none; }
@@ -1963,3 +1963,36 @@ body:has(#appPanel:not([hidden])) #gridBody td.stagecol .pill { min-width: 0; pa
 @media (max-width: 900px) { dialog.addapps .subtabs { mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent); scroll-padding-inline: 16px; } }
 /* Side panel: a label beside group chips on the chips' line (2.38.66: it sat 4px high). */
 .pfacts .kv:has(.gedit) { align-items: baseline; }
+
+/* ---------------------------------------------------------------- 2.38.67: the editor, simplified */
+/* "Ready to send?" as a chip in the footer, on every part - its list opens above it. */
+#dlgApp .actions.split { position: sticky; }
+.readychip { border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--bd2)); background: color-mix(in srgb, var(--warn-bg) 60%, var(--surface)); color: var(--fg); border-radius: 999px; height: 30px; padding: 0 12px; font: inherit; font-size: 12.5px; cursor: pointer; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; align-self: center; }
+.readychip:hover { border-color: var(--warn); }
+.readychip.allok { border-color: color-mix(in srgb, var(--ok) 35%, var(--bd2)); background: color-mix(in srgb, var(--ok-bg) 60%, var(--surface)); }
+.readychip:empty { display: none; }
+.readypop { position: absolute; bottom: calc(100% + 6px); left: 20px; width: min(380px, calc(100% - 40px)); z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.18); border-radius: var(--r-l); }
+.readypop .ready { margin: 0; }
+/* Assignment filter folded into one line. */
+.advfold { margin-top: 12px; border-top: 1px solid var(--bd2); padding-top: 8px; }
+.advfold > summary { cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px 0; }
+.advfold > summary .muted { font-weight: 400; }
+.advfold[open] > summary { margin-bottom: 6px; }
+#dlgApp #aUpdHead { margin-top: 2px; padding-top: 0; border-top: 0; }
+/* 2.38.67 GUI pass */
+/* File pickers: no text-box padding (it cut the picker's button off at the bottom). */
+input[type=file] { padding: 0; height: auto; border: 0; background: none; box-shadow: none; }
+#palList li { align-items: baseline; }
+input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
+.pullapp td { vertical-align: middle; }
+/* Add apps on a narrow window: the tabs wrap onto a second line - every tab stays visible. */
+@media (max-width: 900px) { dialog.addapps .subtabs { flex-wrap: wrap; mask-image: none; } }
+/* Home on a narrow window: Getting started first while it is open - it was below Needs attention. */
+@media (max-width: 1000px) { .homegrid:has(#homeSetup:not([hidden])) > .homeside { order: -1; } }
+/* Groups on a narrower window (2.38.67): the list above the group, not a 40 % column with app names over six lines. */
+@media (max-width: 1000px) { .gsplit { grid-template-columns: 1fr; } }
+/* One stat tile (2.38.67): Home and Updates had two copies of the rule, at different heights. */
+#homeStats .stat .l { min-height: 2.6em; }
+/* Details: Publisher, Owner and Developer in one row on wide windows (Developer sat alone on its row). */
+@media (min-width: 1100px) { #dlgApp .two:has(#mDeveloper) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.readypop { left: 0; }

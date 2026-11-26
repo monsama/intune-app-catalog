@@ -86,7 +86,7 @@
       </div>
       <div class="menu looks" id="listLook" hidden role="group" aria-label="Columns and rows">
         <div class="mhead">Columns</div>
-        <label class="chk"><input type="checkbox" data-col="2" checked>Source</label>
+        <label class="chk" title="Shown on windows wider than 1600 pixels"><input type="checkbox" data-col="2" checked>Source <span class="muted">(wide windows)</span></label>
         <label class="chk"><input type="checkbox" data-col="3" checked>Version</label>
         <label class="chk"><input type="checkbox" data-col="4" checked>Who gets it</label>
         <label class="chk"><input type="checkbox" data-col="5" checked>Stage</label>
@@ -150,7 +150,6 @@
       <div class="btngroup" role="group" aria-label="Home actions">
         <button class="btn" id="btnHomeCheck" title="Compare every app with Intune now - what differs shows here, on the apps (Needs a look) and in Checks">Check everything now</button>
         <button class="btn" id="btnHomeAdd" title="Add apps from winget, an installer or a script">Add apps...</button>
-        <button class="btn" id="btnHomeReload" title="Look again">Reload</button>
       </div>
     </div>
     <div id="homeStats" class="kpis"></div>
@@ -374,8 +373,8 @@
             <ul class="entracerts desktoponly" id="entraCerts"></ul>
           </div>
           <div class="actions">
-            <button class="btn primary" id="btnTest" title="Sign in with these values and check permissions - nothing is saved or changed">Test connection</button>
-            <button class="btn" id="btnSave" title="Save the connection settings">Save</button>
+            <button class="btn primary" id="btnSave" title="Save the connection settings">Save</button>
+            <button class="btn" id="btnTest" title="Sign in with these values and check permissions - nothing is saved or changed">Test connection</button>
             <span class="dirty" id="dirtyNote" hidden>Not saved</span>
           </div>
           <div class="result" id="testResult" hidden></div>
@@ -393,7 +392,7 @@
           </div>
           <p class="sub" id="siNow"></p>
           <p class="formerror" id="siError" hidden></p>
-          <div class="actions"><button class="btn primary" id="btnSiSave">Save sign-in</button></div>
+          <div class="actions"><button class="btn primary" id="btnSiSave">Save</button></div>
         </article>
         <!-- The server version brings the module in its image: nothing to check or install there. -->
         <article class="card desktoponly">
@@ -475,7 +474,7 @@
             </div>
           </div>
           <p class="formerror" id="defaultsError" hidden></p>
-          <div class="actions"><button class="btn primary" id="btnSaveDefaults" title="Save the defaults new apps get when deployed without their own settings">Save default values</button></div>
+          <div class="actions"><button class="btn primary" id="btnSaveDefaults" title="Save the defaults new apps get when deployed without their own settings">Save</button></div>
         </article>
       </div>
       <div class="col">
@@ -488,20 +487,20 @@
           <label class="chk"><input type="checkbox" data-check="pushGroupsOnUpdate">Send groups after updating an app</label>
           <label class="chk"><input type="checkbox" data-check="detailedGraphLog">Detailed Graph log (every request)</label>
           <label class="chk" title="Asks GitHub at most twice a day - Home says when a newer version of this app is out"><input type="checkbox" data-check="checkForUpdates">Tell me when a new version of this app is out</label>
-          <div class="actions"><button class="btn" id="btnSaveChecks" title="Save the automatic checks and pushes">Save</button></div>
+          <div class="actions"><button class="btn primary" id="btnSaveChecks" title="Save the automatic checks and pushes">Save</button></div>
         </article>
         <article class="card">
           <h2>Favourite groups</h2>
           <p class="sub" id="favGroupsHint">Offered first wherever a group is chosen.</p>
           <textarea autocomplete="off" id="favGroups" aria-labelledby="favGroupsHint" rows="4" class="full" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea>
-          <div class="actions"><button class="btn" id="btnSaveFavs" title="Save the favourite groups">Save favourites</button></div>
+          <div class="actions"><button class="btn primary" id="btnSaveFavs" title="Save the favourite groups">Save</button></div>
         </article>
         <article class="card">
           <h2>Assignment profiles</h2>
           <p class="sub">Named sets of groups - "Apply a profile" in the editor and in Add apps fills them in at once. Groups separated by commas.</p>
           <div id="profRows" class="profrows"></div>
           <p class="profdef"><label class="inline" title="Add apps and a new app in the editor start with this profile's groups">New apps get <select id="profDefault" aria-label="The profile new apps get"><option value="">(none)</option></select></label></p>
-          <div class="actions"><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn" id="btnProfSave" title="Save the profiles">Save profiles</button></div>
+          <div class="actions"><button class="btn" id="btnProfAdd" title="Another profile">Add a profile</button><button class="btn primary" id="btnProfSave" title="Save the profiles">Save</button></div>
         </article>
       </div>
     </div>
@@ -544,7 +543,7 @@
           <label class="chk" title="The nightly run releases a newer winget version to the pilot groups by itself"><input type="checkbox" id="rpAutoRelease">Release new winget versions to pilot automatically (nightly run)</label>
           <label class="chk" title="The nightly run promotes a version in pilot once the rule above says it's ready - otherwise it holds it and says why"><input type="checkbox" id="rpAutoPromote">Promote automatically when ready (nightly run)</label>
           <label class="chk" title="Superseded versions have no assignments; the newest one is kept so you can roll back"><input type="checkbox" id="rpCleanup">Delete older superseded versions from Intune, keeping one for rollback (nightly run)</label>
-          <div class="actions"><button class="btn" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
+          <div class="actions"><button class="btn primary" id="btnSavePilot" title="Save the pilot groups and the release rule">Save</button></div>
         </article>
       </div>
     </div>
@@ -586,7 +585,7 @@
           <label class="chk" title="Only for a git repository you created yourself in the catalog folder: it's run with its hooks, fsmonitor and filters off, and not at all when its .git belongs to someone else"><input type="checkbox" id="rpBackupGit">... and commit the app files to the catalog folder's git repository</label>
           <label class="chk" title="On the first run of a month: last month's report (released, promoted, withdrawn, held; devices on the current version) in Logs\reports, sent by email / Teams when alerts are set up"><input type="checkbox" id="rpMonthly">Monthly report</label>
           <label class="full" title="A test tenant's catalog folder (a share both PCs reach): Winget apps here are released by themselves only in a version that is promoted there. Empty: no test tenant">Test tenant's catalog folder <span class="muted">(optional)</span><input id="rpGate" class="full" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. \\fileserver\intune-test\app-data" data-server-placeholder="e.g. /app/data/test-tenant (a folder the server reaches)"></label>
-          <div class="actions"><button class="btn" id="btnSaveNightly" title="Save what the nightly run does besides releases">Save</button></div>
+          <div class="actions"><button class="btn primary" id="btnSaveNightly" title="Save what the nightly run does besides releases">Save</button></div>
         </article>
         <article class="card">
           <h2>Alerts</h2>
@@ -600,7 +599,7 @@
           </div>
           <div class="actions">
             <button class="btn" id="btnAlertTest" title="Send a test message with what is saved">Send a test</button>
-            <button class="btn" id="btnSaveAlerts" title="Save the alert settings">Save alerts</button>
+            <button class="btn primary" id="btnSaveAlerts" title="Save the alert settings">Save</button>
           </div>
         </article>
       </div>
@@ -639,7 +638,7 @@
           <h2>Folders</h2>
           <p class="sub">Leave a box empty to use the default (shown greyed out).</p>
           <div id="folderList"></div>
-          <div class="actions"><button class="btn" id="btnSaveFolders" title="Save the folders - empty boxes use the default">Save folders</button></div>
+          <div class="actions"><button class="btn primary" id="btnSaveFolders" title="Save the folders - empty boxes use the default">Save</button></div>
         </article>
       </div>
     </div>
@@ -717,6 +716,7 @@
   <div class="mhead" role="presentation">Package &amp; Intune</div>
   <button role="menuitem" data-act="edit" title="Open the app in the editor (double-click a row does the same)">Edit...</button>
   <button role="menuitem" data-act="duplicate" title="A new app with this one's settings and groups - a starting point for a variant or a similar app">Duplicate...</button>
+  <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
   <button role="menuitem" data-act="export" title="The selected apps with their settings, groups, icon and package files as one .zip - Catalog > Import library adds them on another instance">Export...</button>
   <button role="menuitem" data-act="deploy" title="Create or update the selected apps in Intune - their settings, package and groups (as the Send to Intune button)">Send to Intune...</button>
   <button role="menuitem" data-act="pushgroups" title="Send only the groups (assignments) to Intune - not the settings or the package">Send groups only</button>
@@ -738,7 +738,6 @@
   <button role="menuitem" data-act="takeversion" title="Pin the version winget offers as the App version (from the last Check winget for new versions) - Pin newest in the side panel asks winget itself">Pin winget's newest version</button>
   <hr>
   <div class="mhead" role="presentation">Groups</div>
-  <button role="menuitem" data-act="batchedit" title="Change the same fields on all selected apps in the catalog">Batch edit...</button>
   <button role="menuitem" data-act="addgroups" title="Add groups to all selected apps in the catalog">Add groups...</button>
   <button role="menuitem" data-act="removegroups" title="Remove groups from all selected apps in the catalog">Remove groups...</button>
   <button role="menuitem" data-act="replacegroup" title="Swap one group for another on the selected apps, in every role">Replace a group in these apps...</button>
@@ -757,9 +756,7 @@
   <div class="mhead" role="presentation">Tenant</div>
   <button role="menuitem" data-cact="tenantsetup" title="What the connected tenant still needs for the catalog - groups, deploys, group pushes - step by step">Set up this tenant...</button>
   <button role="menuitem" data-cact="overview" title="Installed, failed and pending devices for every deployed app, from Intune">Install status of every app...</button>
-  <button role="menuitem" data-cact="matrix" title="Which group gets which app - one grid, change cells and save">Groups and apps grid...</button>
   <button role="menuitem" data-cact="suggest" title="Apps on many devices (Intune's inventory) that the catalog doesn't have yet - add one with its winget ID looked up">Apps worth adding...</button>
-  <button role="menuitem" data-cact="wingetcheck" title="Ask winget for the newest version of every Winget app - then filter Newer on winget">Check winget for new versions</button>
   <hr>
   <div class="mhead" role="presentation">Files</div>
   <button role="menuitem" data-cact="export" title="Every app as one row - open it in Excel, change cells, import it again">Export to CSV</button>
@@ -768,6 +765,8 @@
   <button role="menuitem" data-cact="libimport" title="Add apps from a .zip that Export library or More > Export made - shows every app first">Import library...</button>
   <hr>
   <div class="mhead" role="presentation">All apps</div>
+  <button role="menuitem" data-cact="matrix" title="Which group gets which app - one grid, change cells and save">Groups and apps grid...</button>
+  <button role="menuitem" data-cact="wingetcheck" title="Ask winget for the newest version of every Winget app - then filter Newer on winget">Check winget for new versions</button>
   <button role="menuitem" data-cact="fillall" title="Publisher, description, links, developer and owner for every Winget app, where they are still empty">Fill in missing details (all apps)...</button>
   <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group in all apps...</button>
   <button role="menuitem" data-cact="recent" title="Every change to the catalog, newest first - with Undo">Recent changes...</button>
@@ -959,14 +958,27 @@
           <label class="chk" title="For PCs several people use with their own licence: Remote Desktop / Azure Virtual Desktop session hosts, shared PCs"><input type="checkbox" id="oShared">Shared computer activation <span class="muted">(Remote Desktop, shared PCs)</span></label>
           <p class="muted small">The licence terms are accepted for the users, and Office installs without showing progress.</p>
         </fieldset>
+        <p class="methodinfo" id="aPkgInfo" hidden></p>
+        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune<span class="inputrow"><input id="aAppId" readonly placeholder="Not linked" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="aAppLink" aria-label="Link to an Intune app" title="Link this catalog entry to an app that's already in Intune - or unlink it"><option value="">Link...</option></select></span></label>
+        <div class="iconrow" role="group" aria-labelledby="aIconLabel">
+          <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
+          <img id="aIcon" class="appicon big" alt="The app's icon" hidden>
+          <span class="noicon" id="aIconNone" aria-hidden="true">?</span>
+          <button type="button" class="btn" id="btnIconPick" title="A PNG or JPEG of at most 750 KB - square, 256 x 256 or larger, looks best">Choose image...</button>
+          <button type="button" class="btn" id="btnIconIntune" title="Take the icon this app has in Intune">From Intune</button>
+          <button type="button" class="btn" id="btnIconFind" title="An icon from the installer in its packages folder, or from the app's homepage (its Information URL)">Find one</button>
+          <button type="button" class="btn" id="btnIconRemove" title="No icon in the catalog - Intune keeps the one it has">Remove</button>
+          <input type="file" id="aIconFile" accept="image/png,image/jpeg" hidden>
+        </div>
+        <h3 id="aUpdHead">Version and updates</h3>
         <label class="chk" id="aManagedRow" title="Install a fixed version (the App version) and release new versions to the pilot groups first - Settings > Updates"><input type="checkbox" id="aManaged">Managed updates <button type="button" class="help" data-help="managed" aria-label="What are managed updates?">?</button> <span class="muted" id="aManagedNote"></span></label>
         <label class="chk" id="aSelfRow" hidden title="The app keeps itself up to date on the device (its own updater) - Intune installs winget's latest once, and Home doesn't suggest managed updates for it"><input type="checkbox" id="aSelfUpd">Updates itself <span class="muted">- winget's latest, no version pinned (browsers, meeting apps)</span></label>
-        <p class="hint" id="aSelfHint" hidden>This app updates itself on the devices - a pinned version falls behind within days and winget soon drops it. Turning managed updates off (winget's latest) usually fits it better.</p>
         <div class="methodrow" id="aMethodRow" hidden>
           <label title="How devices install this Winget app - and so which version they get">Install with<select id="aMethod"><option value="Managed">Managed updates - a fixed version, pilot first</option><option value="Winget">The winget command - newest, not updated</option><option value="WAU" disabled>Winget-AutoUpdate (no longer used)</option><option value="Custom" disabled>Own command (edited by hand)</option></select></label>
           <p class="methodinfo" id="aMethodInfo" aria-live="polite"></p>
         </div>
-        <p class="methodinfo" id="aPkgInfo" hidden></p>
+        <p class="hint" id="aSelfHint" hidden>This app updates itself on the devices - a pinned version falls behind within days and winget soon drops it. Choose Install with: The winget command (winget's latest) - that usually fits it better.</p>
+        <label id="aVerRow">App version<span class="inputrow"><input autocomplete="off" id="mAppVersion" placeholder="Pick or type a version" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="mAppVersionPick" class="verpick" aria-label="Pick from winget's versions" title="winget's versions, newest first"><option value="">Pick...</option></select></span></label>
         <fieldset class="ownrule" id="aRuleBox" hidden>
           <legend>Release rule <span class="muted">- this app's own; empty fields: Settings' rule</span></legend>
           <div class="policy">
@@ -979,17 +991,6 @@
           <label title="How the app is named in Intune's inventory of apps on devices (Apps > Monitor > Discovered apps), when that isn't the catalog's name - the Updates page counts older versions on devices by it">Name on devices <span class="muted">(empty: the catalog's name)</span><input id="arDetected" maxlength="100" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 7-Zip"></label>
         </fieldset>
         <label id="aWatchRow" title="Optional, for an app with its own installer: a winget package with the same app (its Winget ID). It is only watched - the Apps list shows when it has a newer version, and More > Get new installer downloads it (checked against winget's SHA256). Devices still install this app's own package.">Winget package to watch <span class="muted">(optional - only for new versions)</span><input id="aWatch" maxlength="128" placeholder="e.g. Vendor.App" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <label title="The Intune app this catalog entry is linked to. Set by Send to Intune, or by Checks when it links an existing app.">App ID in Intune<span class="inputrow"><input id="aAppId" readonly placeholder="Not linked" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="aAppLink" aria-label="Link to an Intune app" title="Link this catalog entry to an app that's already in Intune - or unlink it"><option value="">Link...</option></select></span></label>
-        <div class="iconrow" role="group" aria-labelledby="aIconLabel">
-          <span class="lbl" id="aIconLabel">Icon <span class="muted">(Intune and the Company Portal)</span></span>
-          <img id="aIcon" class="appicon big" alt="The app's icon" hidden>
-          <span class="noicon" id="aIconNone" aria-hidden="true">?</span>
-          <button type="button" class="btn" id="btnIconPick" title="A PNG or JPEG of at most 750 KB - square, 256 x 256 or larger, looks best">Choose image...</button>
-          <button type="button" class="btn" id="btnIconIntune" title="Take the icon this app has in Intune">From Intune</button>
-          <button type="button" class="btn" id="btnIconFind" title="An icon from the installer in its packages folder, or from the app's homepage (its Information URL)">Find one</button>
-          <button type="button" class="btn" id="btnIconRemove" title="No icon in the catalog - Intune keeps the one it has">Remove</button>
-          <input type="file" id="aIconFile" accept="image/png,image/jpeg" hidden>
-        </div>
         <h3 class="withtool">Assignments <button type="button" class="help" data-help="assignments" aria-label="What do Required, Available, Uninstall and Excluded mean?">?</button> <select id="aProfile" class="small" aria-label="Apply an assignment profile"><option value="">Apply a profile...</option></select></h3>
         <div class="groups4">
           <label title="Installed automatically on these groups' devices.">Required<textarea autocomplete="off" id="gRequired" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
@@ -997,23 +998,23 @@
           <label title="Removed from these groups' devices.">Uninstall<textarea autocomplete="off" id="gUninstall" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
           <label title="Groups that never get the app, whatever else they are assigned to.">Excluded<textarea autocomplete="off" id="gExclude" rows="4" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         </div>
-        <div class="filterrow">
-          <label title="An Intune assignment filter narrows every group above (not Excluded) to the devices it matches - e.g. only corporate laptops. Leave empty for none.">Assignment filter
-            <input autocomplete="off" id="aFilter" list="filterList" placeholder="None" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-          <datalist id="filterList"></datalist>
-          <label>Devices the filter matches
-            <select id="aFilterMode"><option value="include">get the app (include)</option><option value="exclude">don't get the app (exclude)</option></select></label>
-        </div>
-        <p class="sub" id="filterNote"></p>
-        <p class="sub" id="knownGroups"></p>
+        <details class="advfold" id="aFilterFold"><summary>Assignment filter <span class="muted" id="aFilterSum">- none</span></summary>
+          <div class="filterrow">
+            <label title="An Intune assignment filter narrows every group above (not Excluded) to the devices it matches - e.g. only corporate laptops. Leave empty for none.">Assignment filter
+              <input autocomplete="off" id="aFilter" list="filterList" placeholder="None" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+            <datalist id="filterList"></datalist>
+            <label>Devices the filter matches
+              <select id="aFilterMode"><option value="include">get the app (include)</option><option value="exclude">don't get the app (exclude)</option></select></label>
+          </div>
+          <p class="sub" id="filterNote"></p>
+        </details>
+        <p class="sub" id="knownGroups" hidden></p>
       </section>
       <section>
-        <div class="ready" id="readyBox" aria-live="polite"><h3>Ready to send?</h3><ul id="readyList"></ul></div>
         <h3 class="withfill">Intune details <span class="muted" id="metaNote"></span><button type="button" class="btn small" id="btnFillWinget" hidden title="Publisher, description, links and developer from winget - and the owner from Settings - into the fields that are still empty. Never the App version. Saved with Save.">Fill from winget</button></h3>
         <label>Description<textarea autocomplete="off" id="mDescription" rows="3" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
         <div class="two">
           <label>Publisher<input autocomplete="off" id="mPublisher" list="pubList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-          <label>App version<span class="inputrow"><input autocomplete="off" id="mAppVersion" placeholder="Pick or type a version" spellcheck="false" autocorrect="off" autocapitalize="off"><select id="mAppVersionPick" class="verpick" aria-label="Pick from winget's versions" title="winget's versions, newest first"><option value="">Pick...</option></select></span></label>
           <label>Owner<input autocomplete="off" id="mOwner" list="ownerList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
           <label>Developer<input autocomplete="off" id="mDeveloper" list="devList" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         </div>
@@ -1021,8 +1022,8 @@
         <label>Privacy URL<input autocomplete="off" id="mPrivacyUrl" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         <div class="blockbar" id="instBlocks" role="group" aria-label="Install and uninstall commands as blocks" hidden></div>
         <details class="rawcmds" id="instRaw"><summary>The commands <span class="muted">as Intune gets them</span></summary>
-        <label>Install command<input autocomplete="off" id="mInstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
-        <label title="The command Intune runs to uninstall the app (for the Uninstall assignment and Company Portal uninstalls).">Uninstall command<input autocomplete="off" id="mUninstallCommand" class="mono" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label>Install command<input autocomplete="off" id="mInstallCommand" class="mono" placeholder="Made from the Winget ID when it is sent (Winget apps) - or the command of its own installer" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+        <label title="The command Intune runs to uninstall the app (for the Uninstall assignment and Company Portal uninstalls).">Uninstall command<input autocomplete="off" id="mUninstallCommand" class="mono" placeholder="Made from the Winget ID when it is sent (Winget apps)" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
         </details>
         <label>Notes<textarea autocomplete="off" id="mNotes" rows="2" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
       </section>
@@ -1072,8 +1073,13 @@
     </details>
     <p class="formerror" id="appError" hidden></p>
     <div class="actions split">
-      <button type="button" class="btn danger" id="btnRemoveApp" title="Remove this app from the catalog only - Intune keeps it; a copy goes to Backups">Remove from catalog...</button>
-      <button type="button" class="btn ghost" id="btnAppHistory" title="What changed, when and from where - in the catalog and in Intune; undo a change, or put an earlier version back">History...</button>
+      <button type="button" class="btn" id="btnAppMore" aria-haspopup="menu" aria-expanded="false" title="History, and removing the app from the catalog">More &#9662;</button>
+      <div class="menu" id="appEdMenu" role="menu" hidden>
+        <button type="button" role="menuitem" id="btnAppHistory" title="What changed, when and from where - in the catalog and in Intune; undo a change, or put an earlier version back">History...</button>
+        <button type="button" role="menuitem" class="danger" id="btnRemoveApp" title="Remove this app from the catalog only - Intune keeps it; a copy goes to Backups">Remove from catalog...</button>
+      </div>
+      <button type="button" class="readychip" id="readyChip" aria-expanded="false" aria-controls="readyPop" title="What it still needs before Send to Intune"></button>
+      <div class="readypop" id="readyPop" hidden><div class="ready" id="readyBox" aria-live="polite"><h3>Ready to send?</h3><ul id="readyList"></ul></div></div>
       <span class="spacer"></span>
       <button type="button" class="btn" id="btnAppCancel">Cancel</button>
       <button type="submit" class="btn primary" id="btnSaveApp" title="Save to the catalog - Send to Intune sends it there">Save</button>
@@ -1099,7 +1105,7 @@
 <dialog id="dlgPush" class="wide">
   <h2>Send groups to Intune</h2>
   <p class="sub">Intune gets exactly the catalog's groups for these apps: what's below is added, assignments not in the catalog are removed. Groups that don't exist yet are created.</p>
-  <table class="plan"><thead><tr><th>App</th><th title="Assignments Intune gets">Added in Intune</th><th title="Assignments Intune has that the catalog doesn't - they are removed">Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table>
+  <div class="tablewrap short"><table class="plan"><thead><tr><th>App</th><th title="Assignments Intune gets">Added in Intune</th><th title="Assignments Intune has that the catalog doesn't - they are removed">Removed from Intune</th></tr></thead><tbody id="pushRows"></tbody></table></div>
   <pre class="log" id="pushLog" tabindex="0" role="log"></pre>
   <div class="actions end"><button class="btn" data-close id="btnPushClose">Close</button><button class="btn primary" id="btnPushGo" disabled title="Apply these assignment changes in Intune">Apply</button></div>
 </dialog>
@@ -1278,7 +1284,7 @@
     <p class="sub">The <b>PowerShell App Deployment Toolkit</b> (PSADT 4) - the usual way to package installers that need more than a silent switch: closing running apps, asking the user, deferrals, logging. You add the install steps to its Invoke-AppDeployToolkit.ps1; Intune runs it with the toolkit's own commands.</p>
     <div class="formgrid three">
       <label>Name<input id="apName" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. Contoso CAD"></label>
-      <label>Vendor<input id="apVendor" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
+      <label>Publisher<input id="apVendor" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       <label>Version<input id="apVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="e.g. 2025.1"></label>
     </div>
     <label class="chk" title="The PSADT 4 template from its GitHub release, into the app's packages folder. Untick it when you have put the template there yourself."><input type="checkbox" id="apDownload" checked>Download the PSADT 4 template into the app's folder (GitHub)</label>
@@ -1423,7 +1429,7 @@
 
 <dialog id="dlgCsv" class="wide">
   <h2>Import from CSV</h2>
-  <p class="sub">Start from <strong>Export to CSV</strong>, change cells in Excel, save as CSV, and pick the file here. Rows are matched by appName. Only cells that differ change; appId and wingetId are never changed, and apps that aren't in the catalog are skipped. Lists are separated with |.</p>
+  <p class="sub">Start from <strong>Export to CSV</strong>, change cells in Excel, save as CSV, and pick the file here. Rows are matched by the app name. Only cells that differ change; the App ID and Winget ID are never changed, and apps that aren't in the catalog are skipped. Lists are separated with |.</p>
   <div class="toolbar tight"><input type="file" id="csvFile" accept=".csv,text/csv" aria-label="The CSV file to import"><span class="muted" id="csvName"></span></div>
   <div class="preview" id="csvPreview" hidden></div>
   <p class="muted note" id="csvNote" aria-live="polite"></p>

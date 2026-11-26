@@ -289,7 +289,8 @@ function renderHome() {
   renderSetup(setup);
   const reading = homeIntuneWaiting && !homeIntune && r.connected !== false ? ' Reading install counts from Intune...' : '';
   // Not set up yet (2.38.34): not "nothing needs a look" while the guide is open.
-  $('homeNote').textContent = (items.length ? `${items.length} thing${items.length === 1 ? '' : 's'} to look at${r.lastRun ? ` - last managed-updates run ${fmtWhen(r.lastRun)}` : ''}.` : setupOpen ? 'Not set up yet - Getting started shows the next step.' : 'Nothing needs a look right now.') + reading;
+  // The count is on Needs attention already (2.38.67) - the line says what it doesn't.
+  $('homeNote').textContent = (items.length ? (r.lastRun ? `Last managed-updates run ${fmtWhen(r.lastRun)}.` : 'What needs a look, and where to fix it.') : setupOpen ? 'Not set up yet - Getting started shows the next step.' : 'Nothing needs a look right now.') + reading;
   $('homeCount').textContent = items.length ? String(items.length) : '';
   const s = homeIntune && homeIntune.summary, stat = (n, l, cls) => el('div', { class: 'stat ' + (cls || '') }, el('span', { class: 'n', text: n }), el('span', { class: 'l', text: l }));
   // An empty catalog: three zeros say nothing - Getting started is what's there to do.
@@ -309,7 +310,7 @@ function renderHome() {
       w ? el('button', { class: 'btn small' + (busy ? ' working' : ''), 'data-go': i.go, 'data-label': w[0], disabled: busy, title: busy ? 'Still running' : null, onclick: () => runHomeAction(i.go, w[1]) }, busy ? homeWorking() : w[0]) : ''); })
     : [el('li', { class: 'att ' + (setupOpen ? 'info' : 'ok') }, el('span', { class: setupOpen ? 'pill' : 'pill ok', text: setupOpen ? 'Setting up' : 'All good' }), el('div', { class: 'body' }, el('b', { text: setupOpen ? 'Nothing here yet' : 'Nothing to do' }), el('span', { class: 'muted', text: setupOpen ? 'Getting started shows what comes next.' : 'Every app is deployed, nothing is on hold, and the last nightly run went fine.' })))]));
 }
-$('btnHomeReload').addEventListener('click', () => loadHome(true));
+// 2.38.67: no Reload button on Home - F5, or Check everything now, looks again.
 $('btnHomeAdd').addEventListener('click', () => openAdd());
 $('btnHomeCheck').addEventListener('click', async () => {
   const b = $('btnHomeCheck'); b.disabled = true; b.classList.add('working'); b.replaceChildren(el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Checking...');
@@ -385,7 +386,7 @@ function mxRole(a, g) {
 function renderMatrix() {
   const fa = $('mxApps').value.trim().toLowerCase(), fg = $('mxGroups').value.trim().toLowerCase();
   const groups = mx.groups.filter(g => !fg || g.toLowerCase().includes(fg)), rows = mx.apps.filter(a => !fa || a.name.toLowerCase().includes(fa));
-  const head = el('tr', {}, el('th', { class: 'corner', text: `${rows.length} apps x ${groups.length} groups` }), ...groups.map(g => el('th', { class: 'gh', title: g }, el('span', { text: g }))));
+  const head = el('tr', {}, el('th', { class: 'corner', text: `${rows.length} apps × ${groups.length} groups` }), ...groups.map(g => el('th', { class: 'gh', title: g }, el('span', { text: g }))));
   const body = rows.map(a => el('tr', {}, el('th', { class: 'ah', text: a.name, title: a.deployed ? a.name : a.name + ' (not in Intune yet)' }), ...groups.map(g => {
     const role = mxRole(a, g), k = a.name + '\u0001' + g;
     return el('td', {}, el('button', { class: 'cell ' + mxCls[role] + (mxChanges.has(k) ? ' changed' : ''), text: mxLetter[role], 'aria-label': `${a.name} - ${g}: ${role || 'not assigned'}`, title: `${a.name} / ${g}: ${role || 'not assigned'} (click to change)`,
@@ -468,7 +469,7 @@ async function wauSwitch() {
   const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install & detection): ${r.carried.join('; ')}.` : '') +
     ((r.dropped || []).length ? ` Left out options winget's own command can't take - check these install as you want: ${r.dropped.join('; ')}.` : '');
   const ids = ((r.tookId || []).length ? ` Winget ID taken from the WAU command (none was set): ${r.tookId.join('; ')}.` : '') +
-    ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (Basics), then Switch them again.` : '');
+    ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (App), then Switch them again.` : '');
   // Nothing changed: nothing to undo.
   if (!r.changed.length) { toast(msg + ids, (r.byHand || []).length + (r.mismatch || []).length > 0); loadHome(); return; }
   if (r.deployed.length) {

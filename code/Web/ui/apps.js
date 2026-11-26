@@ -231,6 +231,7 @@ function fillEditor(a) {
   $('gRequired').value = (a.requiredFor || []).join('\n'); $('gAvailable').value = (a.availableFor || []).join('\n');
   $('gUninstall').value = (a.uninstallFor || []).join('\n'); $('gExclude').value = (a.excludeFor || []).join('\n');
   $('aFilter').value = a.assignmentFilter || ''; $('aFilterMode').value = a.assignmentFilterMode === 'exclude' ? 'exclude' : 'include'; $('filterNote').textContent = '';
+  $('aFilterFold').open = !!a.assignmentFilter; if (typeof filterSummary === 'function') filterSummary();
   for (const [k, id] of Object.entries(metaIds)) $(id).value = (a.metadata && a.metadata[k]) || '';
   $('metaNote').textContent = a.hasMetadata ? '' : '(not set yet - the defaults are used when it is deployed)';
   fillDeploy(a.deploy);
@@ -297,7 +298,8 @@ function showSrc() {
   // Microsoft 365: its settings instead of managed updates, a release rule and a package - Microsoft updates it on its channel.
   $('aOfficeBox').hidden = !office;
   // A Store app neither (2.38.23) - the Store updates it.
-  $('aManaged').parentElement.hidden = office || editorSrc === 'store';
+  // A Winget app (2.38.67): "Install with" below says it (managed updates is one of its choices) - not a tick box too.
+  $('aManaged').parentElement.hidden = office || editorSrc === 'store' || editorSrc === 'winget';
   if (office || editorSrc === 'store') $('aManaged').checked = false;
   // Microsoft's app: its publisher, when nothing is set yet.
   if (office && !$('mPublisher').value.trim()) { $('mPublisher').value = 'Microsoft'; if (!$('mDeveloper').value.trim()) $('mDeveloper').value = 'Microsoft'; }
@@ -358,7 +360,8 @@ function showPkgInfo() {
   // Not for Microsoft's own apps (nothing to package) - and only for an app with a name already saved.
   box.hidden = !!$('aWinget').value.trim() || !editingName || !!(row && row.msHint) || editorSrc === 'office';
   if (box.hidden) return;
-  const script = /\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value);
+  // A script app runs powershell.exe -File <script>.ps1 - the .exe in it is PowerShell, not an installer (2.38.67).
+  const script = /-File\s+\S*\.ps1\b/i.test($('mInstallCommand').value) || (/\.ps1\b/i.test($('mInstallCommand').value) && !/\.(msi|exe)\b/i.test($('mInstallCommand').value));
   // Managed and in Intune: a new installer is taken (2.38.42 - Release new version then sends it, pilot first) - only
   // not while a version is in pilot, which uses the folder.
   const managedLocked = !!(row && row.managed && row.appId && row.pilotVersion && i && i.found);
@@ -486,7 +489,7 @@ function pkgUploadReview(f, have) {
 const methodBody = extra => ({ wingetId: $('aWinget').value.trim(), context: $('xContext').value, version: $('mAppVersion').value.trim(), install: $('mInstallCommand').value, uninstall: $('mUninstallCommand').value, ...extra });
 function methodText(m, pinned) {
   const v = $('mAppVersion').value.trim(), w = editorWingetOffers, now = w ? ` Winget has ${w} now (last check).` : '';
-  if (m === 'Managed') return !v ? "Installs the App version with winget - but there's no App version yet: set one (Pin newest in the side panel) before deploying."
+  if (m === 'Managed') return !v ? "Installs the App version with winget - but there's no App version yet: set the App version below before sending it."
     : `Installs exactly ${pinned || v} (the App version), with winget. Newer versions reach devices only when you release them: pilot groups first, then everyone.` + (w && w !== v ? ` Winget has ${w} now - release it on Updates.` : '');
   if (m === 'WAU') return "Still installs through Winget-AutoUpdate, which this catalog no longer uses. Choose Managed updates (or the winget command) - Home switches all such apps at once.";
   if (m === 'Winget') return 'Installs whatever version winget has at that moment - nothing is pinned. Nothing updates it afterwards.' + now;
@@ -500,10 +503,14 @@ async function refreshMethod() {
   if (row.hidden) return;
   const seq = ++methodSeq, r = await api('/api/winget-commands', methodBody());
   if (seq !== methodSeq || !r.ok) return;
-  let m = r.current || 'Custom';
+  // No commands yet (a Winget app not sent yet - they are made when it is sent): the method it will get, not "edited by hand" (2.38.67).
+  let m = r.current || ($('mInstallCommand').value.trim() ? 'Custom' : 'Winget');
   // Managed ticked: Save pins the commands to the App version, whatever they are now.
   if ($('aManaged').checked) m = 'Managed'; else if (m === 'Managed') m = 'Custom';
-  $('aMethod').value = m; $('aMethodInfo').textContent = methodText(m, r.pinned);
+  $('aMethod').value = m;
+  // What the hidden managed-updates line said (a version in pilot, superseded ones) - under the choice now (2.38.67).
+  const rel = $('aManagedNote').textContent.replace(/^- /, '').replace(/ - /g, '; ');
+  $('aMethodInfo').textContent = methodText(m, r.pinned) + (m === 'Managed' && rel ? ` Now: ${rel}.` : '');
   if (r.current === 'Managed' || r.current === 'Winget') genFor = { id, method: r.current };
 }
 // The Winget ID the commands were generated for (and how): a new ID writes them again for it - unless they were
@@ -603,7 +610,7 @@ $('btnIconIntune').addEventListener('click', async () => {
 $('btnIconRemove').addEventListener('click', () => setEditorIcon(null, 'remove'));
 // Choose image... and one menu for the rest (from Intune, find one, remove) - a real menu: what can't be done yet
 // says why right in it (a drop-down hid that in a tooltip, so picking it seemed to do nothing).
-foldIntoMenu(['btnIconIntune', 'btnIconFind', 'btnIconRemove'], { id: 'aIconMore', title: 'Take the icon from Intune, find one, or remove it' });
+foldIntoMenu(['btnIconIntune', 'btnIconFind', 'btnIconRemove'], { id: 'aIconMore', text: 'Icon \u25BE', title: 'Take the icon from Intune, find one, or remove it' });
 
 // ---------------------------------------------------------------- supersedence (editor, Deploy settings)
 let editorIntuneApps = [];
@@ -674,6 +681,7 @@ async function openEditor(name) {
   }
   $('btnRemoveApp').hidden = !name;
   $('btnAppHistory').hidden = !name;
+  $('btnAppMore').hidden = !name;
   $('dlgApp').showModal();
   if (typeof fillBtnSync === 'function') fillBtnSync();
   editorSnapshot = editorState();
@@ -716,7 +724,7 @@ $('appForm').addEventListener('submit', async e => {
   if (!r.ok) {
     const p = $('appError'); p.textContent = r.error; p.hidden = false;
     // What it is about may be folded away: the release rule (the download address), or a part of Install & detection.
-    if (/download address/i.test(r.error)) $('aRuleBox').classList.remove('folded');
+    if (/download address/i.test(r.error)) { $('aRuleBox').classList.remove('folded'); edPageFor($('arUrl')); $('arUrl').focus(); }
     else if (window.edRevealFor) edRevealFor(r.error);
     return;
   }
@@ -789,8 +797,10 @@ async function compareVersion(name, b) {
   $('histCompare').hidden = false;
   $('histCompare').scrollIntoView({ block: 'nearest' });
 }
+// Back to the editor's More after History (2.38.67) - the menu item that opened it is hidden again, focus was lost.
+$('dlgHistory').addEventListener('close', () => { if ($('dlgApp').open && !$('btnAppMore').hidden) $('btnAppMore').focus(); });
 $('btnRemoveApp').addEventListener('click', async () => {
-  if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder${(apps.find(a => a.name === editingName) || {}).wingetId ? '' : ', and so does its packages folder'}.`))) return;
+  if (!(await ask(`Remove "${editingName}" from the catalog?\n\nOnly the catalog changes - nothing in Intune. A copy of its file goes to the Backups folder${(apps.find(a => a.name === editingName) || {}).wingetId ? '' : ', and so does its packages folder'}.`))) { $('btnAppMore').focus(); return; }
   const r = await api('/api/app-remove', { name: editingName });
   if (!r.ok) { toast(r.error, true); return; }
   $('dlgApp').close(); selected.delete(editingName); await loadApps();
@@ -948,6 +958,8 @@ function foldIntoMenu(ids, opts = {}) {
     // An item that can't be used right now says why under its name (its button's title - setEnabled puts the reason there).
     menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } },
       el('span', { text: b.textContent.trim() }), b.disabled && b.title ? el('small', { class: 'why', text: b.title }) : '')));
+    // In the dialog it belongs to (2.38.67): a modal dialog covers the page, and a menu left there could not be clicked.
+    const host = more.closest('dialog') || document.body; if (menu.parentElement !== host) host.append(menu);
     const r = more.getBoundingClientRect(); placeMenu(menu, r.right, r.bottom + 4, true); more.setAttribute('aria-expanded', 'true');
   });
   menu.addEventListener('keydown', e => {
@@ -1397,13 +1409,15 @@ function openGroupsBatch(mode, names) {
   gbMode = mode; gbNames = names;
   const sel = names.map(n => apps.find(a => a.name === n)).filter(Boolean);
   $('gbTitle').textContent = mode === 'add' ? 'Add groups' : 'Remove groups';
-  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.length > 5 ? nWord(names.length, 'app') : names.join(', ')} - in the catalog. Send groups sends them to Intune.`;
+  $('gbText').textContent = (mode === 'add' ? 'Adds these groups to ' : 'Removes these groups from ') + `${names.length > 5 ? nWord(names.length, 'app') : names.join(', ')} - in the catalog. Send groups sends them to Intune.`
+    // Said once (2.38.67), not under each of the four roles.
+    + (mode === 'add' && !((prefs && prefs.favoriteGroups) || []).length ? ' Type a group name in a role - favourite groups (Settings) show here as ticks.' : '');
   const roles = [['requiredFor', 'Required'], ['availableFor', 'Available'], ['uninstallFor', 'Uninstall'], ['excludeFor', 'Excluded']];
   const favs = (prefs && prefs.favoriteGroups) || [];
   $('gbRoles').replaceChildren(...roles.map(([field, label]) => {
     const choices = mode === 'add' ? favs : [...new Set(sel.flatMap(a => a[field] || []))].sort();
     return el('fieldset', { class: 'gbrole' }, el('legend', { text: label }),
-      ...(choices.length ? choices.map(g => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-gbr': field, value: g }), g)) : [el('span', { class: 'muted', text: mode === 'add' ? 'No favourites yet.' : 'None of these apps has one.' })]),
+      ...(choices.length ? choices.map(g => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-gbr': field, value: g }), g)) : mode === 'add' ? [] : [el('span', { class: 'muted', text: 'None of these apps has one.' })]),
       mode === 'add' ? el('input', { id: 'gbx' + field, 'data-gbx': field, 'aria-label': { requiredFor: 'Required for', availableFor: 'Available for', uninstallFor: 'Uninstall for', excludeFor: 'Excluded' }[field], spellcheck: 'false' }) : null);
   }));
   // Other groups as chips, with the group picker's suggestions - favourites, the catalog's and Entra ID's groups (2.38.56):
@@ -1490,7 +1504,7 @@ function openMenu(x, y, right = false) {
   const firstShown = [...menu.children].find(n => !n.hidden); if (firstShown && firstShown.tagName === 'HR') firstShown.hidden = true;
   menu.querySelector('[data-act=package]').textContent = !any ? 'Package every app with its own installer' : enable.package ? `Package ${sel.length > 1 ? 'the selected apps' : 'this app'} (build .intunewin)` : 'Package (Winget apps use the shared package)';
   const allManaged = sel.length && sel.every(a => a.managed);
-  menu.querySelector('[data-act=managed]').textContent = allManaged ? 'Managed updates off...' : 'Managed updates on...';
+  menu.querySelector('[data-act=managed]').textContent = allManaged ? 'Turn off managed updates...' : 'Turn on managed updates...';
   menu.querySelector('[data-act=managed]').dataset.on = allManaged ? '0' : '1';
   const ids = sel.filter(a => a.hasAppId).length;
   menu.querySelector('[data-act=copyid]').textContent = ids > 1 ? `Copy ${ids} App IDs` : 'Copy App ID';
@@ -1678,11 +1692,12 @@ function openPull(names) {
           td.querySelector('input').addEventListener('change', () => pullPick(tr, side));
           return td;
         };
-        const tr = el('tr', { 'data-field': d.field }, el('td', { class: 'f', text: d.field }), cell('catalog', d.local), cell('intune', d.intune));
+        // The field as the editor names it (2.38.67: the raw key - "installTimeMinutes" - was shown).
+        const tr = el('tr', { 'data-field': d.field }, el('td', { class: 'f', text: fieldNames[d.field] || histField(d.field.includes('.') ? d.field : 'metadata.' + d.field).replace(/^metadata\./, '') }), cell('catalog', d.local), cell('intune', d.intune));
         pullPick(tr, 'intune');
         return tr;
       });
-      const all = side => el('button', { type: 'button', class: 'btn small', text: side === 'intune' ? 'All from Intune' : 'Keep all', onclick: () => rows.forEach(tr => pullPick(tr, side)) });
+      const all = side => el('button', { type: 'button', class: 'btn small', text: side === 'intune' ? 'Take all from Intune' : 'Keep catalog values', onclick: () => rows.forEach(tr => pullPick(tr, side)) });
       return el('div', { class: 'pullapp', 'data-app': r.app },
         el('div', { class: 'pullhead' }, el('h3', { text: r.app }), rows.length > 1 ? el('span', { class: 'pullall' }, all('catalog'), all('intune')) : ''),
         el('table', {}, el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: 'Catalog' }), el('th', { text: 'Intune' }))), el('tbody', {}, ...rows)));
@@ -1845,9 +1860,10 @@ function versionCell(a) {
   // An own package watching a winget package (2.36.0): an arrow when winget has a newer one - Get new installer fetches it.
   const watched = !a.wingetId && a.watchWinget && a.newerOnWinget && !pilot ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget (${a.watchWinget}) has ${a.wingetVersion} - More > Get new installer puts it in its folder, then release it.` }) : '';
   if (!a.wingetId) return a.version ? [el('span', { class: 'vpin', title: `Its package installs ${a.version} - a new installer goes out with Release new version (managed) or Package + Send.` }, a.version), pilot, watched]
-    : [el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (Basics); Details > App version sets it.' })];
+    : [el('span', { class: 'muted', text: 'not set', title: 'No App version yet. The editor shows the installer version in its package folder (App); Updates > App version sets it.' })];
   if (a.managed) {
-    if (!a.version) return [el('span', { class: 'vwarn', text: 'not pinned yet', title: a.hasAppId ? 'Managed updates, but no App version yet: Set version (winget\'s current one) - until then it installs the newest.' : "Managed updates need the version to pin before it can be sent to Intune: Set version (winget's current one)." })];
+    // Orange only when it matters (2.38.67): an app in Intune without its version - a new one says so in its Stage already.
+    if (!a.version) return [el('span', { class: a.hasAppId ? 'vwarn' : 'muted', text: 'not pinned yet', title: a.hasAppId ? 'Managed updates, but no App version yet: Set version (winget\'s current one) - until then it installs the newest.' : "Managed updates need the version to pin before it can be sent to Intune: Set version (winget's current one)." })];
     const lock = el('span', { class: 'vlock' }); lock.innerHTML = lockSvg;
     return [el('span', { class: 'vpin', title: `Pinned: devices install exactly ${a.version}. A new version reaches them only when it's released (pilot first).` }, lock, a.version), pilot,
       !pilot && a.newerOnWinget ? el('span', { class: 'pill info newer', text: '→ ' + a.wingetVersion, title: `winget offers ${a.wingetVersion} - ${a.hasAppId ? 'Release new version sends it to the pilot groups first' : "Take winget's version pins it instead"}.` }) : ''];
