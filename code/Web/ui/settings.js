@@ -378,13 +378,16 @@ function setPkgState(p) {
   $('pkgTool').className = 'certstatus ' + (builtIn || p.toolFound ? 'ok' : 'warn');
   if (p.packager) $('pkgPackager').value = p.packager;
   // Built by itself when it's missing (start, before a send, the nightly run) - the card only says it's there, and since when.
-  $('pkgShared').textContent = p.sharedFound ? `Shared Winget package (init.intunewin): ready - built ${p.sharedBuilt ? fmtWhen(p.sharedBuilt) : ''}. Every Winget app deploys with it; the app builds it again by itself if it goes missing.`
-    : 'Shared Winget package (init.intunewin): not there yet - the app builds it by itself before the first Winget app is sent (or Build it now).';
+  $('pkgShared').textContent = p.sharedFound ? `init.intunewin is ready - built ${p.sharedBuilt ? fmtWhen(p.sharedBuilt) : ''}. Every Winget app deploys with it; the app builds it again by itself if it goes missing.`
+    : 'init.intunewin isn\'t there yet - the app builds it by itself before the first Winget app is sent (or Build it now).';
   $('pkgShared').className = 'certstatus ' + (p.sharedFound ? 'ok' : 'warn');
   // Packages folders no app uses (2.38.47): named, with one button that moves them to Backups.
   const orph = p.orphans || [];
-  $('pkgOrphans').hidden = !orph.length; $('btnCleanOrphans').hidden = !orph.length;
-  if (orph.length) { $('pkgOrphans').textContent = `${nWord(orph.length, 'packages folder')} no app in the catalog uses: ${orph.slice(0, 6).map(o => o.name).join(', ')}${orph.length > 6 ? ', ...' : ''} (${fmtMB(orph.reduce((t, o) => t + (o.size || 0), 0))}).`; $('pkgOrphans').className = 'certstatus warn'; }
+  // Said either way (2.38.60): the part is there whether or not there is something to clean up.
+  $('pkgOrphanActions').hidden = !orph.length;
+  $('pkgOrphans').textContent = orph.length ? `${nWord(orph.length, 'folder')} no app in the catalog uses: ${orph.slice(0, 6).map(o => o.name).join(', ')}${orph.length > 6 ? ', ...' : ''} (${fmtMB(orph.reduce((t, o) => t + (o.size || 0), 0))}).`
+    : 'Every folder belongs to an app in the catalog.';
+  $('pkgOrphans').className = 'certstatus ' + (orph.length ? 'warn' : 'ok');
   if ($('btnBuildShared')) { $('btnBuildShared').textContent = p.sharedFound ? 'Rebuild init.intunewin' : 'Build init.intunewin'; $('btnBuildShared').title = p.sharedFound ? 'Build it again - only needed if the file was damaged; its content never changes' : 'Build it now'; }
 }
 $('btnCleanOrphans').addEventListener('click', async () => {

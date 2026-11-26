@@ -617,12 +617,19 @@
               <option value="builtin">Built in (no download)</option>
               <option value="tool">IntuneWinAppUtil.exe (Microsoft's tool)</option>
             </select></div>
+          <div class="actions desktoponly">
+            <button class="btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>
+          </div>
+          <!-- 2.38.60: the shared package and the packages folders each in a part of their own, with their own button. -->
+          <h3>Shared Winget package</h3>
           <p class="certstatus" id="pkgShared"></p>
-          <p class="certstatus" id="pkgOrphans" hidden></p>
           <div class="actions">
-            <button class="btn" id="btnCleanOrphans" hidden title="Move the packages folders no app in the catalog uses to the Backups folder - deleted from there after 30 days">Clean up folders</button>
-            <button class="desktoponly btn" id="btnGetTool" title="Download IntuneWinAppUtil.exe from Microsoft (its signature is checked)">Download packaging tool</button>
             <button class="btn" id="btnBuildShared" title="Build the shared package every Winget app deploys with">Build init.intunewin</button>
+          </div>
+          <h3>Packages folders</h3>
+          <p class="certstatus" id="pkgOrphans"></p>
+          <div class="actions" id="pkgOrphanActions" hidden>
+            <button class="btn" id="btnCleanOrphans" title="Move the packages folders no app in the catalog uses to the Backups folder - deleted from there after 30 days">Clean up folders</button>
           </div>
         </article>
       </div>

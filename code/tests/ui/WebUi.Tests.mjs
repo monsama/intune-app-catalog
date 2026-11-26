@@ -425,6 +425,13 @@ try {
           await page.waitForFunction(() => /No run yet|run is going|plan only/i.test(document.getElementById('runList').textContent));
           check(await page.isVisible('#btnRunPlan') && await page.isVisible('#alLevel'), `${label}: Settings > Nightly run & alerts has the nightly run and the alerts`);
         }
+        if (sec === 'packaging') {
+          // 2.38.60: the shared package and the packages folders each a part of their own, each said either way.
+          await page.waitForFunction(() => document.getElementById('pkgOrphans').textContent.trim() !== '', null, { timeout: 8000 }).catch(() => {});
+          const pk = await page.evaluate(() => ({ heads: [...document.querySelectorAll('#sec-packaging h3')].map(h => h.textContent), orph: document.getElementById('pkgOrphans').textContent, shared: document.getElementById('pkgShared').textContent }));
+          check(pk.heads.join('|') === 'Shared Winget package|Packages folders' && pk.orph && pk.shared.includes('init.intunewin'), `${label}: Settings > Packaging - the shared package and the packages folders in parts of their own`, JSON.stringify(pk));
+          await shot('settings-packaging');
+        }
         check(await page.isVisible(`#sec-${sec}`) && !(await page.isVisible('#sec-connection')), `${label}: Settings > ${sec} shows only its own cards`);
         await noOverflow(`Settings ${sec}`); await unnamed(`Settings ${sec}`); await a11y(`Settings ${sec}`);
       }
