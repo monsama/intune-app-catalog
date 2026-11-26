@@ -3425,6 +3425,8 @@ $meta = [pscustomobject]@{ installCommand = 'setup.exe /S'; uninstallCommand = '
     detectionRule = [pscustomobject]@{ Type = 'Msi'; Msi_ProductCode = '{AAAAAAAA-0000-0000-0000-000000000001}'; Msi_Version = '4.2.1'; Msi_VersionOperator = 'greaterThanOrEqual' } }
 $fine = @(Get-PackageConsistencyWarnings -Metadata $meta -Files @('setup.exe', 'Uninstall.ps1') -Installer @{ version = '4.2.1'; productCode = '{aaaaaaaa-0000-0000-0000-000000000001}'; name = 'Contoso' })
 Assert-True ($fine.Count -eq 0) "Package check: commands, product code and versions that fit say nothing ($($fine -join ' | '))"
+$caseDup = @(Get-PackageConsistencyWarnings -Metadata $meta -Files @('setup.exe', 'Uninstall.ps1', 'uninstall.ps1') -Installer @{ version = '4.2.1'; productCode = '{aaaaaaaa-0000-0000-0000-000000000001}'; name = 'Contoso' })
+Assert-True ($caseDup.Count -eq 1 -and $caseDup[0] -like '*Uninstall.ps1 and uninstall.ps1 differ only in capitals*') "Package check (2.38.64): two files that differ only in capitals are named ($($caseDup -join ' | '))"
 $bad = @(Get-PackageConsistencyWarnings -Metadata $meta -Files @('setup-old.exe') -Installer @{ version = '4.1.0'; productCode = '{BBBBBBBB-0000-0000-0000-000000000002}'; name = '' } -SetupFile 'gone.exe')
 Assert-True (@($bad | Where-Object { $_ -match 'install command runs setup\.exe' }).Count -eq 1 -and @($bad | Where-Object { $_ -match 'uninstall command runs Uninstall\.ps1' }).Count -eq 1) "Package check: a command naming a file the package doesn't have"
 Assert-True (@($bad | Where-Object { $_ -match 'gone\.exe' }).Count -eq 1 -and @($bad | Where-Object { $_ -match 'product code' }).Count -eq 1) "Package check: the setup file gone; detection on another product code"

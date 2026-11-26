@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.64
+
+- **Files that differ only in capitals in a packages folder are named**: on the server (Linux) "Uninstall.ps1" and
+  "uninstall.ps1" are two files; on a PC they are one, and which one the device gets is chance. The check before
+  sending (and the editor's package warnings) now say so - delete the one you don't use.
+
 ## 2.38.63
 
 - **Remove preinstalled vendor apps - Lenovo: McAfee's survey no longer comes up.** McAfee's suite (LiveSafe, Total

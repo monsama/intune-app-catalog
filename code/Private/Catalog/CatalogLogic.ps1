@@ -2523,6 +2523,11 @@ function Global:Get-PackageConsistencyWarnings {
     if (-not $Metadata) { return @() }
     $have = @{}; foreach ($f in @($Files)) { if ($f) { $p = ([string]$f -replace '/', '\').ToLowerInvariant(); $have[$p] = $true; $have[($p -split '\\')[-1]] = $true } }
     $hasFiles = $have.Count -gt 0
+    # Files whose names differ only in capitals (2.38.64): two files on the server (Linux), one on a PC - which one the
+    # device gets is chance ("Uninstall.ps1" beside "uninstall.ps1").
+    foreach ($grp in @(@($Files | Where-Object { $_ } | ForEach-Object { [string]$_ -replace '/', '\' }) | Group-Object { $_.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) {
+        $w.Add("$((@($grp.Group) | Sort-Object) -join ' and ') differ only in capitals - on a PC they are one file, and which one it gets is chance. Delete the one you don't use.")
+    }
     if ($hasFiles) {
         foreach ($k in 'installCommand', 'uninstallCommand') {
             foreach ($f in @(Get-CommandPackageFiles ([string]$Metadata.$k))) {
