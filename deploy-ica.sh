@@ -16,7 +16,7 @@
 # Environment overrides (optional):
 #   ICA_HOST=apps.example.ch      name people type (required on first run; asked for otherwise)
 #   NOBS_DIR=/opt/nobs-inventory  where NOBS Inventory (and its proxy/) is
-#   ICA_IMAGE=ghcr.io/monsama/intune-app-catalog:2.38.64   a pinned image (default: the version in code)
+#   ICA_IMAGE=ghcr.io/monsama/intune-app-catalog:2.38.65   a pinned image (default: the version in code)
 #   BUILD_NETWORK=host            build with host networking (needed behind some proxies)
 # ============================================================
 set -Eeuo pipefail

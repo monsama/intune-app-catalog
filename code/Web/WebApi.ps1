@@ -10,7 +10,7 @@
   This file has the route table (Invoke-WebApi) and what every page
   shares: reading the catalog, the catalog lock, step jobs and their
   completion, the Activity log. The pages: WebEditor.ps1, WebDeploy.ps1,
-  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebConvenience.ps1, WebGroups.ps1,
+  WebSettings.ps1, WebChecks.ps1, WebBatch.ps1, WebBulk.ps1, WebLibrary.ps1, WebTenant.ps1, WebReleases.ps1, WebAutomation.ps1, WebAdd.ps1, WebConvenience.ps1, WebGroups.ps1,
   WebScripts.ps1, WebSetup.ps1; Graph reads go through WebGraph.ps1.
 #>
 
@@ -77,7 +77,7 @@ function Global:Get-WebCatalog {
                 # Only once a package was uploaded with its stamp (else every older app would say so); not managed updates
                 # (a new package goes through Release new version there).
                 # Managed updates (2.38.64): the same, for Replace package - a send doesn't upload it there.
-                packageReplace = [bool]($apps[$i].appId -and $apps[$i].managedUpdates -and $apps[$i].packageStamp -and $row.PackagePath -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $row.PackagePath) -Sent ([string]$apps[$i].packageStamp) -Record $pkgSources[(Get-SafeFileNameForApp -Name $apps[$i].appName)]))
+                packageReplace = [bool]($apps[$i].appId -and $apps[$i].managedUpdates -and $apps[$i].packageStamp -and -not (Get-WebAppRelease $apps[$i]) -and $row.PackagePath -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $row.PackagePath) -Sent ([string]$apps[$i].packageStamp) -Record $pkgSources[(Get-SafeFileNameForApp -Name $apps[$i].appName)]))
                 packageToSend = [bool]($apps[$i].appId -and -not $apps[$i].managedUpdates -and $apps[$i].packageStamp -and $row.PackagePath -and (Test-WebPackageIsNew -Stamp (Get-WebPackageStamp $row.PackagePath) -Sent ([string]$apps[$i].packageStamp) -Record $pkgSources[(Get-SafeFileNameForApp -Name $apps[$i].appName)]))
                 # The App version (what deploys and releases use) - Intune's own reported version apart.
                 version      = [string]$(if ($apps[$i].metadata) { $apps[$i].metadata.appVersion })
@@ -357,9 +357,11 @@ function Global:Resume-WebSavedJobs {
         if (-not $rec -or -not ([string]$rec.id -match '^[0-9a-f]{32}$') -or $Global:App.WebJobs.ContainsKey([string]$rec.id)) { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; continue }
         # The files it names only where steps write them (2.38.61): a record isn't trusted to point anywhere else -
         # its log is written to and its leftovers removed below.
-        $roots = @(@($env:TEMP, [System.IO.Path]::GetTempPath(), $Global:App.RootPath) | Where-Object { $_ } | ForEach-Object { [System.IO.Path]::GetFullPath([string]$_).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar })
+        # 2.38.66: not the whole app folder (a record could name the catalog) - only where steps write, and only their files.
+        $roots = @(@($env:TEMP, [System.IO.Path]::GetTempPath(), (Join-Path $env:TEMP 'IntuneAppCatalog-steps'), (Join-Path (Join-Path $Global:App.RootPath 'data') 'run')) | Where-Object { $_ } | ForEach-Object { [System.IO.Path]::GetFullPath([string]$_).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar })
         $named = @(@([string]$rec.log, [string]$rec.result) + @($rec.cleanup) | Where-Object { $_ } | ForEach-Object { [string]$_ })
-        $outside = @($named | Where-Object { $n = $_; try { $full = [System.IO.Path]::GetFullPath($n) } catch { $full = '' }; -not $full -or -not @($roots | Where-Object { $full.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) }).Count })
+        $outside = @($named | Where-Object { $n = $_; try { $full = [System.IO.Path]::GetFullPath($n) } catch { $full = '' }
+                -not $full -or ($full -split '[\\/]')[-1] -notmatch '^\.?intunepkg_' -or -not @($roots | Where-Object { $d = [System.IO.Path]::GetDirectoryName($full) + [System.IO.Path]::DirectorySeparatorChar; $d.Equals($_, [StringComparison]::OrdinalIgnoreCase) }).Count })
         if ($outside.Count) { Write-Log "[WARN] A step record names files outside the app's folders - not used: $($f.Name)"; Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue; continue }
         # Still owned by a running app (the nightly run, a second window): left to it.
         $ownerAlive = $false
@@ -950,6 +952,13 @@ function Global:Invoke-WebApi {
         '/api/app-compare'      { return (Get-WebAppVersionCompare $Data) }
         '/api/undo-last'        { return (Invoke-WithCatalogLock { Invoke-WebUndo }) }
         '/api/csv-export'       { return (Export-WebCatalogCsv) }
+        '/api/library-export'   { return (Start-WebLibraryExport $Data) }
+        '/api/library-export-status' { return (Get-WebLibraryExportStatus $Data) }
+        '/api/library-export-chunk' { return (Get-WebLibraryExportChunk $Data) }
+        '/api/library-export-done' { return (Remove-WebLibraryExport $Data) }
+        '/api/library-import-preview' { return (Get-WebLibraryImportPreview $Data) }
+        # The lock per app, inside (2.38.66) - not around the unpacking of every package.
+        '/api/library-import'   { return (Import-WebLibrary $Data) }
         '/api/csv-import'       { return $(if ($Data.preview) { Import-WebCatalogCsv $Data } else { Invoke-WithCatalogLock { Import-WebCatalogCsv $Data } }) }
         '/api/diagnostics'      { return (Get-WebDiagnostics) }
         '/api/about'            { return (Get-WebAbout $Data) }

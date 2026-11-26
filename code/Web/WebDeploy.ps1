@@ -286,6 +286,9 @@ function Global:Start-WebDeploy {
     if ($Data.replacePackage) {
         if (-not $a.appId) { return @{ ok = $false; error = "$name isn't in Intune yet - send it first." } }
         if (-not $stamp) { return @{ ok = $false; error = "$name has no built package to upload - build it first (More > Build package)." } }
+        # A version in pilot (2.38.66): the package built is that version's - under the current app it would reach everyone, unpiloted.
+        $pilot = Get-WebAppRelease $a
+        if ($pilot) { return @{ ok = $false; error = "Version $($pilot.version) of $name is in pilot - the package built here is that version's. Promote or withdraw it first." } }
         $upload = $true
     }
     $sameSource = $stamp -and $a.appId -and -not $a.managedUpdates -and -not $upload -and $stamp -ne [string]$a.packageStamp

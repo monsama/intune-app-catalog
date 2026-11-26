@@ -105,6 +105,209 @@ $('btnCsvGo').addEventListener('click', async () => {
   if (grp.length && await ask(`Send groups for the ${nWord(grp.length, 'deployed app')} whose groups changed?\n\n${grp.join('\n')}`, { ok: 'Send groups', danger: false })) { $('dlgCsv').close(); openPushGroups(grp); }
 });
 
+// ---------------------------------------------------------------- export and import of apps (2.38.65)
+// Export: the server writes the .zip in the background, the page fetches it in pieces of 4 MB - straight to a file
+// where the browser can (Chrome, Edge: the user picks where first), else collected and saved as a download.
+let lxNames = [], lxId = '', lxRun = 0;
+const lxFileName = names => {
+  const d = new Date().toISOString().slice(0, 10);
+  return names.length === 1 ? `${names[0].replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'app'}-${d}.zip` : `intune-app-catalog-library-${d}.zip`;
+};
+const fromB64 = t => { const s = atob(t), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; };
+function openLibExport(names) {
+  if (wcResume('dlgLibExport')) return;
+  const pool = names.length ? apps.filter(a => names.includes(a.name)) : apps;
+  if (!pool.length) { toast('The catalog is empty - nothing to export.', true); return; }
+  lxNames = pool.map(a => a.name);
+  if (!names.length) lxNames = [];
+  $('lxTitle').textContent = names.length ? `Export ${nWord(pool.length, 'app')}` : 'Export library';
+  const own = pool.filter(a => !a.wingetId && !(a.office && !a.wingetId)).length;
+  $('lxSummary').textContent = names.length && pool.length <= 5
+    ? `${pool.map(a => a.name).join(', ')}${own ? ` - ${own === pool.length ? 'with' : `${own} of them own packages, with`} the files in their packages folder` : ''}.`
+    : `${nWord(pool.length, 'app')}${own ? `, ${own} of them own packages - the files in their packages folders come along` : ''}.`;
+  $('lxProgress').hidden = true; $('lxBar').style.width = '0'; $('lxNote').textContent = ''; $('lxErr').hidden = true;
+  $('btnLxGo').textContent = 'Export'; $('btnLxGo').disabled = false; $('btnLxClose').textContent = 'Cancel'; $('btnLxClose').hidden = false;
+  $('dlgLibExport').showModal();
+}
+// An export is let go on the server once - and only the one this run started (2.38.66: a stopped run let go of the next one).
+const lxDone = id => { if (!id) return; api('/api/library-export-done', { exportId: id }); if (lxId === id) lxId = ''; };
+$('dlgLibExport').addEventListener('close', () => { lxRun++; lxDone(lxId); });
+$('btnLxGo').addEventListener('click', async () => {
+  if ($('btnLxGo').textContent === 'Done') { $('dlgLibExport').close(); return; }
+  const run = ++lxRun, fileName = lxFileName(lxNames);
+  let sink = null;
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await window.showSaveFilePicker({ suggestedName: fileName, types: [{ description: 'Intune App Catalog export', accept: { 'application/zip': ['.zip'] } }] });
+      sink = await h.createWritable();
+    } catch (e) { if (e && e.name === 'AbortError') return; sink = null; }
+  }
+  const say = (t, f) => { $('lxNote').textContent = t; if (f != null) $('lxBar').style.width = `${Math.round(100 * Math.min(1, f))}%`; };
+  let myId = '';
+  const fail = async msg => {
+    if (sink) { try { await sink.abort(); } catch (e) { /* nothing written to keep */ } }
+    lxDone(myId);
+    if (run !== lxRun) return;
+    $('lxErr').textContent = msg; $('lxErr').hidden = false; $('btnLxGo').disabled = false;
+  };
+  $('lxErr').hidden = true; $('btnLxGo').disabled = true; $('lxProgress').hidden = false; say('Starting...', 0);
+  const st = await api('/api/library-export', { names: lxNames });
+  if (!st.ok) return fail(st.error);
+  myId = lxId = st.exportId;
+  if (run !== lxRun) return fail('Stopped.');
+  // Without a file to write to, the browser holds the whole .zip in memory until it is saved - asked first when that is a lot.
+  if (!sink && st.bytes > 1024 * 1024 * 1024 && !(await ask(`The .zip will be about ${fmtMB(st.bytes)}. This browser keeps all of it in memory until it is saved, which can fail for a file this big.\n\nChrome or Edge write it straight to a file instead. Export here anyway?`, { ok: 'Export', danger: false }))) return fail('Stopped - export in Chrome or Edge, or select fewer apps (More > Export).');
+  let s;
+  for (;;) {
+    if (run !== lxRun) return fail('Stopped.');
+    s = await api('/api/library-export-status', { exportId: st.exportId });
+    if (!s.ok) return fail(s.error);
+    if (s.done) break;
+    say(s.total ? `Writing the .zip - ${Math.round(100 * s.written / s.total)} % of ${fmtMB(s.total)}` : 'Writing the .zip...', s.total ? 0.5 * s.written / s.total : 0);
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  const parts = [];
+  for (let off = 0; off < s.size;) {
+    if (run !== lxRun) return fail('Stopped.');
+    const c = await api('/api/library-export-chunk', { exportId: st.exportId, offset: off });
+    if (!c.ok) return fail(c.error);
+    const bin = fromB64(c.data);
+    if (!bin.length) return fail('The .zip ended early - export again.');
+    try { if (sink) await sink.write(bin); else parts.push(bin); } catch (e) { return fail(`The file couldn't be written: ${e.message}`); }
+    off += bin.length;
+    say(`Saving ${fileName} - ${Math.round(100 * off / s.size)} % of ${fmtMB(s.size)}`, 0.5 + 0.5 * off / s.size);
+  }
+  try {
+    if (sink) await sink.close();
+    else {
+      const url = URL.createObjectURL(new Blob(parts, { type: 'application/zip' }));
+      const a = el('a', { href: url, download: fileName });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  } catch (e) { return fail(`The file couldn't be saved: ${e.message}`); }
+  lxDone(myId);
+  say('', 1); $('lxProgress').hidden = true;
+  $('lxSummary').textContent = `${fileName} saved (${fmtMB(s.size)}): ${nWord(st.apps, 'app')}, ${nWord(st.files, 'package file')}.${(st.skipped || []).length ? ` Left out (links): ${st.skipped.length}.` : ''}`;
+  $('btnLxGo').textContent = 'Done'; $('btnLxGo').disabled = false; $('btnLxClose').hidden = true;
+  toast(`Exported ${nWord(st.apps, 'app')} to ${fileName}. On the other instance: Catalog > Import library.`);
+});
+
+// Import: the .zip is uploaded in pieces (as an installer is), then shown app by app before anything is added.
+let liUpload = '', liRows = [], liRun = 0, liBusy = false;
+function liReset() {
+  if (liUpload) api('/api/upload-cancel', { uploadId: liUpload });
+  liUpload = ''; liRows = [];
+  $('liPreview').hidden = true; $('liPreview').replaceChildren(); $('liModeRow').hidden = true; $('liProgress').hidden = true; $('liBar').style.width = '0';
+  $('liErr').hidden = true; $('liNote').textContent = '';
+  $('btnLiGo').disabled = true; $('btnLiGo').textContent = 'Import'; $('btnLiClose').textContent = 'Cancel'; $('btnLiClose').hidden = false;
+  document.querySelector('input[name=liMode][value=other]').checked = true;
+}
+function openLibImport() {
+  if (wcResume('dlgLibImport')) return;
+  liRun++; liReset(); $('liFile').value = '';
+  $('dlgLibImport').showModal();
+}
+// While the import runs the dialog stays (2.38.66): closing it deleted the .zip the server was still unpacking.
+$('dlgLibImport').addEventListener('cancel', e => { if (liBusy) { e.preventDefault(); toast('The import is still running - wait for it to finish.', true); } });
+$('dlgLibImport').addEventListener('close', () => { liRun++; if (liUpload && !liBusy) { api('/api/upload-cancel', { uploadId: liUpload }); liUpload = ''; } });
+const liChosen = () => [...$('liPreview').querySelectorAll('select[data-app]')].map(s => ({ name: s.dataset.app, action: s.value }));
+function liCount() {
+  const n = liChosen().filter(x => x.action !== 'skip').length;
+  $('btnLiGo').disabled = !n;
+  $('btnLiGo').textContent = n ? `Import ${nWord(n, 'app')}` : 'Import';
+}
+function liRender(pv) {
+  const kb = n => n ? `, ${fmtMB(n)}` : '';
+  const row = a => {
+    let pick;
+    if (a.state === 'blocked') pick = el('span', { class: 'muted', text: 'Not possible' });
+    else pick = el('select', { 'data-app': a.name, 'aria-label': `Import ${a.name}`, onchange: liCount },
+      ...(a.state === 'exists' ? [['skip', 'Skip'], ['replace', 'Replace']] : [['add', 'Add'], ['skip', 'Skip']]).map(([v, t]) => el('option', { value: v, text: t })));
+    // What it would do on devices, before it is added (2.38.66): its groups, its install command, the Intune app it updates.
+    const roles = [['Required', a.required], ['Available', a.available], ['Uninstall', a.uninstallFor]].filter(([, g]) => (g || []).length).map(([k, g]) => `${k}: ${g.join(', ')}`);
+    const facts = [roles.join(' · '), a.appId ? `App ID ${a.appId} (kept only for the same tenant)` : '', a.autoRelease ? 'automatic release (turned off on import)' : ''].filter(Boolean).join(' · ');
+    return el('tr', {},
+      el('td', { class: 'name' }, el('span', { text: a.name }), a.why ? el('span', { class: 'why', text: a.why }) : '',
+        facts ? el('span', { class: 'why', text: facts }) : '', a.install ? el('span', { class: 'why detail', text: a.install, title: 'Its install command' }) : ''),
+      el('td', { text: a.kind }),
+      el('td', { text: a.files ? `${nWord(a.files, 'file')}${kb(a.bytes)}` : '-' }),
+      el('td', { class: 'state', text: a.state === 'exists' ? 'In the catalog' : a.state === 'new' ? 'New' : '' }),
+      el('td', {}, pick));
+  };
+  $('liPreview').replaceChildren(el('div', { class: 'tablewrap short' }, el('table', { class: 'plan' },
+    el('thead', {}, el('tr', {}, ...['App', 'Kind', 'Package files', 'Here', 'Import'].map(t => el('th', { text: t })))),
+    el('tbody', {}, ...pv.apps.map(row)))));
+  $('liPreview').hidden = false;
+  $('liModeRow').hidden = !pv.apps.some(a => a.hasAppId);
+  const when = pv.exportedAt ? new Date(pv.exportedAt).toLocaleString() : '';
+  const ex = pv.apps.filter(a => a.state === 'exists').length, bl = pv.apps.filter(a => a.state === 'blocked').length;
+  $('liNote').textContent = `${nWord(pv.apps.length, 'app')} in the export${when ? ` of ${when}` : ''}${pv.appVersion ? ` (version ${pv.appVersion})` : ''}.`
+    + (ex ? ` ${ex} ${ex === 1 ? 'is' : 'are'} in this catalog already - Replace takes the export's settings and files${pv.apps.some(a => a.state === 'exists' && a.hasAppId) ? ', the link to Intune here stays' : ''}.` : '')
+    + (bl ? ` ${bl} can't be imported - see why under ${bl === 1 ? 'its' : 'their'} name.` : '');
+  liCount();
+}
+$('liFile').addEventListener('change', async () => {
+  const f = $('liFile').files[0], run = ++liRun;
+  liReset();
+  if (!f) return;
+  const err = t => { if (run !== liRun) return; $('liErr').textContent = t; $('liErr').hidden = false; $('liProgress').hidden = true; };
+  if (!/\.zip$/i.test(f.name)) return err('Choose the .zip that Export library or More > Export made.');
+  const say = (t, frac) => { if (run !== liRun) return; $('liProgressText').textContent = t; if (frac != null) $('liBar').style.width = `${Math.round(100 * frac)}%`; };
+  $('liProgress').hidden = false; say(`Uploading ${f.name}...`, 0);
+  const st = await api('/api/upload-start', { fileName: f.name, size: f.size, purpose: 'library' });
+  if (!st.ok) return err(st.error);
+  if (run !== liRun) { api('/api/upload-cancel', { uploadId: st.uploadId }); return; }
+  liUpload = st.uploadId;
+  for (let off = 0; off < f.size; off += PIECE) {
+    if (run !== liRun) return;
+    const r = await api('/api/upload-chunk', { uploadId: st.uploadId, offset: off, data: b64(await f.slice(off, off + PIECE).arrayBuffer()) });
+    if (!r.ok) return err(r.error);
+    say(`Uploading ${f.name} - ${Math.round(100 * r.received / f.size)} % of ${fmtMB(f.size)}`, r.received / f.size);
+  }
+  const fin = await api('/api/upload-finish', { uploadId: st.uploadId });
+  if (!fin.ok) return err(fin.error);
+  say(`Reading ${f.name}...`, 1);
+  const pv = await api('/api/library-import-preview', { uploadId: st.uploadId });
+  if (run !== liRun) return;
+  $('liProgress').hidden = true;
+  if (!pv.ok) return err(pv.error);
+  liRows = pv.apps;
+  if (!liRows.length) return err('The export holds no apps.');
+  liRender(pv);
+});
+$('btnLiGo').addEventListener('click', async () => {
+  if ($('btnLiGo').textContent === 'Done') { $('dlgLibImport').close(); return; }
+  const chosen = liChosen().filter(x => x.action !== 'skip');
+  if (!chosen.length || !liUpload) return;
+  const replace = chosen.filter(x => x.action === 'replace');
+  if (replace.length && !(await ask(`Replace ${nWord(replace.length, 'app')} in the catalog with the export's?\n\n${replace.map(x => x.name).join('\n')}\n\nTheir file and packages folder go to Backups first.`, { ok: 'Replace' }))) return;
+  const mode = document.querySelector('input[name=liMode]:checked').value, run = liRun;
+  $('btnLiGo').disabled = true; $('liErr').hidden = true;
+  $('liProgress').hidden = false; $('liProgressText').textContent = `Importing ${nWord(chosen.length, 'app')} - unpacking big packages takes a while...`; $('liBar').style.width = '100%';
+  liBusy = true; $('liFile').disabled = true; $('btnLiClose').disabled = true;
+  let r;
+  try { r = await api('/api/library-import', { uploadId: liUpload, mode, apps: chosen }); }
+  finally { liBusy = false; $('liFile').disabled = false; $('btnLiClose').disabled = false; }
+  if (run !== liRun) { loadApps(); return; }
+  $('liProgress').hidden = true;
+  if (!r.ok) { $('liErr').textContent = r.error; $('liErr').hidden = false; $('btnLiGo').disabled = false; return; }
+  const lines = [];
+  if (r.added.length) lines.push(`Added: ${r.added.join(', ')}.`);
+  if (r.replaced.length) lines.push(`Replaced: ${r.replaced.join(', ')}.`);
+  if (r.skipped.length) lines.push(`Not imported: ${r.skipped.map(x => `${x.name} (${x.why})`).join('; ')}`);
+  for (const w of r.warnings || []) lines.push(w);
+  const own = [...r.added, ...r.replaced].filter(n => { const x = liRows.find(a => a.name === n); return x && x.files; });
+  if (own.length) lines.push(`Build the package of ${own.length === 1 ? own[0] : `the ${own.length} apps with package files`} before you send ${own.length === 1 ? 'it' : 'them'} (More > Build package).`);
+  $('liNote').textContent = lines.join(' ');
+  if (r.skipped.length) { $('liErr').textContent = `${nWord(r.skipped.length, 'app')} not imported - see above.`; $('liErr').hidden = false; }
+  $('liPreview').hidden = true; $('liModeRow').hidden = true;
+  $('btnLiGo').textContent = 'Done'; $('btnLiGo').disabled = false; $('btnLiClose').hidden = true;
+  toast(`Imported ${nWord(r.added.length + r.replaced.length, 'app')} into the catalog. Send to Intune sends them.`, !!r.skipped.length);
+  await loadApps();
+  if (typeof groupsLoaded !== 'undefined' && groupsLoaded) loadGroups();
+});
+
 // ---------------------------------------------------------------- winget: newest versions
 async function checkWingetVersions() {
   const n = apps.filter(a => a.wingetId).length;

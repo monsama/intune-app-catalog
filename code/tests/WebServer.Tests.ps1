@@ -35,7 +35,7 @@ $jobDir = Join-Path ([System.IO.Path]::GetTempPath().TrimEnd('/', '\')) 'IntuneA
 [void](New-Item -ItemType Directory -Path $jobDir -Force)
 $staleId = [guid]::NewGuid().ToString('N')
 $staleRec = Join-Path $jobDir "$staleId.json"
-Set-Content -LiteralPath $staleRec -Value (@{ id = $staleId; mode = 'Create ZZ Stale Step'; step = 'createapp'; result = (Join-Path $jobDir "missing-$staleId.json"); log = ''; cleanup = @(); after = @{ Kind = 'deploy'; AppName = 'ZZ Stale Step' }; historyApps = @('ZZ Stale Step'); pid = 0; procStart = 0; owner = 0; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress) -Encoding UTF8
+Set-Content -LiteralPath $staleRec -Value (@{ id = $staleId; mode = 'Create ZZ Stale Step'; step = 'createapp'; result = (Join-Path ([System.IO.Path]::GetTempPath()) ".intunepkg_createapp_result_$staleId.json"); log = ''; cleanup = @(); after = @{ Kind = 'deploy'; AppName = 'ZZ Stale Step' }; historyApps = @('ZZ Stale Step'); pid = 0; procStart = 0; owner = 0; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress) -Encoding UTF8
 
 $startArgs = @{
     FilePath               = $hostExe
@@ -600,6 +600,74 @@ try {
     Check ($wOk.ok -and (Invoke-Api '/api/app-get' @{ name = $upName }).app.watchWinget -eq 'ZZVendor.Tool' -and $wRow.watchWinget -eq 'ZZVendor.Tool') 'watch winget: saved and in the Apps list' (@($wOk, $wRow) | ConvertTo-Json -Compress -Depth 3)
     Check (-not (Invoke-Api '/api/watch-fetch' @{ name = $upName }).ok -and -not (Invoke-Api '/api/watch-check' @{ name = 'No Such App' }).ok) 'watch winget: nothing downloaded in test mode; an unknown app is refused'
     [void](Invoke-Api '/api/app-remove' @{ name = $upName }); Remove-Item -LiteralPath $upDir -Recurse -Force -ErrorAction SilentlyContinue
+    # 2.38.65: export apps to a .zip and import them on another instance - settings, groups, package files (never the
+    # .intunewin); another tenant without App IDs, the same tenant with them; a damaged or foreign .zip refused.
+    $lxOwn = 'ZZ Export Own ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $lxWin = 'ZZ Export Winget ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $lxAdd = Invoke-Api '/api/add-installer' @{ uploadId = (& { $u = Invoke-Api '/api/upload-start' @{ fileName = 'zz-export-setup.exe'; size = $setup.Length }; [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $u.uploadId; offset = 0; data = [Convert]::ToBase64String($setup) }); [void](Invoke-Api '/api/upload-finish' @{ uploadId = $u.uploadId }); $u.uploadId }); name = $lxOwn; publisher = 'ZZ Vendor'; version = '2.0'; requiredFor = @('SG-ZZ-Export'); availableFor = @() }
+    $lxDir = [string]$lxAdd.folder
+    [System.IO.File]::WriteAllText((Join-Path $lxDir 'built.intunewin'), 'not exported')
+    [void](New-Item -ItemType Directory -Path (Join-Path $lxDir 'sub') -Force); [System.IO.File]::WriteAllText((Join-Path $lxDir 'sub\cfg.xml'.Replace('\', [IO.Path]::DirectorySeparatorChar)), '<cfg/>')
+    [void](Invoke-Api '/api/app-save' @{ originalName = ''; app = @{ appName = $lxWin; wingetId = 'ZZVendor.ExportTool'; appId = '3c3b9a52-1f0e-4f43-9d7c-0a2b9f1d6e11'; requiredFor = @('SG-ZZ-Export'); availableFor = @('SG-ZZ-Export-Av') } })
+    $lx = Invoke-Api '/api/library-export' @{ names = @($lxOwn, $lxWin) }
+    $lxSt = $null
+    for ($i = 0; $i -lt 60; $i++) { $lxSt = Invoke-Api '/api/library-export-status' @{ exportId = $lx.exportId }; if (-not $lxSt.ok -or $lxSt.done) { break }; Start-Sleep -Milliseconds 250 }
+    Check ($lx.ok -and $lx.apps -eq 2 -and $lx.files -eq 3 -and $lxSt.ok -and $lxSt.done -and $lxSt.size -gt 0) 'export: two apps and their package files (not the .intunewin) written to a .zip in the background' (@($lx, $lxSt) | ConvertTo-Json -Compress)
+    $lxZip = Join-Path ([IO.Path]::GetTempPath()) "zz-export-$([guid]::NewGuid().ToString('N')).zip"
+    $lxBytes = New-Object System.Collections.Generic.List[byte]
+    while ($lxBytes.Count -lt $lxSt.size) { $c = Invoke-Api '/api/library-export-chunk' @{ exportId = $lx.exportId; offset = $lxBytes.Count }; if (-not $c.ok) { break }; $lxBytes.AddRange([Convert]::FromBase64String($c.data)) }
+    [System.IO.File]::WriteAllBytes($lxZip, $lxBytes.ToArray())
+    [void](Invoke-Api '/api/library-export-done' @{ exportId = $lx.exportId })
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $lxz = [System.IO.Compression.ZipFile]::OpenRead($lxZip); $lxNames = @($lxz.Entries.FullName); $lxz.Dispose()
+    $lxLeaf = ($lxOwn -replace ' ', '-')
+    Check ($lxNames -contains 'ica-export.json' -and $lxNames -contains "packages/$lxLeaf/zz-export-setup.exe" -and $lxNames -contains "packages/$lxLeaf/sub/cfg.xml" -and -not @($lxNames | Where-Object { $_ -like '*.intunewin' }).Count -and @($lxNames | Where-Object { $_ -like 'apps/*.json' }).Count -eq 2) 'export: the .zip holds the manifest, both app files and the package files' ($lxNames -join ', ')
+    Check (-not (Invoke-Api '/api/library-export-status' @{ exportId = $lx.exportId }).ok) 'export: gone once fetched'
+    [void](Invoke-Api '/api/app-remove' @{ name = $lxOwn }); [void](Invoke-Api '/api/app-remove' @{ name = $lxWin })
+    $sendZip = {
+        param($path)
+        $b = [System.IO.File]::ReadAllBytes($path)
+        $u = Invoke-Api '/api/upload-start' @{ fileName = 'zz-library.zip'; size = $b.Length; purpose = 'library' }
+        [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $u.uploadId; offset = 0; data = [Convert]::ToBase64String($b) })
+        [void](Invoke-Api '/api/upload-finish' @{ uploadId = $u.uploadId })
+        $u.uploadId
+    }
+    $liId = & $sendZip $lxZip
+    $liPv = Invoke-Api '/api/library-import-preview' @{ uploadId = $liId }
+    $pvOwn = @($liPv.apps | Where-Object { $_.name -eq $lxOwn }) | Select-Object -First 1; $pvWin = @($liPv.apps | Where-Object { $_.name -eq $lxWin }) | Select-Object -First 1
+    Check ($liPv.ok -and $pvOwn.state -eq 'new' -and $pvOwn.files -eq 3 -and $pvOwn.kind -eq 'Own package' -and $pvWin.state -eq 'new' -and $pvWin.hasAppId -and ($liPv.exportedAt -is [datetime] -or $liPv.exportedAt -match '^\d{4}-\d{2}-\d{2}T')) 'import: the preview shows both apps as new, with their package files and App ID' ($liPv | ConvertTo-Json -Compress -Depth 4)
+    $li = Invoke-Api '/api/library-import' @{ uploadId = $liId; mode = 'other'; apps = @(@{ name = $lxOwn; action = 'add' }, @{ name = $lxWin; action = 'add' }) }
+    $liOwnApp = (Invoke-Api '/api/app-get' @{ name = $lxOwn }).app; $liWinApp = (Invoke-Api '/api/app-get' @{ name = $lxWin }).app
+    Check ($li.ok -and @($li.added).Count -eq 2 -and $liWinApp.appId -eq '' -and @($liWinApp.availableFor) -contains 'SG-ZZ-Export-Av' -and @($liOwnApp.requiredFor) -contains 'SG-ZZ-Export' -and $liOwnApp.metadata.installCommand -like '*zz-export-setup.exe*' -and
+        (Test-Path -LiteralPath (Join-Path $lxDir 'zz-export-setup.exe')) -and (Test-Path -LiteralPath (Join-Path (Join-Path $lxDir 'sub') 'cfg.xml')) -and -not (Test-Path -LiteralPath (Join-Path $lxDir 'built.intunewin'))) 'import (another tenant): apps added with groups and package files, without the App ID' ($li | ConvertTo-Json -Compress -Depth 4)
+    $liPv2 = Invoke-Api '/api/library-import-preview' @{ uploadId = $liId }
+    Check (@($liPv2.apps | Where-Object { $_.state -eq 'exists' }).Count -eq 2) 'import: apps in the catalog are shown as such'
+    $liSkip = Invoke-Api '/api/library-import' @{ uploadId = $liId; mode = 'same'; apps = @(@{ name = $lxWin; action = 'add' }) }
+    $liSame = Invoke-Api '/api/library-import' @{ uploadId = $liId; mode = 'same'; apps = @(@{ name = $lxWin; action = 'replace' }) }
+    Check ($liSkip.ok -and @($liSkip.skipped).Count -eq 1 -and $liSame.ok -and @($liSame.replaced) -contains $lxWin -and (Invoke-Api '/api/app-get' @{ name = $lxWin }).app.appId -eq '3c3b9a52-1f0e-4f43-9d7c-0a2b9f1d6e11') 'import: an app in the catalog is only replaced when asked; the same tenant keeps the App ID' (@($liSkip, $liSame) | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/upload-cancel' @{ uploadId = $liId })
+    # A .zip that isn't an export, and one with a package path out of its folder.
+    $badZip = Join-Path ([IO.Path]::GetTempPath()) "zz-bad-$([guid]::NewGuid().ToString('N')).zip"
+    $zw = [System.IO.Compression.ZipFile]::Open($badZip, 'Create')
+    try {
+        $w = { param($n, $t) $e = $zw.CreateEntry($n); $sw = New-Object System.IO.StreamWriter($e.Open()); $sw.Write($t); $sw.Dispose() }
+        & $w 'ica-export.json' '{"format":"intune-app-catalog-export","formatVersion":1,"apps":[{"name":"ZZ Evil","file":"apps/ZZ-Evil.json"},{"name":"x","file":"../../etc/passwd.json"}]}'
+        & $w 'apps/ZZ-Evil.json' '{"appName":"ZZ Evil","appId":"","requiredFor":[]}'
+        & $w 'packages/ZZ-Evil/../../escape.txt' 'nope'
+    }
+    finally { $zw.Dispose() }
+    $badId = & $sendZip $badZip
+    $badPv = Invoke-Api '/api/library-import-preview' @{ uploadId = $badId }
+    $badIm = Invoke-Api '/api/library-import' @{ uploadId = $badId; mode = 'other'; apps = @(@{ name = 'ZZ Evil'; action = 'add' }) }
+    Check ($badPv.ok -and @($badPv.apps).Count -eq 1 -and $badPv.apps[0].state -eq 'blocked' -and $badIm.ok -and -not @($badIm.added).Count -and @((Invoke-Api '/api/catalog').apps.name) -notcontains 'ZZ Evil') 'import: a package path out of its folder blocks the app; a file outside apps/ is never read' (@($badPv, $badIm) | ConvertTo-Json -Compress -Depth 4)
+    [void](Invoke-Api '/api/upload-cancel' @{ uploadId = $badId })
+    $plainZip = Join-Path ([IO.Path]::GetTempPath()) "zz-plain-$([guid]::NewGuid().ToString('N')).zip"
+    $zw = [System.IO.Compression.ZipFile]::Open($plainZip, 'Create'); try { $e = $zw.CreateEntry('setup.exe'); $sw = New-Object System.IO.StreamWriter($e.Open()); $sw.Write('MZ'); $sw.Dispose() } finally { $zw.Dispose() }
+    $plainPv = Invoke-Api '/api/library-import-preview' @{ uploadId = (& $sendZip $plainZip) }
+    Check (-not $plainPv.ok -and $plainPv.error -like '*ica-export.json*') 'import: a .zip that is no export is refused' ($plainPv | ConvertTo-Json -Compress)
+    Check (-not (Invoke-Api '/api/upload-start' @{ fileName = 'library.exe'; size = 10; purpose = 'library' }).ok) 'import: only a .zip is taken'
+    [void](Invoke-Api '/api/app-remove' @{ name = $lxOwn }); [void](Invoke-Api '/api/app-remove' @{ name = $lxWin })
+    Remove-Item -LiteralPath $lxZip, $badZip, $plainZip -Force -ErrorAction SilentlyContinue
     # 2.33.0: an installer for an app already in the catalog (one taken over from Intune comes without it): into its
     # packages folder, what is empty filled in, what it has kept; a second installer and a Winget app are refused.
     $sendUp = { param($file) $u = Invoke-Api '/api/upload-start' @{ fileName = $file; size = $setup.Length }; [void](Invoke-Api '/api/upload-chunk' @{ uploadId = $u.uploadId; offset = 0; data = [Convert]::ToBase64String($setup) }); [void](Invoke-Api '/api/upload-finish' @{ uploadId = $u.uploadId }); $u.uploadId }

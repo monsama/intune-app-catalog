@@ -948,7 +948,7 @@ function foldIntoMenu(ids, opts = {}) {
     // An item that can't be used right now says why under its name (its button's title - setEnabled puts the reason there).
     menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } },
       el('span', { text: b.textContent.trim() }), b.disabled && b.title ? el('small', { class: 'why', text: b.title }) : '')));
-    const r = more.getBoundingClientRect(); placeMenu(menu, r.right - 260, r.bottom + 4); more.setAttribute('aria-expanded', 'true');
+    const r = more.getBoundingClientRect(); placeMenu(menu, r.right, r.bottom + 4, true); more.setAttribute('aria-expanded', 'true');
   });
   menu.addEventListener('keydown', e => {
     if (e.key === 'Escape') { close(); more.focus(); return; }
@@ -986,9 +986,11 @@ function reloadIcon(id) {
   b.classList.add('iconbtn'); b.setAttribute('aria-label', 'Reload');
   b.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>';
 }
-function placeMenu(m, x, y) {
+// -right (2.38.66): x is the right edge the menu ends at (its button's) - lined up with it, whatever the menu's width.
+function placeMenu(m, x, y, right = false) {
   m.hidden = false;
   const r = m.getBoundingClientRect();
+  if (right) x -= r.width;
   m.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px';
   m.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
   const first = m.querySelector('button:not(:disabled)'); if (first) first.focus();
@@ -1016,14 +1018,14 @@ $('btnCatalog').addEventListener('click', async e => {
   setEnabled(catMenu.querySelector('[data-cact=overview]'), conn && apps.some(a => a.hasAppId), conn ? 'No app in the catalog is in Intune yet.' : 'Set up the connection in Settings first.');
   setEnabled(catMenu.querySelector('[data-cact=wingetcheck]'), apps.some(a => a.wingetId || a.watchWinget), 'No app in the catalog has a Winget ID or watches a winget package.');
   const r = $('btnCatalog').getBoundingClientRect();
-  placeMenu(catMenu, r.right - 240, r.bottom + 4);
+  placeMenu(catMenu, r.right, r.bottom + 4, true);
 });
 document.addEventListener('click', e => { if (!catMenu.contains(e.target)) catMenu.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.hidden) { catMenu.hidden = true; $('btnCatalog').focus(); } });
 catMenu.addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b || b.disabled) return;
   catMenu.hidden = true;
-  ({ export: exportCsv, import: openCsvImport, fillall: () => fillDetails([]), replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
+  ({ export: exportCsv, import: openCsvImport, libexport: () => openLibExport([]), libimport: openLibImport, fillall: () => fillDetails([]), replace: () => openReplace({}), undo: undoLast, recent: openRecent, tenantsetup: openTenantSetup, overview: openOverview, retired: openRetired, suggest: openSuggest, matrix: openMatrix, wingetcheck: checkWingetVersions,
     reload: () => { loadApps(); loadState(); }, folder: () => openFolder('catalog-folder') })[b.dataset.cact]();
 });
 // Apps whose App ID the connected tenant doesn't know: a banner says so, with one button for all of them.
@@ -1429,12 +1431,12 @@ $('btnGbGo').addEventListener('click', async () => {
 // ---------------------------------------------------------------- more menu (also on right-click)
 const menu = $('appMenu');
 function oneSelected() { return selected.size === 1 ? apps.find(a => a.name === [...selected][0]) : null; }
-function openMenu(x, y) {
+function openMenu(x, y, right = false) {
   menuOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, duplicate: !!one, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, export: any, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
@@ -1443,7 +1445,8 @@ function openMenu(x, y) {
     managed: any,
     rollback: !!(one && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && ((one.previousVersions || []).length > 1 || (one.rolledBackVersions || []).length)) };
   const why = {
-    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
+    replacepkg: !one ? 'Select exactly one app.' : !one.hasAppId ? 'This app isn\'t in Intune yet - Send to Intune uploads its package.' : (one.wingetId || one.office) ? 'Only for an app with its own package.' : 'Build its package first (Build package).',
+    edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', export: 'Select one or more apps first - Catalog > Export library exports all of them.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for an own package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
     deploy: 'Select one or more apps first.', batchedit: 'Select one or more apps first.', addgroups: 'Select one or more apps first.', removegroups: 'Select one or more apps first.',
@@ -1466,7 +1469,7 @@ function openMenu(x, y) {
     // Store and Microsoft 365 apps (2.38.23): Microsoft or the Store updates them - no managed updates or releases.
     const versioned = sel.some(a => !(a.wingetId && isStoreId(a.wingetId)) && !(a.office && !a.wingetId) && !(a.msHint && !a.wingetId));
     const never = {
-      package: !own, watchfetch: !own, takeversion: !winget, filldetails: !winget, managed: !versioned, release: !versioned,
+      package: !own, watchfetch: !own, replacepkg: !own, takeversion: !winget, filldetails: !winget, managed: !versioned, release: !versioned,
       promote: !sel.some(a => a.pilotVersion), withdraw: !sel.some(a => a.pilotVersion),
       rollback: !sel.some(a => (a.previousVersions || []).length), cleanup: !sel.some(a => (a.previousVersions || []).length > 1 || (a.rolledBackVersions || []).length),
       // Intune's own non-Win32 types (2.38.42): nothing to package or to send settings to; Microsoft 365 is one per catalog.
@@ -1494,12 +1497,13 @@ function openMenu(x, y) {
   menu.querySelector('[data-act=clearid]').textContent = ids > 1 ? `Clear ${ids} App IDs...` : 'Clear App ID...';
   menu.querySelector('[data-act=remove]').textContent = sel.length > 1 ? `Remove ${sel.length} apps from catalog...` : 'Remove from catalog...';
   catMenu.hidden = true;
-  placeMenu(menu, x, y);
+  placeMenu(menu, x, y, right);
 }
 // Escape gives focus back to what opened it (2.38.0) - the More button, the panel's More..., the row.
 let menuOpener = null;
 function closeMenu(back) { const was = !menu.hidden; menu.hidden = true; if (back && was && menuOpener && menuOpener.isConnected) menuOpener.focus(); }
-$('btnMore').addEventListener('click', e => { e.stopPropagation(); const r = $('btnMore').getBoundingClientRect(); openMenu(r.left, r.bottom + 4); });
+// Lined up with the More button: from its left edge - or, in the right half of the window, ending at its right edge (2.38.66).
+$('btnMore').addEventListener('click', e => { e.stopPropagation(); const r = $('btnMore').getBoundingClientRect(); const right = r.left > innerWidth / 2; openMenu(right ? r.right : r.left, r.bottom + 4, right); });
 $('gridBody').addEventListener('contextmenu', e => {
   const tr = e.target.closest('tr'); if (!tr) return;
   e.preventDefault();
@@ -1541,6 +1545,7 @@ async function menuAction(act) {
     case 'retire': openRetire(one.name); break;
     case 'edit': openEditor(one.name); break;
     case 'duplicate': duplicateApp(one.name); break;
+    case 'export': openLibExport(names); break;
     case 'watchfetch': fetchWatched(one.name); break;
     case 'pushgroups': openPushGroups(names); break;
     case 'replacegroup': openReplace({ names }); break;

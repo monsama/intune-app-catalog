@@ -133,6 +133,8 @@ function Global:Start-WebRelease {
     if (-not $again -or (Get-WebAppRelease $again) -or [string]$again.appId -ne [string]$a.appId) { Exit-WebAppBusy $a.appName; return @{ ok = $false; error = "$name changed while this release was prepared (a version is in pilot now, or it was sent again) - open Release again." } }
     $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "Release $name $version" -BusyApp $a.appName `
         -After @{ Kind = 'release'; AppName = $a.appName; Version = $version; FastTrack = [bool]$Data.fastTrack
+            # The package this release uploads (2.38.66) - once promoted it is the app's; Replace package compares with it.
+            PackageStamp = $(if ($own) { Get-WebPackageStamp $pkg.Path } else { '' })
             # What the server does next (2.38.42): the pilot groups - or, with none, everyone (promote and retire).
             Flow = $(if (@(Get-ReleaseRingGroups -Rings @(Get-WebReleaseRings) -Ring 0).Count) { 'pilot' } else { 'promote' })
             ProductCode = $(if ($own) { [string]$next.metadata.detectionRule.Msi_ProductCode } else { '' }) }
@@ -148,6 +150,7 @@ function Global:Complete-WebRelease {
     $version = [string]$After.Version
     $code = [string]$After.ProductCode
     $fast = [bool]$After.FastTrack
+    $stampNow = [string]$After.PackageStamp
     $have = (Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $After.AppName } | Select-Object -First 1
     $other = if ($have) { Get-WebAppRelease $have }
     if ($other -and [string]$other.appId -ne $newId) { return @{ ok = $false; error = "$($After.AppName) has another version in pilot ($($other.version)) - the new app $newId is in Intune but not recorded; delete it there." } }
@@ -156,6 +159,9 @@ function Global:Complete-WebRelease {
             $now = (Get-Date).ToString('yyyy-MM-dd HH:mm', [Globalization.CultureInfo]::InvariantCulture)
             $app.releases = @(@($app.releases) | Where-Object { $_.state -ne 'pilot' }) + @([pscustomobject]@{ version = $version; appId = $newId; state = 'pilot'; at = $now; productCode = $code; ring = 0; ringAt = $now; fastTrack = $fast; unassigned = $true })
             $app.blockedVersions = @(@($app.blockedVersions) | Where-Object { $_ -and [string]$_ -ne $version })
+            # The built package is now the pilot version's: not "newer than the one in Intune" - in pilot Replace package
+            # is refused, once promoted it is the one in Intune (2.38.66: the flag stayed on for good).
+            if ($stampNow) { $app.packageStamp = $stampNow }
         }.GetNewClosure())
     Write-Log "[OK] $($After.AppName) $version is in Intune as a pilot release (App ID $newId)."
     return @{ ok = $true; assignPilot = $true; appId = $newId }
