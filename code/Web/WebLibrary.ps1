@@ -20,12 +20,14 @@ function Global:Get-WebLibraryExports {
 }
 
 function Global:Get-WebLibraryPackageFolder {
-    # An app's packages folder (<Packages>\<its file name>) - '' when it has none, or it is (or goes through) a link.
+    # An app's packages folder (<Packages>\<its file name>, or that name with other capitals - 2.38.66) - '' when it has
+    # none with files, or it is (or goes through) a link.
     param([string]$Name)
-    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $Name)
-    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return '' }
-    if (Test-WebPathThroughLink $folder) { return '' }
-    return $folder
+    foreach ($folder in @(Get-WebLibraryAppFolders -Name $Name)) {
+        if (Test-WebPathThroughLink $folder) { continue }
+        if (@(Get-PackageFolderFiles $folder).Count) { return $folder }
+    }
+    return ''
 }
 
 function Global:Get-WebLibraryExportEntries {
@@ -60,18 +62,23 @@ function Global:Get-WebLibraryExportEntries {
 }
 
 function Global:Remove-WebStaleLibraryExports {
-    # Exports older than a day go (a page closed before it fetched the .zip never says it is done).
+    # Exports older than a day go (a page closed before it fetched the .zip never says it is done) - and folders of
+    # exports this server no longer knows (it was restarted).
     $ex = Get-WebLibraryExports
     foreach ($k in @($ex.Keys)) {
         $e = $ex[$k]
         if ($e.Started -lt (Get-Date).AddDays(-1)) { Remove-WebLibraryExportFiles $e; $ex.Remove($k) }
+    }
+    $known = @($ex.Values | ForEach-Object { Split-Path ([string]$_.Path) -Parent })
+    foreach ($d in @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'intunecat-export-*' -ErrorAction SilentlyContinue)) {
+        if ($known -notcontains $d.FullName -and $d.LastWriteTime -lt (Get-Date).AddHours(-6)) { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
 function Global:Remove-WebLibraryExportFiles {
     param($Export)
     try { if ($Export.PS) { $Export.PS.Dispose() } } catch { $null = $_ }
-    Remove-Item -LiteralPath ([string]$Export.Path), ([string]$Export.Path + '.part') -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Split-Path ([string]$Export.Path) -Parent) -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 function Global:Start-WebLibraryExport {
@@ -85,14 +92,18 @@ function Global:Start-WebLibraryExport {
     $pick = if ($names.Count) { @($all | Where-Object { $names -contains [string]$_.appName }) } else { $all }
     if (-not $pick.Count) { return @{ ok = $false; error = $(if ($names.Count) { 'None of these apps is in the catalog any more - Reload.' } else { 'The catalog is empty - nothing to export.' }) } }
     Remove-WebStaleLibraryExports
+    # One at a time (2.38.66): each copies whole packages folders into the temp folder.
+    $running = @((Get-WebLibraryExports).Values | Where-Object { -not $_.Status.Done })
+    if ($running.Count) { return @{ ok = $false; error = 'An export is being written already - wait for it to finish (or close its window).' } }
     $plan = Get-WebLibraryExportEntries $pick
     $manifest = [ordered]@{ format = 'intune-app-catalog-export'; formatVersion = 1; appVersion = [string]$Global:App.AppVersion
         exportedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'); apps = @($plan.Apps) }
     $plan.Entries.Insert(0, @{ Name = 'ica-export.json'; Text = ($manifest | ConvertTo-Json -Depth 6) })
     $id = [guid]::NewGuid().ToString('N')
-    $dir = Join-Path ([System.IO.Path]::GetTempPath()) 'intunecat-export'
-    if (-not (Test-Path -LiteralPath $dir)) { [void](New-Item -ItemType Directory -Path $dir -Force) }
-    $path = Join-Path $dir "$id.zip"
+    # A folder of its own, named by the export's random ID (2.38.66: one shared folder could be made beforehand by another user).
+    $dir = Join-Path ([System.IO.Path]::GetTempPath()) "intunecat-export-$id"
+    [void](New-Item -ItemType Directory -Path $dir -ErrorAction Stop)
+    $path = Join-Path $dir 'export.zip'
     $status = [hashtable]::Synchronized(@{ Done = $false; Error = ''; Written = [long]0; Total = [long]$plan.Bytes })
     $work = {
         param([string]$ZipPath, $Entries, $Status)
@@ -193,10 +204,16 @@ function Global:Read-WebLibraryZip {
     Add-Type -AssemblyName System.IO.Compression
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $readText = {
+        # Read up to -max characters, counted as they come - an entry's stated size can lie (2.38.66).
         param($entry, [long]$max)
         if ($entry.Length -gt $max) { throw "$($entry.FullName) is too large." }
         $sr = New-Object System.IO.StreamReader($entry.Open(), [System.Text.Encoding]::UTF8)
-        try { return $sr.ReadToEnd() } finally { $sr.Dispose() }
+        try {
+            $sb = New-Object System.Text.StringBuilder; $buf = New-Object char[] 65536
+            while (($n = $sr.Read($buf, 0, $buf.Length)) -gt 0) { [void]$sb.Append($buf, 0, $n); if ($sb.Length -gt $max) { throw "$($entry.FullName) is too large." } }
+            return $sb.ToString()
+        }
+        finally { $sr.Dispose() }
     }
     try { $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath) }
     catch { return @{ ok = $false; error = "This isn't a .zip that can be read: $($_.Exception.Message)" } }
@@ -275,7 +292,12 @@ function Global:Get-WebLibraryImportPreview {
         [ordered]@{ name = [string]$a.Name; state = $(if ($why) { 'blocked' } else { $state }); why = $why
             kind = $(if (-not $rec) { '' } elseif ($rec.office -and -not $rec.wingetId) { 'Microsoft 365 Apps' } elseif ($rec.wingetId) { 'Winget' } else { 'Own package' })
             files = [int]$a.Files; bytes = [long]$a.Bytes; hasAppId = [bool]($rec -and $rec.appId)
-            groups = $(if ($rec) { @(@($rec.requiredFor) + @($rec.availableFor) + @($rec.uninstallFor) + @($rec.excludeFor) | Where-Object { $_ } | Select-Object -Unique).Count } else { 0 }) }
+            groups = $(if ($rec) { @(@($rec.requiredFor) + @($rec.availableFor) + @($rec.uninstallFor) + @($rec.excludeFor) | Where-Object { $_ } | Select-Object -Unique).Count } else { 0 })
+            # What it would do on devices (2.38.66) - shown before it is added: its groups by role and its install command.
+            required = @(if ($rec) { @($rec.requiredFor) | Where-Object { $_ } }); available = @(if ($rec) { @($rec.availableFor) | Where-Object { $_ } })
+            uninstallFor = @(if ($rec) { @($rec.uninstallFor) | Where-Object { $_ } })
+            install = $(if ($rec -and $rec.metadata -and -not $rec.wingetId) { $c = [string]$rec.metadata.installCommand; if ($c.Length -gt 300) { $c.Substring(0, 300) + '...' } else { $c } } else { '' })
+            appId = $(if ($rec) { [string]$rec.appId } else { '' }); autoRelease = [bool]($rec -and $rec.autoRelease) }
     }
     return @{ ok = $true; apps = @($rows); exportedAt = $z.exportedAt; appVersion = $z.appVersion }
 }
@@ -301,11 +323,26 @@ function Global:Set-WebImportedRecord {
     return $r
 }
 
+function Global:Get-WebLibraryAppFolders {
+    <#
+      The folders in the packages folder that are an app's: spelled like its file name, or with other capitals ("apm-system2"
+      for "APM System2" - Resolve-AppPackagePath finds a package there, Linux keeps them apart). Exact spelling first; links
+      are left out.
+    #>
+    param([string]$Name, [string]$Root = (Get-AppFolder -Kind Packages))
+    $leaf = Get-SafeFileNameForApp -Name $Name
+    return @(Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ieq $leaf -and -not ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) } |
+        Sort-Object @{ Expression = { $_.Name -cne $leaf } } | ForEach-Object { $_.FullName })
+}
+
 function Global:Import-WebLibrary {
     <#
-      Adds the apps of the uploaded .zip (with the catalog lock held): -apps @(@{ name; action = add | replace | skip }),
-      -mode other | same. A replaced app's file and packages folder go to Backups first. @{ ok; added; replaced; skipped;
-      warnings }.
+      Adds the apps of the uploaded .zip: -apps @(@{ name; action = add | replace | skip }), -mode other | same. A replaced
+      app's file and packages folder go to Backups first. @{ ok; added; replaced; skipped; warnings }.
+      2.38.66: each app's package files are unpacked into a folder of their own first, without the catalog lock (a big one
+      held it for minutes - a send could not save its new App ID); the lock is taken per app only to check again, put the
+      folder in place and write the app's file. An unpack that fails leaves everything as it was. Automatic release is
+      off for every imported app: what the .zip brought is sent by a person first.
     #>
     param($Data)
     $path = Get-WebLibraryUploadPath $Data
@@ -315,51 +352,77 @@ function Global:Import-WebLibrary {
     if (-not $z.ok) { return $z }
     $want = @{}
     foreach ($x in @($Data.apps)) { if ($x -and $x.name) { $want[([string]$x.name).ToLowerInvariant()] = [string]$x.action } }
+    $pick = @($z.apps | Where-Object { $w = [string]$want[([string]$_.Name).ToLowerInvariant()]; $w -and $w -ne 'skip' })
+    $pkgRoot = Get-AppFolder -Kind Packages -Create
+    # Room for what is unpacked, before anything is (the sizes the .zip states - each app's unpack stops past its own).
+    [long]$need = 0; foreach ($a in $pick) { $need += [long]$a.Bytes }
+    try {
+        $free = [long](New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot([System.IO.Path]::GetFullPath($pkgRoot)))).AvailableFreeSpace
+        if ($need -gt 0 -and $free -gt 0 -and $need + 512MB -gt $free) { return @{ ok = $false; error = "The package files need $([Math]::Round($need / 1GB, 1)) GB - the disk has $([Math]::Round($free / 1GB, 1)) GB free. Nothing was imported." } }
+    }
+    catch { $null = $_ }
     $added = New-Object System.Collections.Generic.List[string]
     $replaced = New-Object System.Collections.Generic.List[string]
     $skipped = New-Object System.Collections.Generic.List[object]
     $warnings = New-Object System.Collections.Generic.List[string]
     $zipName = [string](Get-WebUploads)[[string]$Data.uploadId].FileName
-    $catalogDir = Get-AppFolder -Kind Catalog -Create
-    $pkgRoot = Get-AppFolder -Kind Packages -Create
-    foreach ($a in @($z.apps)) {
+    foreach ($a in $pick) {
         $action = [string]$want[([string]$a.Name).ToLowerInvariant()]
-        if (-not $action -or $action -eq 'skip') { continue }
         if ($a.Problem) { $skipped.Add(@{ name = $a.Name; why = $a.Problem }); continue }
-        $all = @((Read-WebCatalogRecords).Apps)
-        $existing = @($all | Where-Object { [string]$_.appName -eq $a.Name }) | Select-Object -First 1
-        if ($existing -and $action -ne 'replace') { $skipped.Add(@{ name = $a.Name; why = 'It is in the catalog already.' }); continue }
-        if (-not $existing) {
-            $why = Test-WebAddName $a.Name $all
-            if (-not $why -and $a.Record.office -and -not $a.Record.wingetId -and @($all | Where-Object { $_.office -and -not $_.wingetId }).Count) { $why = 'The catalog has Microsoft 365 Apps already - there is one per catalog.' }
-            if ($why) { $skipped.Add(@{ name = $a.Name; why = $why }); continue }
-        }
-        $rec = Set-WebImportedRecord -Record $a.Record -Mode $mode -Existing $existing
-        # Same spelling as the app it replaces - on Linux "Foo app" and "Foo App" are two files.
-        if ($existing) { $rec.appName = [string]$existing.appName }
-        # One Intune app, one catalog app: an App ID another app here has already goes (it would update that one).
-        if ($rec.appId -and -not ($existing -and $existing.appId) -and @($all | Where-Object { [string]$_.appId -eq [string]$rec.appId }).Count) {
-            $warnings.Add("$($rec.appName): its App ID belongs to another app in this catalog - imported without it, as a new app.")
-            $rec.appId = ''; $rec.releases = @(); $rec.packageStamp = ''
-        }
+        $stage = ''
         try {
-            $leaf = Get-SafeFileNameForApp -Name ([string]$rec.appName)
-            $folder = Join-Path $pkgRoot $leaf
             if ($a.Files) {
-                # The packages folder there now (the replaced app's, or one left behind) goes to Backups - the export's files
-                # are the package. An app exported without package files keeps the folder it has here.
-                if (Test-Path -LiteralPath $folder) { [void](Move-WebPackageFolderToBackups -Name ([string]$rec.appName)) }
-                if (Test-WebPathThroughLink $folder) { throw "Its packages folder goes through a link - not written." }
-                [void](Expand-ZipSafely -ZipPath $path -Destination $folder -Prefix $a.Prefix)
+                $stage = Join-Path $pkgRoot ('.import-' + [guid]::NewGuid().ToString('N'))
+                [void](Expand-ZipSafely -ZipPath $path -Destination $stage -Prefix $a.Prefix -MaxBytes ([Math]::Max([long]1, [long]$a.Bytes)))
             }
-            $file = Join-Path $catalogDir "$leaf.json"
-            Backup-WebAppFile $file
-            Save-WebAppJson -File $file -App $rec -Text $(if ($existing) { "Replaced from $zipName" } else { "Imported from $zipName" })
-            if ($existing) { $replaced.Add([string]$rec.appName) } else { $added.Add([string]$rec.appName) }
+            $one = Invoke-WithCatalogLock { Add-WebImportedApp -Entry $a -Action $action -Mode $mode -Stage $stage -ZipName $zipName }.GetNewClosure()
+            if (-not $one.ok) { $skipped.Add(@{ name = $a.Name; why = $one.error }) }
+            elseif ($one.replaced) { $replaced.Add([string]$one.name) } else { $added.Add([string]$one.name) }
+            foreach ($w in @($one.warnings)) { if ($w) { $warnings.Add($w) } }
         }
         catch { $skipped.Add(@{ name = $a.Name; why = $_.Exception.Message }) }
+        finally { if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue } }
     }
     Write-Log "[OK] Imported from $($zipName): $($added.Count) added, $($replaced.Count) replaced, $($skipped.Count) not imported."
     foreach ($w in $warnings) { Write-Log "[WARN] $w" }
     return @{ ok = $true; added = $added.ToArray(); replaced = $replaced.ToArray(); skipped = $skipped.ToArray(); warnings = $warnings.ToArray() }
+}
+
+function Global:Add-WebImportedApp {
+    # One imported app, with the catalog lock held: checked again, its unpacked files (-Stage) put in place, its file written.
+    param($Entry, [string]$Action, [string]$Mode, [string]$Stage, [string]$ZipName)
+    $a = $Entry
+    $all = @((Read-WebCatalogRecords).Apps)
+    $existing = @($all | Where-Object { [string]$_.appName -eq $a.Name }) | Select-Object -First 1
+    if ($existing -and $Action -ne 'replace') { return @{ ok = $false; error = 'It is in the catalog already.' } }
+    if (-not $existing) {
+        $why = Test-WebAddName $a.Name $all
+        if (-not $why -and $a.Record.office -and -not $a.Record.wingetId -and @($all | Where-Object { $_.office -and -not $_.wingetId }).Count) { $why = 'The catalog has Microsoft 365 Apps already - there is one per catalog.' }
+        if ($why) { return @{ ok = $false; error = $why } }
+    }
+    $warnings = New-Object System.Collections.Generic.List[string]
+    $rec = Set-WebImportedRecord -Record $a.Record -Mode $Mode -Existing $existing
+    # The name as checked (trimmed, spaces as one) - or the replaced app's own spelling: on Linux "Foo app" and "Foo App" are two files.
+    $rec.appName = if ($existing) { [string]$existing.appName } else { ([string]$a.Name).Trim() -replace '\s+', ' ' }
+    # One Intune app, one catalog app: an App ID another app here has already goes (it would update that one) - with
+    # everything else that only meant something for that app in Intune.
+    if ($rec.appId -and -not ($existing -and $existing.appId) -and @($all | Where-Object { [string]$_.appId -eq [string]$rec.appId }).Count) {
+        $warnings.Add("$($rec.appName): its App ID belongs to another app in this catalog - imported without it, as a new app.")
+        $rec = Set-WebImportedRecord -Record $rec -Mode 'other' -Existing $null
+    }
+    # Released by the nightly run only once a person has looked at it and turned it on again.
+    if ($rec.autoRelease) { $rec.autoRelease = $false; $warnings.Add("$($rec.appName): automatic release is off - turn it on in the editor once you have checked the imported app.") }
+    $pkgRoot = Get-AppFolder -Kind Packages -Create
+    $leaf = Get-SafeFileNameForApp -Name ([string]$rec.appName)
+    if ($Stage) {
+        $folder = Join-Path $pkgRoot $leaf
+        if (Test-WebPathThroughLink $folder) { return @{ ok = $false; error = 'Its packages folder goes through a link - not written.' } }
+        # The app's folders there now - this spelling and others ("apm-system2") - go to Backups: the export's files are the package.
+        foreach ($old in @(Get-WebLibraryAppFolders -Name ([string]$rec.appName) -Root $pkgRoot)) { [void](Move-WebPackageFolderToBackups -FolderName (Split-Path $old -Leaf)) }
+        [System.IO.Directory]::Move($Stage, $folder)
+    }
+    $file = Join-Path (Get-AppFolder -Kind Catalog -Create) "$leaf.json"
+    Backup-WebAppFile $file
+    Save-WebAppJson -File $file -App $rec -Text $(if ($existing) { "Replaced from $ZipName" } else { "Imported from $ZipName" })
+    return @{ ok = $true; name = [string]$rec.appName; replaced = [bool]$existing; warnings = $warnings.ToArray() }
 }

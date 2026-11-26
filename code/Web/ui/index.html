@@ -753,23 +753,27 @@
   <button role="menuitem" data-act="remove" class="danger" title="Remove the app from the catalog only - Intune keeps it">Remove from catalog...</button>
 </div>
 <div class="menu" id="catalogMenu" role="menu" hidden>
+  <div class="mhead" role="presentation">Tenant</div>
   <button role="menuitem" data-cact="tenantsetup" title="What the connected tenant still needs for the catalog - groups, deploys, group pushes - step by step">Set up this tenant...</button>
   <button role="menuitem" data-cact="overview" title="Installed, failed and pending devices for every deployed app, from Intune">Install status of every app...</button>
   <button role="menuitem" data-cact="matrix" title="Which group gets which app - one grid, change cells and save">Groups and apps grid...</button>
   <button role="menuitem" data-cact="suggest" title="Apps on many devices (Intune's inventory) that the catalog doesn't have yet - add one with its winget ID looked up">Apps worth adding...</button>
   <button role="menuitem" data-cact="wingetcheck" title="Ask winget for the newest version of every Winget app - then filter Newer on winget">Check winget for new versions</button>
   <hr>
+  <div class="mhead" role="presentation">Files</div>
   <button role="menuitem" data-cact="export" title="Every app as one row - open it in Excel, change cells, import it again">Export to CSV</button>
   <button role="menuitem" data-cact="import" title="Read a CSV edited in Excel: shows every change first, then applies it to the catalog">Import from CSV...</button>
   <button role="menuitem" data-cact="libexport" title="Every app with its settings, groups, icon and package files as one .zip - to import on another instance (More > Export... for the selected apps only)">Export library...</button>
   <button role="menuitem" data-cact="libimport" title="Add apps from a .zip that Export library or More > Export made - shows every app first">Import library...</button>
   <hr>
+  <div class="mhead" role="presentation">All apps</div>
   <button role="menuitem" data-cact="fillall" title="Publisher, description, links, developer and owner for every Winget app, where they are still empty">Fill in missing details (all apps)...</button>
   <button role="menuitem" data-cact="replace" title="Swap one group for another on every app, in every role - the catalog only">Replace a group in all apps...</button>
   <button role="menuitem" data-cact="recent" title="Every change to the catalog, newest first - with Undo">Recent changes...</button>
   <button role="menuitem" data-cact="undo" title="Take back the last batch edit, group change, App ID clearing or CSV import">Undo last bulk change...</button>
   <button role="menuitem" data-cact="retired" title="Apps retired from Intune and archived - bring one back into the catalog">Retired apps...</button>
   <hr>
+  <div class="mhead" role="presentation">This catalog</div>
   <button role="menuitem" data-cact="reload" title="Read the catalog folder again - for changes made outside the app">Reload</button>
   <button role="menuitem" class="desktoponly" data-cact="folder" title="Open the folder with one JSON file per app in Explorer">Open catalog folder</button>
 </div>

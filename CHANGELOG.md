@@ -23,6 +23,39 @@
 - **More > Replace package** says why it is greyed out, and it isn't listed for Winget, Store or Microsoft 365
   apps.
 
+### Sweep (bugs, security, GUI)
+
+- **Import, safety:**
+  - Automatic release is turned off for every imported app; a person checks the app and sends it first.
+  - The preview shows each app's groups by role, its install command and the App ID it would keep.
+- **Import, robustness:**
+  - Package files are unpacked into a folder of their own before the catalog is locked, and the lock is then
+    held per app only. A large import blocked the catalog for minutes, and a send that finished meanwhile could
+    not save its App ID.
+  - An unpack that fails leaves the app and its folder as they were.
+  - There must be room on the disk first.
+  - A folder spelled with other capitals ("apm-system2") is exported, and on Replace it goes to Backups too.
+- **Export:**
+  - One export at a time, each in a temporary folder of its own.
+  - Leftovers from a restart are removed.
+- **Replace package:**
+  - Refused while a version is in pilot; the built package is that version's.
+  - After a release, the "newer than the one in Intune" flag no longer stays on.
+- **Clean-up apps:**
+  - McAfee's removal tool is downloaded and unpacked in a folder only SYSTEM and Administrators can change (under
+    the Intune Management Extension's folder), not the shared temp folder.
+  - It is used only when it is signed by McAfee itself.
+  - Nothing running from Windows or Common Files is stopped.
+- **Steps:** A saved step record may only name step files in the step folders, not any file of the app.
+- **GUI:**
+  - Selects in tables sit on the row's line, and the import choices are one width.
+  - Progress bars span the whole width, with their text below.
+  - The Catalog menu has section headings, and menus line up with their buttons.
+  - The stage pills shrink when the side panel is open, so "Pin newest" fits.
+  - Group labels in the side panel sit on the chips' line.
+  - A file picker no longer looks like a focused text box.
+  - The Add apps tabs fade at the edges on a narrow window.
+
 ## 2.38.64
 
 - **Files that differ only in capitals in a packages folder are named**: on the server (Linux) "Uninstall.ps1" and

@@ -948,7 +948,7 @@ function foldIntoMenu(ids, opts = {}) {
     // An item that can't be used right now says why under its name (its button's title - setEnabled puts the reason there).
     menu.replaceChildren(...btns.filter(b => !b.classList.contains('gone')).map(b => el('button', { role: 'menuitem', title: b.title, disabled: b.disabled, onclick: () => { close(); b.click(); } },
       el('span', { text: b.textContent.trim() }), b.disabled && b.title ? el('small', { class: 'why', text: b.title }) : '')));
-    const r = more.getBoundingClientRect(); placeMenu(menu, r.right - 260, r.bottom + 4); more.setAttribute('aria-expanded', 'true');
+    const r = more.getBoundingClientRect(); placeMenu(menu, r.right, r.bottom + 4, true); more.setAttribute('aria-expanded', 'true');
   });
   menu.addEventListener('keydown', e => {
     if (e.key === 'Escape') { close(); more.focus(); return; }
@@ -986,9 +986,11 @@ function reloadIcon(id) {
   b.classList.add('iconbtn'); b.setAttribute('aria-label', 'Reload');
   b.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>';
 }
-function placeMenu(m, x, y) {
+// -right (2.38.66): x is the right edge the menu ends at (its button's) - lined up with it, whatever the menu's width.
+function placeMenu(m, x, y, right = false) {
   m.hidden = false;
   const r = m.getBoundingClientRect();
+  if (right) x -= r.width;
   m.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px';
   m.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
   const first = m.querySelector('button:not(:disabled)'); if (first) first.focus();
@@ -1016,7 +1018,7 @@ $('btnCatalog').addEventListener('click', async e => {
   setEnabled(catMenu.querySelector('[data-cact=overview]'), conn && apps.some(a => a.hasAppId), conn ? 'No app in the catalog is in Intune yet.' : 'Set up the connection in Settings first.');
   setEnabled(catMenu.querySelector('[data-cact=wingetcheck]'), apps.some(a => a.wingetId || a.watchWinget), 'No app in the catalog has a Winget ID or watches a winget package.');
   const r = $('btnCatalog').getBoundingClientRect();
-  placeMenu(catMenu, r.right - 240, r.bottom + 4);
+  placeMenu(catMenu, r.right, r.bottom + 4, true);
 });
 document.addEventListener('click', e => { if (!catMenu.contains(e.target)) catMenu.hidden = true; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !catMenu.hidden) { catMenu.hidden = true; $('btnCatalog').focus(); } });
@@ -1429,7 +1431,7 @@ $('btnGbGo').addEventListener('click', async () => {
 // ---------------------------------------------------------------- more menu (also on right-click)
 const menu = $('appMenu');
 function oneSelected() { return selected.size === 1 ? apps.find(a => a.name === [...selected][0]) : null; }
-function openMenu(x, y) {
+function openMenu(x, y, right = false) {
   menuOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
@@ -1495,12 +1497,13 @@ function openMenu(x, y) {
   menu.querySelector('[data-act=clearid]').textContent = ids > 1 ? `Clear ${ids} App IDs...` : 'Clear App ID...';
   menu.querySelector('[data-act=remove]').textContent = sel.length > 1 ? `Remove ${sel.length} apps from catalog...` : 'Remove from catalog...';
   catMenu.hidden = true;
-  placeMenu(menu, x, y);
+  placeMenu(menu, x, y, right);
 }
 // Escape gives focus back to what opened it (2.38.0) - the More button, the panel's More..., the row.
 let menuOpener = null;
 function closeMenu(back) { const was = !menu.hidden; menu.hidden = true; if (back && was && menuOpener && menuOpener.isConnected) menuOpener.focus(); }
-$('btnMore').addEventListener('click', e => { e.stopPropagation(); const r = $('btnMore').getBoundingClientRect(); openMenu(r.left, r.bottom + 4); });
+// Lined up with the More button: from its left edge - or, in the right half of the window, ending at its right edge (2.38.66).
+$('btnMore').addEventListener('click', e => { e.stopPropagation(); const r = $('btnMore').getBoundingClientRect(); const right = r.left > innerWidth / 2; openMenu(right ? r.right : r.left, r.bottom + 4, right); });
 $('gridBody').addEventListener('contextmenu', e => {
   const tr = e.target.closest('tr'); if (!tr) return;
   e.preventDefault();

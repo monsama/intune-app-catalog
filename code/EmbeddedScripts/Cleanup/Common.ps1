@@ -106,8 +106,10 @@ function Remove-CleanupProgram($Entry) {
 
 function Stop-CleanupProgramProcesses([string]$Folder) {
     # Processes running from the program's folder, and services whose program is there - stopped before it is removed.
-    # Not for a folder that is too general (Windows, Program Files itself).
+    # Not for a folder that is too general (Windows, Program Files itself) - nor anything in Windows or Common Files
+    # (2.38.66): an uninstaller there (rundll32, a shared one) would stop what Windows itself runs from it.
     if (-not $Folder -or $Folder.Length -lt 12 -or $Folder -match '(?i)^[a-z]:\\(windows|program files( \(x86\))?|programdata)\\?$') { return }
+    if ($Folder -match '(?i)^[a-z]:\\windows(\\|$)' -or $Folder -match '(?i)\\common files(\\|$)' -or ($env:windir -and $Folder.StartsWith($env:windir, [StringComparison]::OrdinalIgnoreCase))) { Write-CleanupLog "  not stopping what runs from $Folder (a folder Windows or other programs share)"; return }
     $base = $Folder.TrimEnd('\') + '\'
     try {
         foreach ($svc in @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { ([string]$_.PathName).Trim('"').StartsWith($base, [StringComparison]::OrdinalIgnoreCase) -or ([string]$_.PathName).StartsWith('"' + $base, [StringComparison]::OrdinalIgnoreCase) })) {
@@ -131,49 +133,74 @@ function Remove-CleanupPackage($Package) {
     catch { Write-CleanupLog "  failed: $($_.Exception.Message)" }
 }
 
+function Test-McAfeeSigned([string]$Path) {
+    # Validly signed, by McAfee itself (2.38.66: any certificate with "McAfee" anywhere in its subject passed).
+    $sig = Get-AuthenticodeSignature -LiteralPath $Path
+    $subject = [string]$sig.SignerCertificate.Subject
+    return ($sig.Status -eq 'Valid' -and $subject -match '(^|,\s*)O="?McAfee,? (LLC|Inc\.?)"?(,|$)')
+}
+
+function New-CleanupPrivateFolder([string]$Parent, [string]$Prefix) {
+    # A new folder only SYSTEM and Administrators can change (2.38.66): what is downloaded or unpacked there can't be
+    # swapped by another user between being checked and being run. Older ones (a run that stopped) go first.
+    foreach ($old in @(Get-ChildItem -LiteralPath $Parent -Directory -Filter "$Prefix*" -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-1) })) { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    $dir = Join-Path $Parent ($Prefix + [guid]::NewGuid().ToString('N'))
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    foreach ($sid in 'S-1-5-18', 'S-1-5-32-544') {
+        $id = New-Object System.Security.Principal.SecurityIdentifier($sid)
+        $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($id, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')))
+    }
+    # Windows PowerShell (what Intune runs) makes it with its permissions at once; PowerShell 7 sets them right after.
+    try { [void][System.IO.Directory]::CreateDirectory($dir, $acl) }
+    catch { [void](New-Item -ItemType Directory -Path $dir -Force); Set-Acl -LiteralPath $dir -AclObject $acl }
+    return $dir
+}
+
 function Get-McAfeeRemovalTool {
     <#
       McAfee's removal tool from McAfee (2.38.63), for when its files aren't in the packages folder: MCPR.exe from
-      McAfee's download server, used only when it is validly signed by McAfee. MCPR unpacks itself into a folder of
-      the temp folder when it starts (its command-line part, mccleanup.exe, among the files) and then shows its window:
-      it is started, the unpacked files are copied as soon as they are there, and it is stopped. $null when that
+      McAfee's download server, used only when it is validly signed by McAfee. MCPR unpacks itself into its temp folder
+      when it starts (its command-line part, mccleanup.exe, among the files) and then shows its window: it is started
+      with its temp folder in a folder of its own, mccleanup.exe is taken from there once unpacked, and MCPR is stopped.
+      2.38.66: everything happens in a folder only SYSTEM and Administrators can change, under the Intune Management
+      Extension's folder - not the shared temp folder, where another user could put files of their own. $null when it
       doesn't work (no internet, another file, McAfee changed how MCPR unpacks) - the log says which step.
     #>
     $url = 'https://download.mcafee.com/molbin/iss-loc/SupportTools/MCPR/MCPR.exe'
-    $work = Join-Path ([System.IO.Path]::GetTempPath()) 'IntuneAppCatalog-MCPR'
+    $parent = Join-Path $(if ($env:ProgramData) { $env:ProgramData } else { [System.IO.Path]::GetTempPath() }) 'Microsoft\IntuneManagementExtension'
     try {
-        if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
-        [void](New-Item -ItemType Directory -Path $work -Force)
+        if (-not (Test-Path -LiteralPath $parent -PathType Container)) { Write-CleanupLog "  not used: $parent isn't there"; return $null }
+        $work = New-CleanupPrivateFolder $parent 'IntuneAppCatalog-MCPR-'
+        $unpack = Join-Path $work 'temp'
+        [void](New-Item -ItemType Directory -Path $unpack -Force)
         $exe = Join-Path $work 'MCPR.exe'
         Write-CleanupLog "Fetching McAfee's removal tool: $url"
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -TimeoutSec 300 -ErrorAction Stop
-        $sig = Get-AuthenticodeSignature -LiteralPath $exe
-        if ($sig.Status -ne 'Valid' -or [string]$sig.SignerCertificate.Subject -notmatch 'McAfee') { Write-CleanupLog "  not used: its signature is $($sig.Status) ($($sig.SignerCertificate.Subject))"; return $null }
-        $since = Get-Date
-        $tempRoot = [System.IO.Path]::GetTempPath()
-        $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden -ErrorAction Stop
+        if (-not (Test-McAfeeSigned $exe)) { $s = Get-AuthenticodeSignature -LiteralPath $exe; Write-CleanupLog "  not used: its signature is $($s.Status) ($($s.SignerCertificate.Subject))"; return $null }
+        # Its temp folder is ours: it unpacks there, where nobody else can add a file.
+        $psi = New-Object System.Diagnostics.ProcessStartInfo($exe)
+        $psi.UseShellExecute = $false; $psi.CreateNoWindow = $true; $psi.WorkingDirectory = $work
+        $psi.EnvironmentVariables['TEMP'] = $unpack; $psi.EnvironmentVariables['TMP'] = $unpack
+        $proc = [System.Diagnostics.Process]::Start($psi)
         $found = $null
         for ($i = 0; $i -lt 60 -and -not $found; $i++) {
             Start-Sleep -Seconds 2
-            $found = @(Get-ChildItem -LiteralPath $tempRoot -Filter 'mccleanup.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $since.AddMinutes(-1) -and $_.FullName -notlike "$work*" }) | Select-Object -First 1
+            $found = @(Get-ChildItem -LiteralPath $unpack -Filter 'mccleanup.exe' -Recurse -Depth 4 -File -ErrorAction SilentlyContinue) | Select-Object -First 1
         }
         if ($found) {
             # Unpacking done when the folder stops growing.
             $last = -1
             for ($i = 0; $i -lt 15; $i++) { $n = @(Get-ChildItem -LiteralPath $found.DirectoryName -Recurse -File -ErrorAction SilentlyContinue).Count; if ($n -eq $last) { break }; $last = $n; Start-Sleep -Seconds 2 }
-            Copy-Item -Path (Join-Path $found.DirectoryName '*') -Destination $work -Recurse -Force
         }
         # MCPR and what it started are stopped - its window waits for a click nobody makes.
         foreach ($c in @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" -ErrorAction SilentlyContinue)) { Stop-Process -Id $c.ProcessId -Force -ErrorAction SilentlyContinue }
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         if (-not $found) { Write-CleanupLog '  not used: MCPR didn''t unpack mccleanup.exe within 2 minutes'; return $null }
-        $tool = Get-Item -LiteralPath (Join-Path $work 'mccleanup.exe') -ErrorAction SilentlyContinue
-        if (-not $tool) { Write-CleanupLog '  not used: mccleanup.exe couldn''t be copied'; return $null }
-        $toolSig = Get-AuthenticodeSignature -LiteralPath $tool.FullName
-        if ($toolSig.Status -ne 'Valid' -or [string]$toolSig.SignerCertificate.Subject -notmatch 'McAfee') { Write-CleanupLog "  not used: mccleanup.exe's signature is $($toolSig.Status)"; return $null }
-        Write-CleanupLog "  got it: $($tool.FullName)"
-        return $tool
+        if (-not (Test-McAfeeSigned $found.FullName)) { Write-CleanupLog "  not used: mccleanup.exe's signature is $((Get-AuthenticodeSignature -LiteralPath $found.FullName).Status)"; return $null }
+        Write-CleanupLog "  got it: $($found.FullName)"
+        return $found
     }
     catch { Write-CleanupLog "  couldn't fetch it: $($_.Exception.Message)"; return $null }
 }

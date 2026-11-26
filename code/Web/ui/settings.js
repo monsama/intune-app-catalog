@@ -85,7 +85,7 @@ $('btnCertMenu').addEventListener('click', e => {
   setEnabled($('btnCerDownload'), !!$('fThumb').value.trim(), 'Choose or create a certificate first.');
   setEnabled($('btnPfxExport'), !!$('fThumb').value.trim(), 'Choose, create or import a certificate first.');
   const r = $('btnCertMenu').getBoundingClientRect();
-  placeMenu(certMenu, r.right - 240, r.bottom + 4); $('btnCertMenu').setAttribute('aria-expanded', 'true');
+  placeMenu(certMenu, r.right, r.bottom + 4, true); $('btnCertMenu').setAttribute('aria-expanded', 'true');
 });
 certMenu.addEventListener('click', e => { if (e.target.closest('button')) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); } });
 document.addEventListener('click', e => { if (!certMenu.hidden && !certMenu.contains(e.target)) { certMenu.hidden = true; $('btnCertMenu').setAttribute('aria-expanded', 'false'); } });

@@ -201,6 +201,9 @@ label.filebtn { display: inline-block; width: auto; margin-top: 6px; cursor: poi
 .plan td { padding: 7px 8px; border-bottom: 1px solid var(--bd2); vertical-align: top; }
 /* A row with a button: text centred on the button, not above it. */
 .plan tr:has(td > .btn) > td { vertical-align: middle; }
+/* A row with a choice (2.38.66): its text on the select's own line - the second line (.why) still under the name. */
+.plan tr:has(td > select) > td { vertical-align: baseline; }
+.plan td .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 .plan .chg { font-family: var(--mono); font-size: 12px; white-space: pre-line; }
 .plan .add { color: var(--ok); } .plan .rem { color: var(--err); }
 dialog .log { max-height: 220px; }
@@ -440,15 +443,15 @@ dialog.ask h2 { font-size: 15px; line-height: 1.4; }
 .preview .chg.add { color: var(--fg); }
 .bhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .bhead select { width: auto; }
-.progress { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; font-size: 13px; }
-.progress .bar { flex: 1; height: 6px; border-radius: 999px; background: var(--bd2); overflow: hidden; }
+.progress { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; margin: 10px 0 4px; font-size: 13px; }
+/* The bar the whole width, its text under it (2.38.66: the bar grew and shrank with the text beside it). */
+.progress .bar { flex: 1 1 100%; height: 6px; border-radius: 999px; background: var(--bd2); overflow: hidden; }
 .progress .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
-#deployRows td .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
 #deployRows td .why.pkgwarn { color: var(--warn); }
 #dlgDeploy .actions .spacer { flex: 1; }
 #dlgReplace label { display: block; margin-top: 10px; font-size: 12px; color: var(--muted); }
 #dlgReplace label select, #dlgReplace label input { display: block; width: 100%; margin-top: 4px; }
-#dlgCsv input[type="file"] { flex: 1; }
+#dlgCsv input[type="file"], #dlgLibImport input[type="file"] { flex: 1; }
 optgroup[hidden] { display: none; }
 
 /* ---- icons, supersedence, tenant setup, install overview ---- */
@@ -643,7 +646,6 @@ table.mx th.corner { position: sticky; left: 0; z-index: 3; text-align: left; co
 @media (max-width: 800px) { .profrow2 { grid-template-columns: 1fr 1fr; } .attention .att { grid-template-columns: 1fr; } }
 /* ---- stage and next step ---- */
 .stage { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.btn.small.next { padding: 2px 9px; }
 /* ---- apps + side panel ---- */
 .appsplit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; flex: 1; min-height: 0; }
 .appsplit:has(> .apppanel:not([hidden])) { grid-template-columns: minmax(0, 1fr) 360px; }
@@ -780,7 +782,7 @@ input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]),
   transition: border-color .12s, box-shadow .12s, background-color .12s;
 }
 input:not([type=checkbox]):not([type=radio]):hover, select:hover, textarea:hover { background: var(--field-hover); }
-input:not([type=checkbox]):not([type=radio]):focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); background: var(--surface); }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); background: var(--surface); }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
 input[type=checkbox], input[type=radio] { accent-color: var(--accent); width: 16px; height: 16px; }
 input[type=checkbox]:focus-visible, input[type=radio]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -1948,5 +1950,16 @@ body:has(#appPanel:not([hidden])) #grid td.name > .nm { max-width: min(40ch, 18v
 /* Export and import of apps (2.38.65) */
 #lxSummary { margin: 8px 0; }
 #liPreview td.state { white-space: nowrap; }
-#liPreview td select { width: auto; }
-#liPreview td .why { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+#liPreview td select { width: 8.5em; }
+#liPreview td:last-child { width: 9em; }
+#liPreview td .why.detail { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+#dlgDeploy .sub + .tablewrap, #dlgDeploy .progress + .tablewrap { margin-top: 10px; }
+.progress > span:last-child { font-size: 12px; color: var(--muted); }
+/* 2.38.66: the stage pills keep one width only while there is room - with the side panel open or on a narrow window
+   Pin newest beside them ran out of the list. */
+@media (max-width: 1600px) { #gridBody td.stagecol .pill { min-width: 0; padding-inline: 8px; } }
+body:has(#appPanel:not([hidden])) #gridBody td.stagecol .pill { min-width: 0; padding-inline: 8px; }
+/* Add apps on a narrow window: the tab strip scrolls - its ends fade instead of cutting a tab's name. */
+@media (max-width: 900px) { dialog.addapps .subtabs { mask-image: linear-gradient(90deg, transparent 0, #000 16px, #000 calc(100% - 16px), transparent); scroll-padding-inline: 16px; } }
+/* Side panel: a label beside group chips on the chips' line (2.38.66: it sat 4px high). */
+.pfacts .kv:has(.gedit) { align-items: baseline; }

@@ -35,7 +35,7 @@ $jobDir = Join-Path ([System.IO.Path]::GetTempPath().TrimEnd('/', '\')) 'IntuneA
 [void](New-Item -ItemType Directory -Path $jobDir -Force)
 $staleId = [guid]::NewGuid().ToString('N')
 $staleRec = Join-Path $jobDir "$staleId.json"
-Set-Content -LiteralPath $staleRec -Value (@{ id = $staleId; mode = 'Create ZZ Stale Step'; step = 'createapp'; result = (Join-Path $jobDir "missing-$staleId.json"); log = ''; cleanup = @(); after = @{ Kind = 'deploy'; AppName = 'ZZ Stale Step' }; historyApps = @('ZZ Stale Step'); pid = 0; procStart = 0; owner = 0; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress) -Encoding UTF8
+Set-Content -LiteralPath $staleRec -Value (@{ id = $staleId; mode = 'Create ZZ Stale Step'; step = 'createapp'; result = (Join-Path ([System.IO.Path]::GetTempPath()) ".intunepkg_createapp_result_$staleId.json"); log = ''; cleanup = @(); after = @{ Kind = 'deploy'; AppName = 'ZZ Stale Step' }; historyApps = @('ZZ Stale Step'); pid = 0; procStart = 0; owner = 0; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress) -Encoding UTF8
 
 $startArgs = @{
     FilePath               = $hostExe

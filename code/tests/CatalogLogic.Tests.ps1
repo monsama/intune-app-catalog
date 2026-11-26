@@ -3488,6 +3488,13 @@ $nsis = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name 
     $r = Remove-CleanupProgram ([pscustomobject]@{ Name = 'Lenovo AI Now'; Publisher = 'Lenovo'; Key = 'AINow'; Uninstall = '"C:\Program Files\Lenovo\AI Now\Uninstall.exe"'; Quiet = ''; Msi = $false })
     @($r, $script:stopped) }
 Assert-True ($nsis[0] -eq 'C:\Program Files\Lenovo\AI Now\Uninstall.exe|/S _?=C:\Program Files\Lenovo\AI Now' -and $nsis[1] -eq 'C:\Program Files\Lenovo\AI Now') "Clean-up: an NSIS Uninstall.exe runs silently in place, its program stopped first" ($nsis -join ' / ')
+# 2.38.66: nothing is stopped for an uninstaller in Windows or Common Files - Windows' own processes run from there.
+$stopNo = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
+    $script:said = New-Object System.Collections.Generic.List[string]; function Write-CleanupLog([string]$Text) { $script:said.Add($Text) }
+    function Get-CimInstance { throw 'must not be asked' }
+    Stop-CleanupProgramProcesses 'C:\Windows\System32'; Stop-CleanupProgramProcesses 'C:\Program Files\Common Files\Vendor'
+    @($script:said) }
+Assert-True ($stopNo.Count -eq 2 -and -not @($stopNo | Where-Object { $_ -notlike '*not stopping*' }).Count) "Clean-up: what runs from Windows or Common Files is never stopped" ($stopNo -join ' / ')
 $cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
 Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
 

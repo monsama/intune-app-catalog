@@ -224,8 +224,12 @@ function liRender(pv) {
     if (a.state === 'blocked') pick = el('span', { class: 'muted', text: 'Not possible' });
     else pick = el('select', { 'data-app': a.name, 'aria-label': `Import ${a.name}`, onchange: liCount },
       ...(a.state === 'exists' ? [['skip', 'Skip'], ['replace', 'Replace']] : [['add', 'Add'], ['skip', 'Skip']]).map(([v, t]) => el('option', { value: v, text: t })));
+    // What it would do on devices, before it is added (2.38.66): its groups, its install command, the Intune app it updates.
+    const roles = [['Required', a.required], ['Available', a.available], ['Uninstall', a.uninstallFor]].filter(([, g]) => (g || []).length).map(([k, g]) => `${k}: ${g.join(', ')}`);
+    const facts = [roles.join(' · '), a.appId ? `App ID ${a.appId} (kept only for the same tenant)` : '', a.autoRelease ? 'automatic release (turned off on import)' : ''].filter(Boolean).join(' · ');
     return el('tr', {},
-      el('td', { class: 'name' }, el('span', { text: a.name }), a.why ? el('span', { class: 'why', text: a.why }) : ''),
+      el('td', { class: 'name' }, el('span', { text: a.name }), a.why ? el('span', { class: 'why', text: a.why }) : '',
+        facts ? el('span', { class: 'why', text: facts }) : '', a.install ? el('span', { class: 'why detail', text: a.install, title: 'Its install command' }) : ''),
       el('td', { text: a.kind }),
       el('td', { text: a.files ? `${nWord(a.files, 'file')}${kb(a.bytes)}` : '-' }),
       el('td', { class: 'state', text: a.state === 'exists' ? 'In the catalog' : a.state === 'new' ? 'New' : '' }),

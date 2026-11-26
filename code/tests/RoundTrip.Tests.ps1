@@ -250,9 +250,10 @@ try {
     $jobDir = Join-Path ([System.IO.Path]::GetTempPath().TrimEnd('/', '\')) 'IntuneAppCatalog-jobs'
     [void](New-Item -ItemType Directory -Path $jobDir -Force)
     $rid = [guid]::NewGuid().ToString('N')
-    $res = Join-Path $jobDir "result-$rid.json"
+    # Where steps write them, named as steps name them (2.38.66: a record naming anything else is refused).
+    $res = Join-Path ([System.IO.Path]::GetTempPath()) ".intunepkg_deleteapp_result_$rid.json"
     Set-Content -LiteralPath $res -Value (@{ success = $true; error = '' } | ConvertTo-Json -Compress) -Encoding UTF8
-    $logFile = Join-Path $jobDir "log-$rid.log"; Set-Content -LiteralPath $logFile -Value '' -Encoding UTF8
+    $logFile = Join-Path ([System.IO.Path]::GetTempPath()) "intunepkg_$rid.log"; Set-Content -LiteralPath $logFile -Value '' -Encoding UTF8
     Set-Content -LiteralPath (Join-Path $jobDir "$rid.json") -Value (@{ id = $rid; mode = "Delete $nResume from Intune"; step = 'deleteapp'; result = $res; log = $logFile; cleanup = @(); after = @{ Kind = 'deleted'; AppName = $nResume }; historyApps = @($nResume); pid = 0; procStart = 0; owner = 0; started = (Get-Date).ToString('o') } | ConvertTo-Json -Compress -Depth 5) -Encoding UTF8
     Start-TestServer
     $deadline = (Get-Date).AddSeconds(30)
