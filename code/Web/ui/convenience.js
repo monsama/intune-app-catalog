@@ -59,7 +59,7 @@ async function gpSuggest(ta) {
   const l = gpLine(ta), seq = ++gpSeq;
   const r = await api('/api/group-suggest', { q: l.text });
   if (seq !== gpSeq || document.activeElement !== ta) return;
-  const src = ta._source || ta, have = new Set(src.value.split('\n').map(s => s.trim().toLowerCase()));
+  const src = ta._source || ta, have = new Set(src.value.split(src.tagName === 'INPUT' ? /\n|, / : '\n').map(s => s.trim().toLowerCase()));
   // [All users] / [All devices] (Intune's own targets) only where an app gets assigned: never Excluded, pilot or favourite lists.
   const builtInOk = ['gRequired', 'gAvailable', 'gUninstall', 'adRequired', 'adAvailable'].includes(src.id) || ['Required for', 'Available for'].includes(src.getAttribute('aria-label'));
   // Available is for users - [All devices] isn't offered there (Intune refuses it).
