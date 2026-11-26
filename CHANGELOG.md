@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.38.69
+
+- **The send cards in the bottom right corner** (Send settings, Send groups, Replace package) look like the dialogs:
+  - Each card has a status mark (waiting, a spinner while sending, ✓ sent, ! failed), what it sends and for which
+    app, and a thin bar while it runs.
+  - The log is folded away. A failed send opens it, with Try again under it.
+  - A sent card folds to one line after a few seconds and goes by itself.
+  - Several sends at once stand side by side, the newest on the left. At most three cards show (what runs or
+    failed first); the rest wait as "+N waiting".
+- **Minimized windows' chips** have the same look.
+- **Editor:** "Its installer, packaged" in Ready to send has **Build package** right in the list, or goes to the
+  upload button.
+- **Smaller fixes:**
+  - Promote says when no version is in pilot any more (it said "null").
+  - Platform scripts has the same round Reload icon as the other pages.
+  - The script app's "Start from" sits above its field like the others.
+  - The installer drop zone no longer offers a folder twice.
+  - The side panel shows the stage on its own line.
+  - Updates uses one empty mark.
+
 ## 2.38.68
 
 - **"Not connected" is said once:** one banner on the pages that need the connection, with Set up the connection.

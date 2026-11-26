@@ -266,7 +266,15 @@ function updateReady() {
       const named = ($('mInstallCommand').value.match(/([^\s"'\\/]+\.(?:msi|exe))\b/i) || [])[1], have = editorInstaller && editorInstaller.file && String(editorInstaller.file).split(/[\\/]/).pop();
       if (named && have && named.toLowerCase() !== String(have).toLowerCase() && !/^(msiexec|cmd|powershell)\.exe$/i.test(named))
         return [false, `The command installs ${named}, the packages folder has ${have} - put ${named} there, then Build package`, 'mInstallCommand'];
-      return [!!(row && !row.packageMissing && !row.packageStale), row && !row.packageMissing ? (row.packageStale ? 'Its installer is packaged (files changed since - build it again)' : 'Its installer is packaged') : 'Its installer, packaged (upload it, then Build package)', null];
+      const packed = !!(row && !row.packageMissing && !row.packageStale);
+      // Its installer is there but not (or no longer) packaged: Build package right in the list (2.38.69).
+      const build = !packed && editingName && editorInstaller ? { label: 'Build package', run: () => {
+        readyPopShow(false);
+        runDialog('Package', `Building the .intunewin for ${editingName}.`);
+        const n = editingName;
+        runJob({ names: [n] }, ok => { toast(ok ? `${n} is packaged.` : 'Packaging failed - see the log.', !ok); loadApps().then(() => updateReady()); }, { path: '/api/package-start', log: 'runLog', startText: 'Packaging...' });
+      } } : null;
+      return [packed, row && !row.packageMissing ? (row.packageStale ? 'Its installer is packaged (files changed since - build it again)' : 'Its installer is packaged') : 'Its installer, packaged (upload it, then Build package)', build ? null : (editingName ? 'btnAppInstaller' : null), build];
     })()
       : [true, `Installs from winget (${wid})`, 'aWinget'],
     own ? [!!$('mInstallCommand').value.trim(), 'An install command', 'mInstallCommand'] : [true, 'Install command - made for winget', null],
@@ -605,29 +613,53 @@ function placeSendStack() {
 }
 window.addEventListener('close', () => setTimeout(placeSendStack, 0), true);
 { const sm = HTMLDialogElement.prototype.showModal; HTMLDialogElement.prototype.showModal = function () { sm.call(this); placeSendStack(); }; }
+// 2.38.69: each send as a card like the dialogs - a status mark, what and for which app, a thin bar while it runs, the
+// log folded away (open when it failed, with Try again). A sent card folds to one line and goes by itself; at most
+// three cards are open, the rest waits as "+N waiting".
+const sendIcon = { waiting: '', sending: '', sent: '✓', failed: '!' };
 function sendCard(kind, name) {
   const id = 'sendLog' + (++sendSeq);
-  const state = el('span', { class: 'pill muted', text: 'Waiting' });
-  // Waiting, Close takes it out of the queue (2.38.41); sending, it can't be closed; done, it closes the window.
-  const close = el('button', { type: 'button', class: 'btn small ghost', text: 'Close', title: 'Take it out of the queue - it is not sent' });
-  const log = el('pre', { class: 'log', id, tabindex: '0', role: 'log', hidden: true });
+  const mark = el('span', { class: 'smark', 'aria-hidden': 'true' });
+  const state = el('span', { class: 'sstate', text: 'Waiting' });
+  // Waiting, × takes it out of the queue (2.38.41); sending, it can't be closed; done, it closes the card.
+  const close = el('button', { type: 'button', class: 'sclose', 'aria-label': 'Take it out of the queue', title: 'Take it out of the queue - it is not sent', text: '×' });
+  const log = el('pre', { class: 'log', id, tabindex: '0', role: 'log' });
+  const logBox = el('details', { class: 'slog', hidden: true }, el('summary', { text: 'Log' }), log);
+  const retry = el('button', { type: 'button', class: 'btn small', text: 'Try again', hidden: true, title: 'Send it again' });
   const card = el('section', { class: 'sendcard waiting', 'aria-label': `${sendKinds[kind].title}: ${name}` },
-    el('div', { class: 'trayhead' }, el('h2', { text: sendKinds[kind].title }), el('span', { class: 'spacer' }), state, close),
-    el('p', { class: 'sub', text: name }), log);
-  close.addEventListener('click', () => { const i = sendQueue.findIndex(q => q.card && q.card.id === id); if (i >= 0) sendQueue.splice(i, 1); card.remove(); });
+    el('div', { class: 'shead' }, mark, el('div', { class: 'stitle' }, el('h2', { text: sendKinds[kind].title }), el('span', { class: 'sapp', text: name, title: name })), state, close),
+    el('div', { class: 'sbar', 'aria-hidden': 'true' }, el('span')), el('div', { class: 'sfoot' }, logBox, retry));
+  close.addEventListener('click', () => { const i = sendQueue.findIndex(q => q.card && q.card.id === id); if (i >= 0) sendQueue.splice(i, 1); card.remove(); tidySendStack(); });
+  retry.addEventListener('click', () => { card.remove(); queueSend(kind, [name]); });
   // Sent: it goes by itself 20 s later - not while the pointer or focus is on it, but once they leave (2.38.41).
   let autoClose = null;
-  const later = () => { clearTimeout(autoClose); autoClose = setTimeout(() => { if (!card.isConnected) return; if (card.matches(':hover, :focus-within')) later(); else card.remove(); }, 20000); };
+  const later = () => { clearTimeout(autoClose); autoClose = setTimeout(() => { if (!card.isConnected) return; if (card.matches(':hover, :focus-within')) later(); else { card.remove(); tidySendStack(); } }, 20000); };
   // Newest on the left: the stack runs right to left.
   sendStack().append(card);
   const set = (cls, text, done) => {
-    card.className = 'sendcard ' + cls; state.className = 'pill ' + ({ sending: 'info', sent: 'ok', failed: 'err' }[cls] || 'muted'); state.textContent = text;
-    if (cls !== 'waiting') log.hidden = false;
-    close.disabled = !done; close.title = done ? 'Close this window' : 'It closes once it is sent';
-    // Sent: it goes by itself after a while; failed stays until closed, so the log can be read.
-    if (cls === 'sent') later();
+    card.className = 'sendcard ' + cls; state.textContent = text; mark.textContent = sendIcon[cls] || '';
+    if (cls !== 'waiting') logBox.hidden = false;
+    logBox.open = cls === 'failed';
+    retry.hidden = cls !== 'failed';
+    close.disabled = !done; close.title = done ? 'Close' : 'It closes once it is sent'; close.setAttribute('aria-label', done ? 'Close' : 'Sending - it closes once it is sent');
+    // Sent: folded to one line after a moment, gone a while later; failed stays until closed, so the log can be read.
+    if (cls === 'sent') { setTimeout(() => { if (card.isConnected && !card.matches(':hover, :focus-within')) card.classList.add('folded'); }, 4000); later(); }
+    tidySendStack();
   };
+  tidySendStack();
   return { id, set };
+}
+// At most three cards in view: what runs or failed first, then the newest sent, then the waiting ones - the others as one chip.
+function tidySendStack() {
+  const s = $('sendStack'); if (!s) return;
+  const cards = [...s.querySelectorAll('.sendcard')];
+  const rank = c => c.classList.contains('sending') ? 0 : c.classList.contains('failed') ? 1 : c.classList.contains('sent') ? 2 : 3;
+  const shown = new Set([...cards].sort((a, b) => rank(a) - rank(b)).slice(0, 3));
+  for (const c of cards) c.hidden = !shown.has(c);
+  const more = cards.length - shown.size;
+  let chip = s.querySelector('.smore');
+  if (more > 0) { if (!chip) { chip = el('div', { class: 'smore', role: 'status' }); s.prepend(chip); } chip.textContent = `+${more} waiting`; }
+  else if (chip) chip.remove();
 }
 // -after(doneNames): called once the queue has sent these names (Checks drops their findings and checks them again).
 function queueSend(kind, names, after) {

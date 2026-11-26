@@ -1211,7 +1211,7 @@
 
   <section class="asec" id="asec-installer" role="tabpanel" aria-labelledby="atab-installer" hidden>
     <div class="dropzone" id="aiDrop" tabindex="0" role="button" aria-describedby="aiDropText">
-      <strong>Drop an .msi or .exe here - or a whole folder, or a .zip of it</strong>
+      <strong>Drop an .msi or .exe here - or a .zip of its folder</strong>
       <span id="aiDropText" class="muted">or <u>choose files</u> (.msi, .exe, .zip - or several at once: the setup and the files it needs) - the installer is read for its name, publisher, version and silent switches; everything goes into the app's packages folder and into its package.</span>
       <input type="file" id="aiFile" multiple hidden>
     </div>
@@ -1256,7 +1256,7 @@
       <label>Publisher<input id="asPublisher" list="pubList" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></label>
       <label>Version<input id="asVersion" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="1.0"></label>
     </div>
-    <label class="inline">Start from <select id="asTemplate" aria-label="Template"></select></label>
+    <label>Start from<select id="asTemplate" aria-label="Template"></select></label>
     <div class="formgrid two">
       <label>Install.ps1<textarea id="asInstall" class="mono" rows="10" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>
       <label>Uninstall.ps1<textarea id="asUninstall" class="mono" rows="10" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off"></textarea></label>

@@ -391,7 +391,7 @@ try {
       const queued = await page.evaluate(async () => { const was = jobRunning, la = loadApps; loadApps = () => {}; jobRunning = true; sendSettingsNow(['ZZ Q1']); sendSettingsNow(['ZZ Q2']); sendSettingsNow(['ZZ Q2']);
         const q = sendQueue.map(x => x.name).join(',');
         // 2.38.39: each send its own window, side by side - the newest on the left (the stack runs right to left).
-        const cards = [...document.querySelectorAll('#sendStack .sendcard')].map(c => c.querySelector('.sub').textContent + ':' + c.querySelector('.pill').textContent);
+        const cards = [...document.querySelectorAll('#sendStack .sendcard')].map(c => c.querySelector('.sapp').textContent + ':' + c.querySelector('.sstate').textContent);
         const r = [...document.querySelectorAll('#sendStack .sendcard')].map(c => c.getBoundingClientRect().left);
         sendQueue.length = 0; jobRunning = was; await new Promise(r => setTimeout(r, 1200)); loadApps = la; document.getElementById('sendStack').remove();
         return { q, cards: cards.join('|'), newestLeft: r.length === 2 && r[1] < r[0] }; });

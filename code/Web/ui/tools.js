@@ -470,6 +470,8 @@ $('btnRelGo').addEventListener('click', async () => {
 });
 async function promoteRelease(name) {
   const a = apps.find(x => x.name === name);
+  // Nothing in pilot (any more - a reload since): said, not "Promote ... null" (2.38.69).
+  if (!a || !a.pilotVersion) { toast(`No version of ${name} is in pilot - Reload shows what is.`, true); return; }
   const info = await api('/api/release-info', { name });
   const st = info.ok && info.pilotStatus;
   const verdict = st && st.ok ? `Pilot: ${st.reason}${st.action === 'promote' ? ' The release rule says it is ready.' : st.action === 'advance' ? ' The release rule says it is ready for the next ring - promoting now skips the remaining rings.' : st.action === 'hold' ? ' The release rule says: hold.' : ' The release rule says: wait.'}\n\n` : '';

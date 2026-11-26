@@ -27,7 +27,7 @@ async function loadUpdates(force) {
       tile(s.onCurrentPercent === null ? '-' : s.onCurrentPercent + ' %', `of ${s.devices} devices on the current version`, s.onCurrentPercent !== null && s.onCurrentPercent < 90 ? 'warn' : 'ok'),
       // Always five tiles (the placeholders are five): without the inventory the last one says so.
       r.inventory ? tile(String(s.olderDevices), 'devices with an older version (inventory)', s.olderDevices ? 'warn' : 'ok', 'From Intune\'s inventory of apps on devices - also versions installed by hand')
-        : tile('–', 'devices with an older version (inventory)', '', 'Intune\'s app inventory couldn\'t be read - DeviceManagementManagedDevices.Read.All shows it'));
+        : tile('-', 'devices with an older version (inventory)', '', 'Intune\'s app inventory couldn\'t be read - DeviceManagementManagedDevices.Read.All shows it'));
     $('updEmpty').hidden = r.rows.length > 0;
     // No app with managed updates: the message says it - no zero tiles, no empty column headers above it.
     $('updTiles').hidden = !r.rows.length; $('updGrid').tHead.hidden = !r.rows.length;
