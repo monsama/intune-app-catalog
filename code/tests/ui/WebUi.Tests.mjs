@@ -567,6 +567,14 @@ try {
         check(await page.evaluate(n => window.__fetched.includes(n) && [...document.querySelectorAll('#wtRows button')].some(b => b.textContent === 'Open'), sendApp), `${label}: ... gets each, then offers its next step`);
         await page.evaluate(() => { api = window.__realApi; document.getElementById('dlgWatched').close(); });
         await page.waitForFunction(() => !document.getElementById('dlgRun')?.open, null, { timeout: 20000 }).catch(() => {});
+        // 2.38.56: Working... goes to where the running step writes - the Checks page with its log open, not the empty tray.
+        const chipGo = await page.evaluate(() => {
+          const was = jobLogId, chip = document.getElementById('jobChip'); jobLogId = 'checkLog'; chip.hidden = false;
+          document.getElementById('checkLogBox').open = false; chip.click();
+          const r = document.body.dataset.view === 'checks' && document.getElementById('checkLogBox').open && !document.getElementById('dlgRun').open;
+          jobLogId = was; chip.hidden = true; showView('apps'); return r;
+        });
+        check(chipGo, `${label}: Working... shows the running step's own log (Checks), not the empty run tray`);
         // Duplicate app: a copy to start from, under a new name.
         await page.evaluate(() => { selected.clear(); renderApps(); });
         await page.click(`#gridBody tr[data-name="${testApp}"]`);
