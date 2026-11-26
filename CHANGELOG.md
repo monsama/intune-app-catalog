@@ -4,8 +4,9 @@
 
 - **Remove preinstalled vendor apps - Lenovo: McAfee's survey no longer comes up.** McAfee's suite (LiveSafe, Total
   Protection) has no quiet uninstaller - its own one asks "tell us why you uninstall McAfee" and waits. It is no longer
-  started; the suite is removed by McAfee's removal tool (MCPR's mccleanup.exe in the app's packages folder), which now
-  runs first. Without it the log says what to add. Apps added before: remove the clean-up app from the catalog and
+  started; the suite is removed by McAfee's removal tool (MCPR's mccleanup.exe), which now runs first. When its files
+  aren't in the app's packages folder, the script fetches MCPR.exe from McAfee (download.mcafee.com), uses it only when
+  validly signed by McAfee, lets it unpack, copies mccleanup.exe and stops it. Without either, the log says what to add. Apps added before: remove the clean-up app from the catalog and
   add it again from the starter set (its scripts are written when it is added).
 
 ## 2.38.62

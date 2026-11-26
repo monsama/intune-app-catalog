@@ -105,6 +105,53 @@ function Remove-CleanupPackage($Package) {
     catch { Write-CleanupLog "  failed: $($_.Exception.Message)" }
 }
 
+function Get-McAfeeRemovalTool {
+    <#
+      McAfee's removal tool from McAfee (2.38.63), for when its files aren't in the packages folder: MCPR.exe from
+      McAfee's download server, used only when it is validly signed by McAfee. MCPR unpacks itself into a folder of
+      the temp folder when it starts (its command-line part, mccleanup.exe, among the files) and then shows its window:
+      it is started, the unpacked files are copied as soon as they are there, and it is stopped. $null when that
+      doesn't work (no internet, another file, McAfee changed how MCPR unpacks) - the log says which step.
+    #>
+    $url = 'https://download.mcafee.com/molbin/iss-loc/SupportTools/MCPR/MCPR.exe'
+    $work = Join-Path ([System.IO.Path]::GetTempPath()) 'IntuneAppCatalog-MCPR'
+    try {
+        if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+        [void](New-Item -ItemType Directory -Path $work -Force)
+        $exe = Join-Path $work 'MCPR.exe'
+        Write-CleanupLog "Fetching McAfee's removal tool: $url"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -TimeoutSec 300 -ErrorAction Stop
+        $sig = Get-AuthenticodeSignature -LiteralPath $exe
+        if ($sig.Status -ne 'Valid' -or [string]$sig.SignerCertificate.Subject -notmatch 'McAfee') { Write-CleanupLog "  not used: its signature is $($sig.Status) ($($sig.SignerCertificate.Subject))"; return $null }
+        $since = Get-Date
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden -ErrorAction Stop
+        $found = $null
+        for ($i = 0; $i -lt 60 -and -not $found; $i++) {
+            Start-Sleep -Seconds 2
+            $found = @(Get-ChildItem -LiteralPath $tempRoot -Filter 'mccleanup.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $since.AddMinutes(-1) -and $_.FullName -notlike "$work*" }) | Select-Object -First 1
+        }
+        if ($found) {
+            # Unpacking done when the folder stops growing.
+            $last = -1
+            for ($i = 0; $i -lt 15; $i++) { $n = @(Get-ChildItem -LiteralPath $found.DirectoryName -Recurse -File -ErrorAction SilentlyContinue).Count; if ($n -eq $last) { break }; $last = $n; Start-Sleep -Seconds 2 }
+            Copy-Item -Path (Join-Path $found.DirectoryName '*') -Destination $work -Recurse -Force
+        }
+        # MCPR and what it started are stopped - its window waits for a click nobody makes.
+        foreach ($c in @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" -ErrorAction SilentlyContinue)) { Stop-Process -Id $c.ProcessId -Force -ErrorAction SilentlyContinue }
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        if (-not $found) { Write-CleanupLog '  not used: MCPR didn''t unpack mccleanup.exe within 2 minutes'; return $null }
+        $tool = Get-Item -LiteralPath (Join-Path $work 'mccleanup.exe') -ErrorAction SilentlyContinue
+        if (-not $tool) { Write-CleanupLog '  not used: mccleanup.exe couldn''t be copied'; return $null }
+        $toolSig = Get-AuthenticodeSignature -LiteralPath $tool.FullName
+        if ($toolSig.Status -ne 'Valid' -or [string]$toolSig.SignerCertificate.Subject -notmatch 'McAfee') { Write-CleanupLog "  not used: mccleanup.exe's signature is $($toolSig.Status)"; return $null }
+        Write-CleanupLog "  got it: $($tool.FullName)"
+        return $tool
+    }
+    catch { Write-CleanupLog "  couldn't fetch it: $($_.Exception.Message)"; return $null }
+}
+
 # The app's tests load the functions only.
 if ($CleanupLoadOnly) { return }
 
@@ -122,12 +169,14 @@ $restart = $false
 # folder, then Build package) - first, so the suite is gone before the list below (2.38.63).
 if ($Targets.McAfeeTool -and @(Get-CleanupPrograms | Where-Object { $_.Name -like 'McAfee*' }).Count) {
     $tool = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'mccleanup.exe' -Recurse -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+    # Not in the packages folder: fetched from McAfee (2.38.63) - see Get-McAfeeRemovalTool.
+    if (-not $tool) { $tool = Get-McAfeeRemovalTool }
     if ($tool) {
         $code = Invoke-CleanupProcess $tool.FullName '-p StopServices,MFSY,PEF,MXD,CSP,Sustainability,MOCP,MFP,APPSTATS,Auth,EMproxy,FWdiver,HW,MAS,MAT,MBK,MCPR,McProxy,McSvcHost,VUL,MHN,MNA,MOBK,MPFP,MPFPCU,MPS,SHRED,MPSCU,MQC,MQCCU,MSAD,MSHR,MSK,MSKCU,MWL,NMC,RedirSvc,VS,REMEDIATION,MSC,YAP,TRUEKEY,LAM,PCB,Symlink,SafeConnect,MGS,WMIRemover,RESIDUE -v -s' 30
         Write-CleanupLog "  McAfee removal tool: exit code $code"
         $restart = $true
     }
-    else { Write-CleanupLog 'McAfee''s suite needs McAfee''s removal tool: put MCPR''s files (mccleanup.exe and the rest) in this app''s packages folder, then Build package and send it again.' }
+    else { Write-CleanupLog 'McAfee''s suite needs McAfee''s removal tool and it couldn''t be fetched: put MCPR''s files (mccleanup.exe and the rest) in this app''s packages folder, then Build package and send it again.' }
 }
 foreach ($e in @(Get-CleanupPrograms)) {
     # An uninstaller that can only ask (no quiet mode) is never started: it would wait for an answer nobody gives.
