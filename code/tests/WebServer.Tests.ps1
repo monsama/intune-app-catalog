@@ -946,6 +946,8 @@ try {
     Check ($clName -eq 'Remove preinstalled vendor apps - HP' -and $clApp.deploy.detection.type -eq 'Script' -and (@($clApp.requiredFor) -contains 'SG-ZZ-Clean') -and $clInstall -match '\$DetectOnly = \$false' -and $clInstall -match 'HP Support Assistant') 'clean-up apps: added from the starter set as a script app, with its groups' (@($cl, $clApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
     $clStarter = Invoke-Api '/api/package-list' @{ starter = $true }
     Check (@($clStarter.items | Where-Object { $_.id -eq 'IntuneAppCatalog.Cleanup.HP' -and $_.inCatalog -eq $clName }).Count -eq 1) 'clean-up apps: the starter set says it is in the catalog'
+    # Not left for the next test file (WebGraph reads the same catalog, and its groups).
+    if ($clName) { [void](Invoke-Api '/api/app-remove' @{ name = $clName }) }
     $o365Again = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune' }) }
     Check (@($o365Again.added).Count -eq 0 -and @($o365Again.skipped) -match 'already in the catalog') 'Microsoft 365 Apps: a second one is refused' ($o365Again | ConvertTo-Json -Compress)
     if ($o365Name) {
