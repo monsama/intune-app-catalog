@@ -312,7 +312,18 @@ for (const b of document.querySelectorAll('button.help')) b.setAttribute('aria-e
 
 // ---------------------------------------------------------------- the job tray
 $('btnRunHide').addEventListener('click', () => $('dlgRun').close());
-$('jobChip').addEventListener('click', () => { if (!$('dlgRun').open) $('dlgRun').show(); });
+// Working... (2.38.56): to where the running step shows its log - its page (Checks), with the log opened, or its
+// dialog (restored when minimized); the run tray only for a step that writes there.
+$('jobChip').addEventListener('click', () => {
+  const log = jobLogId ? $(jobLogId) : null, dlg = log && log.closest('dialog'), view = log && log.closest('section.view');
+  if (dlg && dlg.id !== 'dlgRun' && dlg.open) { if (dlg.classList.contains('minimized')) wcRestore(dlg); log.scrollIntoView({ block: 'nearest' }); return; }
+  if (view) {
+    showView(view.id.replace(/^view/, '').toLowerCase());
+    const box = log.closest('details'); if (box) box.open = true;
+    log.scrollIntoView({ block: 'nearest' }); return;
+  }
+  if (!$('dlgRun').open) $('dlgRun').show();
+});
 $('dlgRun').addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); $('dlgRun').close(); } });
 
 // ---------------------------------------------------------------- getting started (Home)

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.38.56
+
+- **Working... goes to the running step**: clicking it now shows where that step writes its progress - the Checks page
+  with its log opened, or the dialog it runs in (restored when minimized) - instead of an empty "Working" tray.
+
 ## 2.38.55
 
 - **New package to send**: an app in Intune whose package was built again from *changed* files shows the stage

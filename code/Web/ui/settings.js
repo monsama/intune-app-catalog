@@ -169,8 +169,10 @@ async function runJob(body, onDone, opts = {}) {
 }
 // Shows a running step's output until it ends, then hands over its result -
 // for a step just started, and for one still running from before a reload.
+// Where the running step shows its progress (2.38.56): the Working... chip goes there - not to the empty run tray.
+let jobLogId = '';
 function followJob(job, onDone, opts = {}) {
-  jobRunning = true; jobButtons(false);
+  jobRunning = true; jobButtons(false); jobLogId = opts.log || '';
   const extra = opts.log ? $(opts.log) : null;
   const both = t => { activity(t); if (extra) { extra.textContent += t.endsWith('\n') ? t : t + '\n'; extra.scrollTop = extra.scrollHeight; } };
   both(`${stamp()} ${opts.startText || 'Sign in in the window that opens...'}`);
