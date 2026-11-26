@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38.54
+
+- **Checks: "Could not check: Collection was modified"** - several check workers signing in to Graph at the same moment
+  could trip over each other in the Graph module, and the first app (often 7-Zip) showed as not checked. That app is
+  now checked once more, a moment later.
+- **Checks: Microsoft 365 settings** show only what differs ("installs Bing" against "leaves out Bing"), not both
+  whole summaries cut off after two lines. The same in Take from Intune's review.
+
 ## 2.38.53
 
 - **Is it packaged?** The side panel of an app with its own installer now says *Package: built &lt;time&gt;* or *not built yet*.

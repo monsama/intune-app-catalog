@@ -3685,6 +3685,31 @@ function Global:ConvertTo-OfficeSuiteBody {
     }
 }
 
+function Global:Get-OfficeSettingsDiff {
+    <#
+      Pure (2.38.54): only what differs between two Microsoft 365 Apps settings, in words - @{ Local; Remote } or $null.
+      Checks showed both whole summaries, cut off after two lines, so the one app that differed (Bing) was hard to find.
+      The same settings Get-OfficeSettingsSummary names (channel, bitness, languages, shared activation, the apps left out).
+    #>
+    param($Local, $Remote)
+    $l = ConvertTo-OfficeSettings $Local; $r = ConvertTo-OfficeSettings $Remote
+    if (-not $l -or -not $r) { return $null }
+    $loc = New-Object System.Collections.Generic.List[string]; $rem = New-Object System.Collections.Generic.List[string]
+    $ch = Get-OfficeChannels
+    if ($l.channel -ne $r.channel) { $loc.Add($ch[$l.channel]); $rem.Add($ch[$r.channel]) }
+    if ($l.architecture -ne $r.architecture) { $loc.Add($(if ($l.architecture -eq 'x86') { '32-bit' } else { '64-bit' })); $rem.Add($(if ($r.architecture -eq 'x86') { '32-bit' } else { '64-bit' })) }
+    $lang = { param($s) if (@($s.locales).Count) { 'languages ' + (@($s.locales) -join ', ') } else { "Windows' language" } }
+    if ((@($l.locales | Sort-Object) -join ',') -ne (@($r.locales | Sort-Object) -join ',')) { $loc.Add((& $lang $l)); $rem.Add((& $lang $r)) }
+    if ([bool]$l.sharedActivation -ne [bool]$r.sharedActivation) { $loc.Add($(if ($l.sharedActivation) { 'shared computer activation' } else { 'no shared computer activation' })); $rem.Add($(if ($r.sharedActivation) { 'shared computer activation' } else { 'no shared computer activation' })) }
+    $names = Get-OfficeAppKeys
+    $onlyL = @($names.Keys | Where-Object { @($l.excluded) -contains $_ -and @($r.excluded) -notcontains $_ })
+    $onlyR = @($names.Keys | Where-Object { @($r.excluded) -contains $_ -and @($l.excluded) -notcontains $_ })
+    if ($onlyL.Count) { $t = ($onlyL | ForEach-Object { $names[$_] }) -join ', '; $loc.Add("leaves out $t"); $rem.Add("installs $t") }
+    if ($onlyR.Count) { $t = ($onlyR | ForEach-Object { $names[$_] }) -join ', '; $loc.Add("installs $t"); $rem.Add("leaves out $t") }
+    if (-not $loc.Count) { return $null }
+    return @{ Local = ($loc -join '; '); Remote = ($rem -join '; ') }
+}
+
 function Global:Get-OfficeSettingsSummary {
     # Pure: the settings in one line, as people read them ("Monthly Enterprise Channel, 64-bit, Windows' language; without Groove, ...").
     param($Settings)
