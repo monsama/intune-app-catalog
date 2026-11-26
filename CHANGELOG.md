@@ -7,6 +7,8 @@
   now checked once more, a moment later.
 - **Checks: Microsoft 365 settings** show only what differs ("installs Bing" against "leaves out Bing"), not both
   whole summaries cut off after two lines. The same in Take from Intune's review.
+- **Microsoft 365 Apps, added new**: no longer gets "Microsoft" as developer and a filler note - they only showed up as
+  differences against Intune.
 
 ## 2.38.53
 

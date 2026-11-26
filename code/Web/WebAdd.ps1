@@ -135,7 +135,9 @@ function Global:Add-WebOfficeApp {
         managedUpdates = $false; office = $(if ($Settings) { ConvertTo-OfficeSettings $Settings } else { Get-OfficeDefaultSettings })
         metadata = [pscustomobject]@{ description = 'Microsoft 365 Apps for Windows: Word, Excel, PowerPoint, Outlook, OneNote and Teams.'; publisher = 'Microsoft'
             informationUrl = 'https://www.microsoft.com/microsoft-365'; privacyUrl = 'https://privacy.microsoft.com/privacystatement'; appVersion = ''
-            owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = 'Microsoft'; notes = 'Intune''s own Microsoft 365 Apps - Microsoft installs and updates it on its update channel.'
+            # No developer or notes of its own (2.38.54): filler that Intune didn't have for an app sent before 2.38.42 -
+            # Read from Intune and Checks kept showing them as differences. Who makes it is the publisher, Microsoft.
+            owner = [string]$Global:App.DefaultAppSettings.DefaultOwner; developer = ''; notes = ''
             installCommand = ''; uninstallCommand = '' } }
     $r = Save-WebApp @{ originalName = ''; version = ''; app = $edit }
     if ($r.ok) { Write-Log "[OK] $($r.name) added: Microsoft 365 Apps ($(Get-OfficeSettingsSummary $edit.office))." }
