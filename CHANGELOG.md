@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.38.70
+
+- **The logs in the black boxes read like the rest of the app.** This covers Run, Send to Intune, Checks, Read from
+  Intune, Activity in Settings and the send cards.
+  - "=== Step ===" is a bold heading.
+  - Rules of = and - are gone.
+  - [OK], [WARN] and [ERROR] are a green ✓, an amber ⚠ and a red ✕.
+  - Failed lines are tinted red.
+  - Times and Graph's request lines are grey.
+  - Blank lines don't pile up.
+  - The text itself is unchanged: **Copy** (top right of each log) copies it as the step wrote it, for a ticket.
+- **Packaging's log**, step by step:
+  - A heading.
+  - The packages folder and how many apps there are.
+  - Per app, a heading with what it is and the .intunewin made.
+  - One line at the end: "1 built, 0 failed, 0 skipped".
+  - The console banner and the list of settings are gone.
+- **Send to Intune's log** no longer starts with the TLS and Expect100 settings.
+
 ## 2.38.69
 
 - **The send cards in the bottom right corner** (Send settings, Send groups, Replace package) look like the dialogs:

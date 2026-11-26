@@ -156,40 +156,85 @@ const stamp = () => new Date().toTimeString().slice(0, 8);
 
 // 2.38.8: every log colours its lines - failures red, warnings amber, OK green - whoever writes to it (they all set
 // textContent; this follows). A failure also opens a folded log, so it is never hidden.
+// 2.38.70: and reads like the rest of the app - "=== Step ===" is a heading, rules of = and - go, [OK] / [WARN] /
+// [ERROR] are marks, times are grey, blank lines don't pile up. The text itself is never changed: what the step wrote
+// stays in the log (hidden, not removed), so code that appends to it and Copy get it as written.
 const logKind = l => /\[(FAILED|ERROR)\]|-> FAILED\b|^\s*(ERROR|FAILED)\b[:\s]|\bException\b/.test(l) ? 'lerr'
   : /\[(WARN|WARNING|!)\]/.test(l) ? 'lwarn' : /\[OK\]|^\s*\[\+\]|^PASSED\b/.test(l) ? 'lok' : '';
 const logSeen = new WeakMap();
+const LOG_RULE = /^\s*([=\-*#_~])\1{3,}\s*$/;
+const LOG_HEAD = /^(\s*)(={2,}|-{3,})\s+(.+?)(\s+\2)?\s*$/;
+const LOG_TIME = /^(\d{2}:\d{2}:\d{2}|\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?)(\s+)/;
+const LOG_TAG = /^(\s*)\[(OK|WARN|WARNING|ERROR|FAILED|INFO|\+|!)\]\s?/;
+function logLine(line, prevBlank) {
+  // Each line its own block; its line break kept in the text but not drawn (a block with a drawn break is two lines).
+  const nl = line.endsWith('\n'), body = nl ? line.slice(0, -1) : line;
+  const br = () => nl ? el('span', { class: 'lnl', text: '\n' }) : '';
+  const hide = t => el('span', { class: 'lx', text: t });
+  if (!body.trim()) return el('span', { class: 'ln lblank' + (prevBlank ? ' lgone' : '') }, body, br());
+  if (LOG_RULE.test(body)) return el('span', { class: 'ln lgone', text: line });
+  const h = LOG_HEAD.exec(body);
+  if (h) return el('span', { class: 'ln lhead' }, hide(h[1] + h[2] + ' '), h[3], h[4] ? hide(h[4]) : '', br());
+  const kind = logKind(body), parts = [];
+  let rest = body;
+  const t = LOG_TIME.exec(rest);
+  if (t) { parts.push(el('span', { class: 'lts', text: t[1] }), t[2]); rest = rest.slice(t[0].length); }
+  const g = LOG_TAG.exec(rest);
+  if (g) {
+    const k = /OK|\+/.test(g[2]) ? 'ok' : /WARN|!/.test(g[2]) ? 'warn' : /ERROR|FAILED/.test(g[2]) ? 'err' : 'info';
+    parts.push(g[1], el('span', { class: 'ltag t-' + k }, hide(g[0].slice(g[1].length))));
+    rest = rest.slice(g[0].length);
+  }
+  parts.push(rest, br());
+  // Graph's own request lines ([GRAPH] GET /... 200 in 9 ms) are detail: grey, unless one failed.
+  const graph = /^\s*\[GRAPH\]/.test(body) && kind !== 'lerr';
+  return el('span', { class: 'ln' + (kind ? ' ' + kind : '') + (graph ? ' ldetail' : '') }, ...parts);
+}
 function colourLog(pre) {
   const text = pre.textContent;
   if (logSeen.get(pre) === text) return;
-  // A log with markup of its own (Diagnostics' headings and verdicts) is left as it is - only plain text is coloured.
-  if ([...pre.children].some(c => !/^(lerr|lwarn|lok)$/.test(c.className))) { logSeen.set(pre, text); return; }
+  // A log with markup of its own (Diagnostics' headings and verdicts) is left as it is - only plain text is shaped.
+  if ([...pre.children].some(c => !c.classList.contains('ln'))) { logSeen.set(pre, text); return; }
   const atEnd = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 24;
   if (text.length > 400000) { logSeen.set(pre, text); return; }
   const frag = document.createDocumentFragment();
-  let plain = '', failed = false;
+  let failed = false, prevBlank = true;
   for (const line of text.split(/(?<=\n)/)) {
-    const k = logKind(line);
-    if (!k) { plain += line; continue; }
-    if (plain) { frag.append(plain); plain = ''; }
-    if (k === 'lerr') failed = true;
-    frag.append(el('span', { class: k, text: line }));
+    const span = logLine(line, prevBlank);
+    if (span.classList.contains('lerr')) failed = true;
+    prevBlank = span.classList.contains('lblank') || (span.classList.contains('lgone') && prevBlank);
+    frag.append(span);
   }
-  if (plain) frag.append(plain);
   logSeen.set(pre, text);
   pre.replaceChildren(frag);
   pre.classList.toggle('hasfail', failed);
   if (failed) { const d = pre.closest('details'); if (d && !d.open) d.open = true; }
   if (atEnd) pre.scrollTop = pre.scrollHeight;
 }
+// Copy (2.38.70): the log as the step wrote it, rules and brackets included - for a ticket, or for whoever helps.
+function logCopyFor(pre) {
+  if (pre._copy || pre.classList.contains('diag')) return;
+  pre._copy = true;
+  const wrap = el('div', { class: 'logwrap' });
+  pre.before(wrap); wrap.append(pre);
+  wrap.append(el('button', { type: 'button', class: 'logcopy', text: 'Copy', title: 'Copy the whole log', onclick: async () => {
+    try { await navigator.clipboard.writeText(pre.textContent); toast('Log copied.'); } catch (e) { toast('The log could not be copied - select it and press Ctrl+C.', true); }
+  } }));
+}
 {
   const pending = new Set(); let scheduled = false;
-  // One frame for whatever changed since the last - a step writes two logs at once (its own and Activity).
+  // One frame for whatever changed since the last - a step writes two logs at once (its own and Activity). The whole
+  // page is watched: a log made later (a send's card) is shaped too.
   const mo = new MutationObserver(recs => {
-    for (const r of recs) { const pre = (r.target.nodeType === 3 ? r.target.parentElement : r.target).closest('pre.log'); if (pre) pending.add(pre); }
-    if (pending.size && !scheduled) { scheduled = true; requestAnimationFrame(() => { scheduled = false; const list = [...pending]; pending.clear(); for (const p of list) colourLog(p); }); }
+    for (const r of recs) {
+      const t = r.target.nodeType === 3 ? r.target.parentElement : r.target;
+      const pre = t && t.closest && t.closest('pre.log'); if (pre) pending.add(pre);
+      for (const n of r.addedNodes || []) if (n.nodeType === 1) { if (n.matches('pre.log')) pending.add(n); for (const p of n.querySelectorAll ? n.querySelectorAll('pre.log') : []) pending.add(p); }
+    }
+    if (pending.size && !scheduled) { scheduled = true; requestAnimationFrame(() => { scheduled = false; const list = [...pending]; pending.clear(); for (const p of list) { logCopyFor(p); colourLog(p); } }); }
   });
-  for (const pre of document.querySelectorAll('pre.log')) mo.observe(pre, { childList: true, characterData: true, subtree: true });
+  mo.observe(document.body, { childList: true, characterData: true, subtree: true });
+  for (const pre of document.querySelectorAll('pre.log')) { logCopyFor(pre); colourLog(pre); }
 }
 
 let toastTimer = null;
