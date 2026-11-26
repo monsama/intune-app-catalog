@@ -30,5 +30,6 @@ function Get-CleanupTargets {
         Keep         = @('HP Support Assistant*', 'HP Hotkey*', 'HP System Event*', 'HP Audio*', 'HP Power Manager*', 'HP MAC Address*', 'HP Dock*', 'HP BIOS*', 'HP Sure Start*', 'HP Image Assistant*')
         KeepPackages = @('AD2F1837.HPSupportAssistant*', 'AD2F1837.HPSystemEventUtilityHost*', 'AD2F1837.HPAudioControl*', 'AD2F1837.HPPowerManager*', 'AD2F1837.HPHotkey*')
         McAfeeTool = $false
+        NoUninstaller = @()
     }
 }

@@ -87,13 +87,39 @@ function Remove-CleanupProgram($Entry) {
     Write-CleanupLog "Removing $($Entry.Name) ($($Entry.Publisher))"
     $guid = if ($Entry.Key -match '^\{[0-9A-Fa-f-]{36}\}$') { $Entry.Key } else { [regex]::Match($Entry.Uninstall, '\{[0-9A-Fa-f-]{36}\}').Value }
     if ($guid -and ($Entry.Msi -or $Entry.Uninstall -match '(?i)msiexec')) { return (Invoke-CleanupProcess 'msiexec.exe' "/x $guid /qn /norestart REBOOT=ReallySuppress" 30) }
-    if ($Entry.Quiet) { $cmd = Split-CleanupCommand $Entry.Quiet; return (Invoke-CleanupProcess $cmd[0] $cmd[1]) }
+    if ($Entry.Quiet) { $cmd = Split-CleanupCommand $Entry.Quiet; $qcut = $cmd[0].LastIndexOfAny([char[]]'\/'); if ($qcut -gt 0) { Stop-CleanupProgramProcesses $cmd[0].Substring(0, $qcut) }; return (Invoke-CleanupProcess $cmd[0] $cmd[1]) }
     if (-not $Entry.Uninstall) { Write-CleanupLog '  it has no uninstall command'; return 1 }
     $cmd = Split-CleanupCommand $Entry.Uninstall
     $file = $cmd[0]; $arguments = $cmd[1]
-    if ([System.IO.Path]::GetFileName($file) -match '(?i)^unins\d{3}\.exe$') { $arguments = "$arguments /VERYSILENT /SUPPRESSMSGBOXES /NORESTART".Trim() }
+    # Split by hand (a Windows path - the same wherever the tests run).
+    $cut = $file.LastIndexOfAny([char[]]'\/'); $leaf = $file.Substring($cut + 1); $dir = if ($cut -gt 0) { $file.Substring(0, $cut) } else { '' }
+    # The program and its services stopped first (2.38.63): an uninstaller that finds it running asks to close it - and
+    # waits for an answer nobody can give (Lenovo AI Now's Uninstall.exe /S hung until the time limit).
+    Stop-CleanupProgramProcesses $dir
+    if ($leaf -match '(?i)^unins\d{3}\.exe$') { $arguments = "$arguments /VERYSILENT /SUPPRESSMSGBOXES /NORESTART".Trim() }
     elseif ($arguments -notmatch '(?i)(^|\s)[/-](s|silent|quiet|q|qn|verysilent)(\s|$)') { $arguments = "$arguments /S".Trim() }
+    # An NSIS uninstaller (Uninstall.exe / uninst.exe) copies itself to the temp folder and returns at once: _?= keeps it
+    # in place, so its end is waited for (its own folder then stays, empty of the program).
+    if ($leaf -match '(?i)^(uninstall|uninst)\.exe$' -and $arguments -match '(?i)(^|\s)/S(\s|$)' -and $arguments -notmatch '_\?=') { $arguments = "$arguments _?=$dir" }
     return (Invoke-CleanupProcess $file $arguments)
+}
+
+function Stop-CleanupProgramProcesses([string]$Folder) {
+    # Processes running from the program's folder, and services whose program is there - stopped before it is removed.
+    # Not for a folder that is too general (Windows, Program Files itself).
+    if (-not $Folder -or $Folder.Length -lt 12 -or $Folder -match '(?i)^[a-z]:\\(windows|program files( \(x86\))?|programdata)\\?$') { return }
+    $base = $Folder.TrimEnd('\') + '\'
+    try {
+        foreach ($svc in @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { ([string]$_.PathName).Trim('"').StartsWith($base, [StringComparison]::OrdinalIgnoreCase) -or ([string]$_.PathName).StartsWith('"' + $base, [StringComparison]::OrdinalIgnoreCase) })) {
+            Write-CleanupLog "  stopping the service $($svc.Name)"
+            Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and ([string]$_.ExecutablePath).StartsWith($base, [StringComparison]::OrdinalIgnoreCase) })) {
+            Write-CleanupLog "  stopping $($p.Name) ($($p.ProcessId))"
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch { Write-CleanupLog "  couldn't stop what runs from $Folder`: $($_.Exception.Message)" }
 }
 
 function Remove-CleanupPackage($Package) {
@@ -103,6 +129,53 @@ function Remove-CleanupPackage($Package) {
         else { Remove-AppxPackage -Package $Package.Full -AllUsers -ErrorAction Stop }
     }
     catch { Write-CleanupLog "  failed: $($_.Exception.Message)" }
+}
+
+function Get-McAfeeRemovalTool {
+    <#
+      McAfee's removal tool from McAfee (2.38.63), for when its files aren't in the packages folder: MCPR.exe from
+      McAfee's download server, used only when it is validly signed by McAfee. MCPR unpacks itself into a folder of
+      the temp folder when it starts (its command-line part, mccleanup.exe, among the files) and then shows its window:
+      it is started, the unpacked files are copied as soon as they are there, and it is stopped. $null when that
+      doesn't work (no internet, another file, McAfee changed how MCPR unpacks) - the log says which step.
+    #>
+    $url = 'https://download.mcafee.com/molbin/iss-loc/SupportTools/MCPR/MCPR.exe'
+    $work = Join-Path ([System.IO.Path]::GetTempPath()) 'IntuneAppCatalog-MCPR'
+    try {
+        if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+        [void](New-Item -ItemType Directory -Path $work -Force)
+        $exe = Join-Path $work 'MCPR.exe'
+        Write-CleanupLog "Fetching McAfee's removal tool: $url"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing -TimeoutSec 300 -ErrorAction Stop
+        $sig = Get-AuthenticodeSignature -LiteralPath $exe
+        if ($sig.Status -ne 'Valid' -or [string]$sig.SignerCertificate.Subject -notmatch 'McAfee') { Write-CleanupLog "  not used: its signature is $($sig.Status) ($($sig.SignerCertificate.Subject))"; return $null }
+        $since = Get-Date
+        $tempRoot = [System.IO.Path]::GetTempPath()
+        $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden -ErrorAction Stop
+        $found = $null
+        for ($i = 0; $i -lt 60 -and -not $found; $i++) {
+            Start-Sleep -Seconds 2
+            $found = @(Get-ChildItem -LiteralPath $tempRoot -Filter 'mccleanup.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -ge $since.AddMinutes(-1) -and $_.FullName -notlike "$work*" }) | Select-Object -First 1
+        }
+        if ($found) {
+            # Unpacking done when the folder stops growing.
+            $last = -1
+            for ($i = 0; $i -lt 15; $i++) { $n = @(Get-ChildItem -LiteralPath $found.DirectoryName -Recurse -File -ErrorAction SilentlyContinue).Count; if ($n -eq $last) { break }; $last = $n; Start-Sleep -Seconds 2 }
+            Copy-Item -Path (Join-Path $found.DirectoryName '*') -Destination $work -Recurse -Force
+        }
+        # MCPR and what it started are stopped - its window waits for a click nobody makes.
+        foreach ($c in @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($proc.Id)" -ErrorAction SilentlyContinue)) { Stop-Process -Id $c.ProcessId -Force -ErrorAction SilentlyContinue }
+        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        if (-not $found) { Write-CleanupLog '  not used: MCPR didn''t unpack mccleanup.exe within 2 minutes'; return $null }
+        $tool = Get-Item -LiteralPath (Join-Path $work 'mccleanup.exe') -ErrorAction SilentlyContinue
+        if (-not $tool) { Write-CleanupLog '  not used: mccleanup.exe couldn''t be copied'; return $null }
+        $toolSig = Get-AuthenticodeSignature -LiteralPath $tool.FullName
+        if ($toolSig.Status -ne 'Valid' -or [string]$toolSig.SignerCertificate.Subject -notmatch 'McAfee') { Write-CleanupLog "  not used: mccleanup.exe's signature is $($toolSig.Status)"; return $null }
+        Write-CleanupLog "  got it: $($tool.FullName)"
+        return $tool
+    }
+    catch { Write-CleanupLog "  couldn't fetch it: $($_.Exception.Message)"; return $null }
 }
 
 # The app's tests load the functions only.
@@ -117,21 +190,26 @@ if ($DetectOnly) {
 # ---------------------------------------------------------------- removal
 Write-CleanupLog "---- Remove preinstalled apps ($($Targets.Name)) started"
 $restart = $false
-foreach ($e in @(Get-CleanupPrograms)) {
-    $code = Remove-CleanupProgram $e
-    Write-CleanupLog "  exit code $code"
-    if ($code -in 1641, 3010) { $restart = $true }
-}
-# McAfee's own suite has no quiet uninstaller: McAfee's removal tool (MCPR, its command-line mccleanup.exe) does it
-# when its files are put next to this script (the app's packages folder, then Build package).
+# McAfee's own suite has no quiet uninstaller - its own one only asks why (a survey nobody answers). McAfee's removal
+# tool (MCPR, its command-line mccleanup.exe) does it when its files are put next to this script (the app's packages
+# folder, then Build package) - first, so the suite is gone before the list below (2.38.63).
 if ($Targets.McAfeeTool -and @(Get-CleanupPrograms | Where-Object { $_.Name -like 'McAfee*' }).Count) {
     $tool = @(Get-ChildItem -LiteralPath $PSScriptRoot -Filter 'mccleanup.exe' -Recurse -File -ErrorAction SilentlyContinue) | Select-Object -First 1
+    # Not in the packages folder: fetched from McAfee (2.38.63) - see Get-McAfeeRemovalTool.
+    if (-not $tool) { $tool = Get-McAfeeRemovalTool }
     if ($tool) {
         $code = Invoke-CleanupProcess $tool.FullName '-p StopServices,MFSY,PEF,MXD,CSP,Sustainability,MOCP,MFP,APPSTATS,Auth,EMproxy,FWdiver,HW,MAS,MAT,MBK,MCPR,McProxy,McSvcHost,VUL,MHN,MNA,MOBK,MPFP,MPFPCU,MPS,SHRED,MPSCU,MQC,MQCCU,MSAD,MSHR,MSK,MSKCU,MWL,NMC,RedirSvc,VS,REMEDIATION,MSC,YAP,TRUEKEY,LAM,PCB,Symlink,SafeConnect,MGS,WMIRemover,RESIDUE -v -s' 30
         Write-CleanupLog "  McAfee removal tool: exit code $code"
         $restart = $true
     }
-    else { Write-CleanupLog 'McAfee is still installed: put McAfee''s removal tool (MCPR - mccleanup.exe and its files) in this app''s packages folder, then Build package and send it again.' }
+    else { Write-CleanupLog 'McAfee''s suite needs McAfee''s removal tool and it couldn''t be fetched: put MCPR''s files (mccleanup.exe and the rest) in this app''s packages folder, then Build package and send it again.' }
+}
+foreach ($e in @(Get-CleanupPrograms)) {
+    # An uninstaller that can only ask (no quiet mode) is never started: it would wait for an answer nobody gives.
+    if (Test-CleanupLike $e.Uninstall $Targets.NoUninstaller) { Write-CleanupLog "Not starting $($e.Name)'s own uninstaller - it only asks, it can't run unattended."; continue }
+    $code = Remove-CleanupProgram $e
+    Write-CleanupLog "  exit code $code"
+    if ($code -in 1641, 3010) { $restart = $true }
 }
 foreach ($p in @(Get-CleanupPackages)) { Remove-CleanupPackage $p }
 
