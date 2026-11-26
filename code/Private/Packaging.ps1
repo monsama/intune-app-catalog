@@ -111,11 +111,30 @@ function Global:Install-PackagingTool {
     }
 }
 
+function Global:Get-CertificateOrganization([string]$Subject) {
+    # The O= values of a certificate subject, read field by field (2.38.71): a comma or "O=" inside another field's
+    # quoted value stays part of that value - a subject like CN="x, O=Vendor", O=Someone gives only "Someone".
+    $fields = New-Object System.Collections.Generic.List[string]; $cur = New-Object System.Text.StringBuilder; $quoted = $false
+    for ($i = 0; $i -lt $Subject.Length; $i++) {
+        $c = $Subject[$i]
+        if ($c -eq '"') { $quoted = -not $quoted; [void]$cur.Append($c) }
+        elseif ($c -eq '\' -and $i + 1 -lt $Subject.Length) { $i++; [void]$cur.Append($c).Append($Subject[$i]) }
+        elseif (($c -eq ',' -or $c -eq '+') -and -not $quoted) { $fields.Add($cur.ToString()); [void]$cur.Clear() }
+        else { [void]$cur.Append($c) }
+    }
+    $fields.Add($cur.ToString())
+    foreach ($f in $fields) {
+        $t = $f.Trim()
+        if ($t -cmatch '^O=(.*)$') { $v = $Matches[1].Trim(); if ($v.Length -ge 2 -and $v.StartsWith('"') -and $v.EndsWith('"')) { $v = $v.Substring(1, $v.Length - 2).Replace('""', '"') }; $v }
+    }
+}
+
 function Global:Test-MicrosoftSignature {
     # Pure: a valid Authenticode signature whose signer's organisation is exactly "Microsoft Corporation".
     param($Signature)
     if (-not $Signature -or [string]$Signature.Status -ne 'Valid' -or -not $Signature.SignerCertificate) { return $false }
-    return ([string]$Signature.SignerCertificate.Subject -match '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)')
+    $orgs = @(Get-CertificateOrganization ([string]$Signature.SignerCertificate.Subject))
+    return ($orgs.Count -eq 1 -and $orgs[0] -ceq 'Microsoft Corporation')
 }
 
 function Global:Initialize-SharedWingetPackage {

@@ -11,7 +11,7 @@ function Get-DownloadTarget {
         Log    = 'TeamViewerQS'
         Url    = 'https://download.teamviewer.com/download/TeamViewerQS_x64.exe'
         File   = 'TeamViewerQS_x64.exe'
-        Signer = '(^|,\s*)O="?TeamViewer (Germany )?GmbH"?(,|$)'
+        Signer = @('TeamViewer Germany GmbH', 'TeamViewer GmbH')
     }
 }
 $QsDir = Join-Path $(if ($env:ProgramFiles) { $env:ProgramFiles } else { 'C:\Program Files' }) 'TeamViewer QuickSupport'

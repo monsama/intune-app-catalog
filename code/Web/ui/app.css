@@ -2037,6 +2037,8 @@ input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
 /* ---------------------------------------------------------------- 2.38.70: logs that read like the app */
 .logwrap { position: relative; }
 .logwrap:has(> pre[hidden]) { display: none; }
+/* An empty log (hidden in dialogs) has nothing to copy - and its button must not be reachable by Tab (2.38.71). */
+.logwrap > pre:empty + .logcopy { display: none; }
 .logwrap > .logcopy { position: absolute; top: 6px; right: 8px; font: inherit; font-size: 11px; padding: 2px 8px; border-radius: var(--r-s); border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: var(--log-fg); cursor: pointer; opacity: 0; transition: opacity .15s; }
 .logwrap:hover > .logcopy, .logwrap > .logcopy:focus-visible { opacity: 1; }
 .logwrap > .logcopy:hover { background: rgba(255,255,255,.16); }
@@ -2049,11 +2051,32 @@ pre.log .lhead { font-weight: 600; color: #e8eef7; margin-top: 6px; }
 pre.log .lhead:first-child { margin-top: 0; }
 pre.log .lts { color: #8b94a3; }
 pre.log .ltag::before { display: inline-block; width: 1.4em; font-weight: 700; }
-pre.log .ltag.t-ok::before { content: '✓'; color: #7ee2a0; }
-pre.log .ltag.t-warn::before { content: '⚠'; color: #f5c451; }
-pre.log .ltag.t-err::before { content: '✕'; color: #ff8a80; }
-pre.log .ltag.t-info::before { content: '•'; color: #8b94a3; }
+/* Read as a word (the bracketed tag itself is hidden from screen readers) - "OK: done", not "check mark [OK] done". */
+pre.log .ltag.t-ok::before { content: '✓'; content: '✓' / 'OK:'; color: #7ee2a0; }
+pre.log .ltag.t-warn::before { content: '⚠'; content: '⚠' / 'Warning:'; color: #f5c451; }
+pre.log .ltag.t-err::before { content: '✕'; content: '✕' / 'Error:'; color: #ff8a80; }
+pre.log .ltag.t-info::before { content: '•'; content: '•' / ''; color: #8b94a3; }
 pre.log .ln.lerr { color: #ffb4ab; background: rgba(255, 82, 82, .12); border-radius: 3px; margin: 0 -4px; padding: 0 4px; }
 pre.log .ln.lwarn { color: #f5d08a; }
 pre.log .ln.lok { color: inherit; }
 pre.log .ln.ldetail { color: #8b94a3; }
+/* 2.38.71 GUI sweep */
+/* The send cards stay clear of a tray dialog (Package's log) - and of a dialog's footer (placeSendStack, guide.js). */
+body:has(> dialog.tray[open]) > .sendstack { bottom: calc(60vh + 32px); }
+/* ...and of minimized dialogs' chips in the corner. */
+body:has(> #dlgTray) > .sendstack { bottom: 80px; }
+/* Narrower windows: one column on the right, not rows that break unevenly over the page. */
+@media (max-width: 1000px) { .sendstack { flex-direction: column-reverse; flex-wrap: nowrap; align-items: flex-end; max-width: 340px; } .sendstack .smore { align-self: flex-end; } .sendcard { width: 100%; } }
+/* A card's log is as tall as what it holds - a two-line error isn't a 120 px black box. */
+.sendcard .slog .log { min-height: 0; }
+/* Copy sits on the log's own colour, clear of the scrollbar - the text no longer shows through it. */
+.logwrap > .logcopy { right: 20px; background: var(--log); }
+.logwrap > .logcopy:hover { background: color-mix(in srgb, var(--log) 80%, #fff); }
+/* A timed line that wraps continues under its text, not under the time. */
+pre.log .ln:has(> .lts) { padding-left: 9ch; text-indent: -9ch; }
+/* History: Undo on the row's own line. */
+#histChanges .rapps .btn { margin-left: 6px; }
+/* The ready chip as tall as the footer's buttons. */
+.readychip { height: 34px; }
+/* The starter set's sticky header covers the rows scrolled under it. */
+#alGrid thead th { background: var(--surface); box-shadow: 0 1px 0 var(--bd); }

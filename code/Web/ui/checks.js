@@ -4,7 +4,7 @@
 
 // ---------------------------------------------------------------- checks
 let findings = [], checkSel = new Set(), checksRunning = false;
-const checkLog = t => { const l = $('checkLog'); l.textContent += t.endsWith('\n') ? t : t + '\n'; l.scrollTop = l.scrollHeight; activity(t); };
+const checkLog = t => { const l = $('checkLog'); logAppend(l, t.endsWith('\n') ? t : t + '\n'); l.scrollTop = l.scrollHeight; activity(t); };
 const keyOf = f => f.key || `${f.area}|${f.catalogName || f.app}|${f.appId}`;
 // A stage's fresh findings replace what that stage said before about the same apps (the last audit's cached rows included).
 function mergeFindings(r) {

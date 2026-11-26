@@ -69,6 +69,31 @@ param(
 $ErrorActionPreference = "Stop"
 
 #region Tool Download
+function Get-CertificateOrganization([string]$Subject) {
+    # The O= values of a certificate subject, read field by field (2.38.71): a comma or "O=" inside another field's
+    # quoted value stays part of that value - a subject like CN="x, O=Vendor", O=Someone gives only "Someone".
+    $fields = New-Object System.Collections.Generic.List[string]; $cur = New-Object System.Text.StringBuilder; $quoted = $false
+    for ($i = 0; $i -lt $Subject.Length; $i++) {
+        $c = $Subject[$i]
+        if ($c -eq '"') { $quoted = -not $quoted; [void]$cur.Append($c) }
+        elseif ($c -eq '\' -and $i + 1 -lt $Subject.Length) { $i++; [void]$cur.Append($c).Append($Subject[$i]) }
+        elseif (($c -eq ',' -or $c -eq '+') -and -not $quoted) { $fields.Add($cur.ToString()); [void]$cur.Clear() }
+        else { [void]$cur.Append($c) }
+    }
+    $fields.Add($cur.ToString())
+    foreach ($f in $fields) {
+        $t = $f.Trim()
+        if ($t -cmatch '^O=(.*)$') { $v = $Matches[1].Trim(); if ($v.Length -ge 2 -and $v.StartsWith('"') -and $v.EndsWith('"')) { $v = $v.Substring(1, $v.Length - 2).Replace('""', '"') }; $v }
+    }
+}
+
+function Test-SignedByMicrosoft($Signature) {
+    # A valid signature whose signer has exactly one organisation, "Microsoft Corporation".
+    if (-not $Signature -or [string]$Signature.Status -ne 'Valid' -or -not $Signature.SignerCertificate) { return $false }
+    $orgs = @(Get-CertificateOrganization ([string]$Signature.SignerCertificate.Subject))
+    return ($orgs.Count -eq 1 -and $orgs[0] -ceq 'Microsoft Corporation')
+}
+
 function Download-IntuneWinAppUtil {
     param([string]$DestinationPath)
     
@@ -113,7 +138,7 @@ function Download-IntuneWinAppUtil {
         # Downloaded from a branch, not a pinned release, and run on every
         # package - only a file Microsoft signed is kept.
         $Signature = Get-AuthenticodeSignature -LiteralPath $ExeFile.FullName
-        if ($Signature.Status -ne 'Valid' -or [string]$Signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)') {
+        if (-not (Test-SignedByMicrosoft $Signature)) {
             throw "The downloaded IntuneWinAppUtil.exe isn't validly signed by Microsoft (signature: $($Signature.Status)). Download it yourself from github.com/microsoft/Microsoft-Win32-Content-Prep-Tool and put it at $DestinationPath."
         }
         
@@ -617,7 +642,7 @@ foreach ($App in $AppsToProcess) {
         }
         # Checked before every use, not only at download: the Tools folder can be a share others write to.
         $ToolSignature = Get-AuthenticodeSignature -LiteralPath $ToolFullPath
-        if ($ToolSignature.Status -ne 'Valid' -or [string]$ToolSignature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=("?)Microsoft Corporation\1\s*(?:,|$)') {
+        if (-not (Test-SignedByMicrosoft $ToolSignature)) {
             throw "$ToolFullPath isn't validly signed by Microsoft (signature: $($ToolSignature.Status)) - not run. Delete it and download the packaging tool again."
         }
         

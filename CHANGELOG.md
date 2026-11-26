@@ -1,5 +1,61 @@
 # Changelog
 
+## 2.38.71
+
+Sweep of 2.38.66–2.38.70, plus CI.
+
+- **Security: the vendor check of downloaded files reads the certificate's organisation field by field.**
+  - Before, a certificate whose subject held the vendor's name inside another field passed as the vendor. Example:
+    `CN="x, O=TeamViewer GmbH", O=Someone`.
+  - Now exactly one organisation must be there, and it must be exactly the vendor's.
+  - This covers the TeamViewer and QuickSupport downloads, McAfee's removal tool and the packaging tool from
+    Microsoft (IntuneWinAppUtil).
+- **Uninstalling TeamViewer** stops only the installed app's own processes. A QuickSupport session running from a
+  user's TEMP folder stays up.
+- **TeamViewer and QuickSupport get 75 minutes to install, not 60.** Three download tries plus setup could take
+  longer than the limit, so Intune reported a timeout instead of the script's own result.
+- **Send cards:**
+  - Replace package followed by another send no longer stops the queue (a script error).
+  - Try again after a failure no longer leaves a "Not sent" message when the second try worked.
+  - Try again started from Checks now also drops the finding.
+  - A failed card is never hidden behind "+N waiting". The chip says what is hidden, e.g. "+2 waiting · +1 sent".
+  - Among sent cards, the newest shows first.
+- **Logs:**
+  - An emptied log is hidden again; before, it was an empty black box. Its Copy button can no longer be reached
+    with Tab.
+  - A heading keeps its exact text, spaces and tabs included, for Copy.
+  - Long logs stay fast: only the new lines are drawn. Activity with 3000 lines took about 37 ms per line and now
+    takes 2 ms.
+  - Screen readers read a mark once ("OK: done"), not as "check mark [OK] done".
+- **Editor:**
+  - Escape in a folded menu (Icon ▾, More ▾) closes the menu, not the editor.
+  - The Version block offers "keeps itself up to date" too.
+  - Picking Managed turns "updates itself" off for good. Before, it came back when managed updates were turned off
+    later.
+- **Layout:**
+  - Send cards no longer cover a dialog's Save, Cancel and the ready chip, the Package window's Close, or the chips
+    of minimized dialogs.
+  - In narrower windows the cards stand in one column on the right.
+  - A failed card's log is as tall as its text.
+  - Log lines:
+    - The Copy button no longer lets text show through.
+    - A timed line that wraps continues under its text, not under the time.
+    - Graph's request lines are grey also after a time.
+  - History: Undo is on the row's own line.
+  - Groups: "New group" is as tall as the scope list beside it.
+  - Nightly run: Reload is a button like the others.
+  - The ready chip is as tall as the footer buttons.
+  - The starter set's header covers the rows scrolled under it.
+- **Small dialogs** no longer maximize on a double-click on their title. They offer no Maximize button, so there was
+  nothing to restore them with.
+- **Delete from Intune and catalog:** the message for an app kept in the catalog now says that the delete in Intune,
+  or saving its result, failed.
+- **CI:**
+  - The unit, lint and UI jobs have time limits, so a test that hangs fails within 20 minutes instead of six hours.
+  - The release check compares the zip against every file git has for the app. Before, it used a list kept by hand,
+    which missed the clean-up and download scripts.
+  - The release image is built from the tests' layer cache, with the same weekly package refresh.
+
 ## 2.38.70
 
 - **The logs in the black boxes read like the rest of the app.** This covers Run, Send to Intune, Checks, Read from
