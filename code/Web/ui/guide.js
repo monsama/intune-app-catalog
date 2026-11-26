@@ -563,12 +563,17 @@ function renderWhere() {
     if (i >= 4) dsec.open = true;
     // Its own part (2.38.73): the requirements and dependencies show as fields at once - no line with Change to open first.
     if (i === 5) { unfold('req'); unfold('dep'); }
-    mark(i); dlg.scrollTop = 0;
+    mark(i); dlg.scrollTop = 0; const eb = form.querySelector(':scope > .edbody'); if (eb) eb.scrollTop = 0;
   }
   // The page a field is on, brought up - for "go to the field" links and a required field left empty.
   window.edPageFor = elm => { let n = elm; while (n && !pageOf.has(n)) n = n.parentElement; if (n && pageOf.get(n) !== cur) setPage(pageOf.get(n)); const f = elm && elm.closest('[data-fold]'); if (f) unfold(f.dataset.fold); };
   form.addEventListener('invalid', e => { edPageFor(e.target); const d = e.target.closest('details.rawcmds'); if (d) d.open = true; }, true);
   form.insertBefore(bar, form.querySelector('.formgrid'));
+  // 2.38.75: only the parts scroll, between the tabs and the buttons - not the whole window: the scrollbar sits inside
+  // it, under the close button, and the title, tabs and buttons stay where they are.
+  const edBody = el('div', { class: 'edbody' });
+  bar.after(edBody);
+  for (let n = edBody.nextSibling; n && !(n.nodeType === 1 && n.matches('.actions.split'));) { const next = n.nextSibling; edBody.append(n); n = next; }
   dlg.addEventListener('close', () => setPage(0));
   setPage(0);
 })();

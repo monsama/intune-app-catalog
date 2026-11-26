@@ -1402,7 +1402,7 @@ input[type=checkbox]:not([hidden]) { box-sizing: border-box !important; padding:
 #dlgApp .formgrid > section > .checks + * { margin-top: 10px; }
 #dlgApp .formgrid > section > label.chk + .methodrow, #dlgApp .formgrid > section > label.chk + * { margin-top: 10px; }
 /* The install card and the detection rule card: apart, not sharing an edge. */
-#appForm[data-pg="4"] > .formgrid + details#deploySec { margin-top: 12px; }
+#appForm[data-pg="4"] .edbody > .formgrid + details#deploySec { margin-top: 12px; }
 /* The first thing on a tab starts at the same height on every tab. */
 #dlgApp .formgrid > section > .pgfirst { margin-top: 0 !important; }
 /* Boxes with a heading (this app's release rule, Add apps' detection): the heading inside the box, not cut into its border. */
@@ -2115,3 +2115,21 @@ pre.log .ltag::before { text-indent: 0; }
 #aPkgInfo .pkgfiles .bx { opacity: .55; justify-self: end; }
 #aPkgInfo .pkgfiles li:hover .bx { opacity: 1; }
 @media (max-width: 760px) { #aPkgInfo .pkgfiles li { grid-template-columns: minmax(0, 1fr) auto 5em 1.6em; } }
+/* 2.38.75: scrollbars that sit inside the window - a slim bar with a gap to the edge, clear of the rounded corners
+   (a dialog's scrollbar sat at its very edge, further out than its close button). */
+/* Firefox has no ::-webkit-scrollbar: a thin bar in the same colours (Chrome and Edge would ignore the rules below if
+   these were set for them too). */
+@supports not selector(::-webkit-scrollbar) { * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 28%, transparent) transparent; } pre.log { scrollbar-color: rgba(255, 255, 255, .25) transparent; } }
+::-webkit-scrollbar { width: 14px; height: 14px; }
+::-webkit-scrollbar-track { background: transparent; margin: 12px 0; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--fg) 24%, transparent); border: 4px solid transparent; background-clip: padding-box; border-radius: 6px; min-height: 40px; }
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--fg) 40%, transparent); }
+::-webkit-scrollbar-corner { background: transparent; }
+pre.log::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, .22); }
+/* 2.38.75: the editor scrolls its parts only (.edbody, between the tabs and the buttons) - the scrollbar inside the
+   window, centred under the close button; the tabs, the parts and the buttons end on one line to its left. */
+dialog#dlgApp[open] { display: flex; flex-direction: column; overflow: hidden; padding-right: 31px; }
+dialog#dlgApp > form { flex: 1 1 auto; min-height: 0; }
+#appForm > .edbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; margin-right: -14px; scrollbar-gutter: stable; }
+#dlgApp .actions.split { position: static; margin: 16px -31px -18px -20px; padding: 12px 31px 18px 20px; }
+#appForm > h2, #appForm > .edtabs, #appForm > .actions.split { flex: none; }
