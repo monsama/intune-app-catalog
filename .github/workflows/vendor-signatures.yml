@@ -1,0 +1,39 @@
+# Do the vendors' files still pass the signature checks the devices make?
+#
+# TeamViewer, QuickSupport, McAfee's removal tool and IntuneWinAppUtil are downloaded on the device and used only
+# when signed by their vendor (its organisation on the certificate). A vendor that renames itself on a new
+# certificate makes every device refuse the file - this finds that first.
+#
+# Like graph-contract.yml: separate from tests.yml on purpose. It reaches the internet and can go red because of
+# a change nobody in this repo made, which must never be what a pull request sees.
+name: vendor-signatures
+
+on:
+  schedule:
+    # Tuesdays, early (graph-contract runs Mondays).
+    - cron: '17 5 * * 2'
+  workflow_dispatch:
+  push:
+    # ...and whenever the checks or the check itself change - then it IS this repo's change.
+    branches: [main]
+    paths:
+      - 'code/EmbeddedScripts/Download/**'
+      - 'code/EmbeddedScripts/Cleanup/Common.ps1'
+      - 'code/EmbeddedScripts/Package.ps1'
+      - 'code/tests/VendorSignatures.Tests.ps1'
+      - '.github/workflows/vendor-signatures.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  signatures:
+    name: Vendor signatures
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Windows PowerShell 5.1: what Intune runs the device scripts with.
+      - name: VendorSignatures.Tests.ps1
+        shell: powershell
+        run: ./code/tests/VendorSignatures.Tests.ps1

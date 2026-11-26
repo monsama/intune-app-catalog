@@ -55,6 +55,9 @@ Sweep of 2.38.66–2.38.70, plus CI.
   - The release check compares the zip against every file git has for the app. Before, it used a list kept by hand,
     which missed the clean-up and download scripts.
   - The release image is built from the tests' layer cache, with the same weekly package refresh.
+  - New weekly check (vendor-signatures, Tuesdays). It downloads the TeamViewer and QuickSupport installers,
+    McAfee's removal tool and IntuneWinAppUtil, and runs the devices' own signature check on each. A vendor that
+    renames itself on a new certificate shows up there first, not as a refused install on the devices.
 
 ## 2.38.70
 
