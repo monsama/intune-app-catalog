@@ -802,8 +802,13 @@ function Global:Rename-WebAppReferences {
     }
     $pk = Get-AppFolder -Kind Packages
     $from = Join-Path $pk (Get-SafeFileNameForApp -Name $Old); $to = Join-Path $pk (Get-SafeFileNameForApp -Name $New)
-    if ($from -ne $to -and (Test-Path -LiteralPath $from -PathType Container) -and -not (Test-Path -LiteralPath $to)) {
-        try { Move-Item -LiteralPath $from -Destination $to -ErrorAction Stop; Write-Log "[OK] Its packages folder follows the new name: $to" }
+    # -cne (2.38.59): a new name that differs only in capitals ("apm system2" -> "APM System2") is another folder on
+    # Linux - it wasn't moved (-ne ignores capitals), the app no longer found its package, and an upload made a second one.
+    # On Windows the same folder answers to both spellings, so Test-Path says it is there and nothing is moved.
+    if ($from -cne $to -and (Test-Path -LiteralPath $from -PathType Container) -and -not (Test-Path -LiteralPath $to)) {
+        # .NET's move, not Move-Item: on Linux Move-Item refuses a name that differs only in capitals ("cannot be a
+        # subdirectory of the source or the source itself"). Both folders are in the packages folder - one volume.
+        try { [System.IO.Directory]::Move($from, $to); Write-Log "[OK] Its packages folder follows the new name: $to" }
         catch { Write-Log "[WARN] The packages folder $from couldn't be renamed to $to ($($_.Exception.Message)) - rename it by hand." }
     }
 }

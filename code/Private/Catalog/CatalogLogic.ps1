@@ -786,6 +786,10 @@ function Global:Resolve-AppPackagePath {
     $uncommonRoot = Get-AppFolder -Kind Packages
     $packageIndex = if ($Index -and $Index.Root -eq $uncommonRoot) { $Index } else { Get-PackageFolderIndex -Root $uncommonRoot }
     if (Test-Path -LiteralPath $uncommonRoot) {
+        # Its own folder's package first (2.38.59): the index below matches names without case, and on Linux a second
+        # folder spelled with other capitals ("APM-System2" beside "apm-system2") could hand over that one's package.
+        $direct = Join-Path (Join-Path $uncommonRoot $safeName) "$safeName.intunewin"
+        if (Test-Path -LiteralPath $direct -PathType Leaf) { return @{ Path = $direct; Found = $true } }
         $wantedName = "$safeName.intunewin".ToLowerInvariant()
         if ($packageIndex.ByName.ContainsKey($wantedName)) {
             return @{ Path = $packageIndex.ByName[$wantedName]; Found = $true }

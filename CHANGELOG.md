@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.38.59
+
+- **Packages folders on the server (Linux) with other capitals**: "APM-System2" beside "apm-system2" are two folders
+  there. Settings > Packaging's "folders no app uses" now lists the one the app doesn't use (it counted both as used),
+  and an app takes the package from its own folder first - not one from the other spelling.
+- **Renaming an app with other capitals only** ("apm system2" -> "APM System2"): its packages folder now follows on
+  the server too. It stayed behind (the names counted as the same), the app no longer found its package, and an upload
+  made a second folder.
+
 ## 2.38.58
 
 - **Clean-up apps in the starter set** (Add apps > Starter set, category Clean-up): script apps that take what PCs
