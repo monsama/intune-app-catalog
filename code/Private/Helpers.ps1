@@ -277,6 +277,7 @@ function Global:Get-CatalogRow {
         HasAppId  = [bool]$app.appId
         PackageMissing = [bool]($needsPackageCheck -and -not $pkg.Found)
         PackageBuilt = $pkgBuilt
+        PackagePath  = $(if ($pkgBuilt) { [string]$pkg.Path } else { '' })
         PackageStale = $pkgStale
         Index     = $Index
     }

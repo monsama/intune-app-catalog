@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.38.55
+
+- **New package to send**: an app in Intune whose package was built again from *changed* files shows the stage
+  **New package to send** with a Send button (side panel: "not in Intune yet, send it"). A rebuild of the same files
+  is not a new package: the app keeps a fingerprint of what each package was built from (path and content of its
+  files), and Send to Intune no longer uploads a rebuild of the same files again. Apps with managed updates are
+  unchanged: a new package goes through Release new version.
+- **Changes to send after Read from Intune**: taking Intune's values now counts as what Intune has - before, the
+  app said "Changes to send" against the last send from here.
+- **Changes to send for Store apps and Microsoft 365 Apps**: fields the app no longer sends since 2.38.52 (description,
+  publisher, links unless changed here; Microsoft 365 Apps' Win32 fields) aren't listed as "(empty)" changes, and
+  the apps Microsoft 365 leaves out compare in any order.
+
 ## 2.38.54
 
 - **Checks: "Could not check: Collection was modified"** - several check workers signing in to Graph at the same moment

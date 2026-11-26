@@ -41,6 +41,10 @@ function stageOf(a) {
   // Built, but a file in its packages folder changed since (2.38.53): Intune gets the old package until it is built again.
   if (own && a.packageStale && !a.packageMissing) return { key: 'rebuild', label: 'Rebuild package', cls: 'warn', why: `Files in its packages folder changed after its package was built (${fmtWhen(a.packageBuilt)}) - ${a.hasAppId ? 'Intune still has the old one' : 'the package still holds the old ones'}.`, next: { label: 'Build', title: 'Build the .intunewin again from its packages folder', run: () => onApp(a, 'package') } };
   if (needsAttention(a)) return { key: 'look', label: 'Needs a look', cls: 'warn', why: (a.status || '').split('; ').map(p => statusLabel[p] || p).join('; '), next: { label: 'Edit', title: 'Open it in the editor', run: () => openEditor(a.name) } };
+  // A package built from other files than the one in Intune (2.38.54): Send to Intune uploads it - a rebuild of the
+  // same files isn't one (the server compares what they were built from).
+  if (own && a.hasAppId && a.packageToSend) return { key: 'pkgsend', label: 'New package to send', cls: 'warn', why: `Its package was built again from changed files${a.packageBuilt ? ` (${fmtWhen(a.packageBuilt)})` : ''} - Intune still installs the old one. Send to Intune uploads it.`,
+    next: { label: 'Send', title: 'Send it to Intune with the new package', run: () => onApp(a, 'deploy') } };
   // Changed in the catalog since it was last sent: the send it needs is the next step.
   if (a.hasAppId && a.unsent) {
     const s = a.unsent.split(','), what = s.map(x => x === 'settings' ? 'its settings' : 'its groups').join(' and ');
@@ -189,7 +193,7 @@ async function fillPanel(a) {
       fact('Source', a.office && !a.wingetId ? `Microsoft 365 Apps: ${a.officeText}` : a.msHint && !a.wingetId ? 'Microsoft (created in Intune)' : a.wingetId && isStoreId(a.wingetId) ? `Microsoft Store: ${a.wingetId}` : a.wingetId ? `winget: ${a.wingetId}` : 'its own installer (Packages folder)'),
       fact('Updates', updatesText(a, app.managedUpdates || a.managed)),
       // Whether its installer is packaged, and when (2.38.53) - only for an app that installs from its own package.
-      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : ''}` : '') : ''),
+      fact('Package', !a.wingetId && !a.office && !a.msHint ? (a.packageMissing ? 'not built yet' : a.packageBuilt ? `built ${fmtWhen(a.packageBuilt)}${a.packageStale ? ' - files changed since, build it again' : a.packageToSend ? ' - not in Intune yet, send it' : ''}` : '') : ''),
       // The App ID in full, with Copy and Open in Intune - the app's page in the Intune admin center.
       a.hasAppId && a.appId ? el('div', { class: 'kv' }, el('span', { class: 'k', text: 'In Intune' }), el('span', { class: 'pappid' },
         el('span', { text: a.type || 'yes' }), el('code', { class: 'appid', text: a.appId, title: 'The Intune App ID' }),

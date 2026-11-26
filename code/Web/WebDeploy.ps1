@@ -88,6 +88,68 @@ function Global:Get-WebPackageWarnings {
     return @(Get-PackageConsistencyWarnings -Metadata $App.metadata -Files $files -Installer $(if ($inst -and $inst.found) { $inst }) -SetupFile ([string]$App.setupFile))
 }
 
+# ---------------------------------------------------------------- what went into a package (2.38.54)
+# A rebuild always makes a new .intunewin (new time, and it is encrypted afresh, so its bytes differ too) - by the file
+# alone every rebuild looked like a new package to upload. What it was built from says whether it really is: a
+# fingerprint of its source files (relative path and content), kept per app in .integrity\package-sources.json as
+# @{ built = the .intunewin's stamp; source = the fingerprint; sent = the fingerprint last uploaded to Intune }.
+
+function Global:Read-WebPackageSources {
+    $file = Join-Path (Get-WebIntegrityFolder) 'package-sources.json'
+    $map = @{}
+    if (Test-Path -LiteralPath $file) {
+        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ built = [string]$p.Value.built; source = [string]$p.Value.source; sent = [string]$p.Value.sent } } } catch { }
+    }
+    return $map
+}
+
+function Global:Save-WebPackageSources {
+    param([hashtable]$Map)
+    $o = [ordered]@{}; foreach ($k in @($Map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ built = [string]$Map[$k].built; source = [string]$Map[$k].source; sent = [string]$Map[$k].sent } }
+    [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'package-sources.json'), (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Global:Get-WebPackageSourceFingerprint {
+    # The source files in an app's packages folder (not the .intunewin) - path and content - as one SHA-256; '' for none.
+    param([string]$Folder)
+    $files = @(Get-PackageFolderFiles $Folder)
+    if (-not $files.Count) { return '' }
+    $lines = foreach ($f in $files) { "$([string]$f.path)|$((Get-FileHash -LiteralPath (Join-Path $Folder ([string]$f.path -replace '\\', [System.IO.Path]::DirectorySeparatorChar)) -Algorithm SHA256).Hash)" }
+    return (Get-WebTextSha256 (($lines | Sort-Object) -join "`n"))
+}
+
+function Global:Update-WebPackageSources {
+    # After Package: each own-package app whose .intunewin is new gets the fingerprint of what it was built from.
+    param([string[]]$Names)
+    $map = Read-WebPackageSources
+    $index = Get-PackageFolderIndex -Root (Get-AppFolder -Kind Packages)
+    $changed = $false
+    foreach ($a in @((Read-WebCatalogRecords).Apps | Where-Object { (Test-AppIsUncommon -App $_) -and -not $_.office })) {
+        if (@($Names).Count -and $Names -notcontains [string]$a.appName) { continue }
+        $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $true -Index $index -PackagePath $a.packagePath
+        if (-not $pkg.Found) { continue }
+        $stamp = Get-WebPackageStamp $pkg.Path
+        $key = Get-SafeFileNameForApp -Name $a.appName
+        if ($map.ContainsKey($key) -and $map[$key].built -eq $stamp) { continue }
+        try { $fp = Get-WebPackageSourceFingerprint ([string](Split-Path -Parent $pkg.Path)) } catch { $fp = '' }
+        $old = if ($map.ContainsKey($key)) { $map[$key].sent } else { '' }
+        $map[$key] = @{ built = $stamp; source = $fp; sent = $old }
+        $changed = $true
+    }
+    if ($changed) { Save-WebPackageSources $map }
+}
+
+function Global:Test-WebPackageIsNew {
+    <#
+      Whether an own-package app in Intune has a package to upload: its .intunewin ('stamp') isn't the one last uploaded
+      (-Sent, the app's packageStamp) - unless it was built from exactly the files last uploaded (a rebuild of the same).
+    #>
+    param([string]$Stamp, [string]$Sent, $Record)
+    if (-not $Stamp -or $Stamp -eq $Sent) { return $false }
+    if ($Record -and $Record.built -eq $Stamp -and $Record.source -and $Record.source -eq $Record.sent) { return $false }
+    return $true
+}
+
 function Global:Get-WebPackageStamp {
     # A package file's time and size ("2026-11-15T10:00:00Z|12345"), '' for none - what was uploaded last, to tell a newer one.
     param([string]$Path)
@@ -203,12 +265,15 @@ function Global:Start-WebDeploy {
     # devices would keep the old installer under the new version and detection. (Managed updates: a new package
     # goes through Release new version, pilot first - never under the current app.)
     $stamp = Get-WebPackageStamp $(if (-not $metadataOnly -and $unc) { $pkg.Path } else { '' })
-    $upload = $stamp -and (-not $a.appId -or (-not $a.managedUpdates -and $stamp -ne [string]$a.packageStamp))
+    # Built from the same files as the package last uploaded (2.38.54): not uploaded again - only noted as sent.
+    $srcRec = if ($stamp) { (Read-WebPackageSources)[(Get-SafeFileNameForApp -Name $a.appName)] } else { $null }
+    $upload = $stamp -and (-not $a.appId -or (-not $a.managedUpdates -and (Test-WebPackageIsNew -Stamp $stamp -Sent ([string]$a.packageStamp) -Record $srcRec)))
+    $sameSource = $stamp -and $a.appId -and -not $a.managedUpdates -and -not $upload -and $stamp -ne [string]$a.packageStamp
     if ($a.appId -and $upload) { $config.ReplaceContent = $true }
     # Shown as Being changed on every PC while it runs; a second start (a double click, another admin) is refused.
     $busy = Enter-WebAppBusy -Name $a.appName -What 'deploying'; if ($busy) { return @{ ok = $false; error = $busy } }
     $started = Start-WebStepJob -BusyApp $a.appName -ScriptContent $Global:App.EmbeddedCreateAppScript -Name 'createapp' -ConfigJson (ConvertTo-CreateAppConfigJson -Config $config) -ResultPath $resultPath -Kind "$(if ($metadataOnly) { 'Send settings' } else { 'Deploy' }) $name$(if ($a.appId -and $upload) { ' (new package)' })" `
-        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SentCleared = @($config.ClearedFields); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload) { $stamp } else { '' }); ReplacesLobAppId = $replacesLob }
+        -After @{ Kind = 'deploy'; AppName = $a.appName; Defaults = $defaults; WasUpdate = [bool]$a.appId; SentCleared = @($config.ClearedFields); SendGroups = $(if ($null -ne $Data.sendGroups) { [bool]$Data.sendGroups } else { $null }); PackageStamp = $(if ($upload -or $sameSource) { $stamp } else { '' }); PackageSource = $(if ($upload -and $srcRec -and $srcRec.built -eq $stamp) { [string]$srcRec.source } else { '' }); ReplacesLobAppId = $replacesLob }
     if ($started.ok) { Write-Log "[INFO] $(if ($metadataOnly) { "Pushing $name's settings to Intune" } else { "Deploying $name ($($config.Mode)$(if ($a.appId -and $upload) { ', uploading the new package' }))" })..." }
     return $started
 }
@@ -309,7 +374,7 @@ function Global:Start-WebPackage {
     if ($chosen.Count) { $params.SetupFiles = ($chosen | ConvertTo-Json -Compress) }
     if ($names.Count -eq 1) { $params.SingleFolderName = $folders[0] }
     elseif ($names.Count -gt 1) { $params.FolderNames = ($folders -join ',') }
-    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedPackageScript -Name 'package' -ConfigJson '' -ResultPath '' -Kind 'Package' -Parameters $params -After @{ Kind = 'package' }
+    $started = Start-WebStepJob -ScriptContent $Global:App.EmbeddedPackageScript -Name 'package' -ConfigJson '' -ResultPath '' -Kind 'Package' -Parameters $params -After @{ Kind = 'package'; Names = @($own | ForEach-Object { [string]$_.appName }) }
     if ($started.ok) { Write-Log "[INFO] Packaging $(if ($names.Count) { "$(Format-Count ($own.Count) 'app')" } else { 'every app with its own installer' })..." }
     return $started
 }
@@ -379,6 +444,9 @@ function Global:Complete-WebPull {
                 $a.metadata = $rr.Metadata
             }.GetNewClosure())
             $applied.Add($r.AppName)
+            # The catalog has what Intune has now (2.38.54): nothing to send - "Changes to send" compared with the last
+            # send from here, so taking Intune's values left it saying the catalog had changed.
+            if ($app.appId) { try { Set-WebSentStamp -Names @($r.AppName) -Part 's'; if ($r.GroupFetchOk) { Set-WebSentStamp -Names @($r.AppName) -Part 'g' } } catch { Write-Log "[WARN] Couldn't note what Intune has: $($_.Exception.Message)" } }
         }
     }
     $id = [guid]::NewGuid().ToString('N')
@@ -425,6 +493,14 @@ function Global:Invoke-WebPullApply {
             }
         }.GetNewClosure())
         $done.Add($name)
+        # Intune's values taken (2.38.54): what Intune has now is the last-sent state - for the settings when none of the
+        # catalog's were kept, for the groups likewise. A kept value still differs from Intune and stays a change to send.
+        $groupLabels = @('Required for', 'Available for', 'Uninstall for')
+        try {
+            if ($cur.appId -and -not @($keep | Where-Object { $groupLabels -notcontains $_ }).Count) { Set-WebSentStamp -Names @($name) -Part 's' }
+            if ($cur.appId -and $r.GroupFetchOk -and -not @($keep | Where-Object { $groupLabels -contains $_ }).Count) { Set-WebSentStamp -Names @($name) -Part 'g' }
+        }
+        catch { Write-Log "[WARN] Couldn't note what Intune has: $($_.Exception.Message)" }
     }
     [void]$Global:App.WebPending.Remove($id)
     Write-Log "[OK] Applied the pull for: $($done -join ', ')."
