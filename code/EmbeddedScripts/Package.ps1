@@ -131,7 +131,7 @@ function Download-IntuneWinAppUtil {
         }
     }
     catch {
-        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [FAILED] $($_.Exception.Message)" -ForegroundColor Red
         if (Test-Path -LiteralPath $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue }
         if (Test-Path -LiteralPath $ExtractPath) { Remove-Item -LiteralPath $ExtractPath -Recurse -Force -ErrorAction SilentlyContinue }
         return $false
@@ -331,18 +331,16 @@ function Get-SafeFileName {
 # code stayed until the end - the job said "failed" although every package was built (2.38.17).
 if ($Host.Name -eq 'ConsoleHost' -and ($env:TERM -or $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { try { Clear-Host } catch { } }
 $global:LASTEXITCODE = 0
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "  Universal Intune Packager" -ForegroundColor Cyan
-Write-Host "  Handles: Installers (.exe, .msi) & PowerShell Scripts" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host ""
+# 2.38.70: what the web page shows as the log - a heading per part, no console banner.
+Write-Host "=== Packaging ===" -ForegroundColor Cyan
 
 if ($BuiltIn -and -not (Get-Command New-IntuneWinPackage -ErrorAction SilentlyContinue)) {
     Write-Host "The built-in packager isn't loaded - packaging with IntuneWinAppUtil.exe instead." -ForegroundColor Yellow
     $BuiltIn = $false
 }
 # Otherwise IntuneWinAppUtil.exe has to be there.
-if ($BuiltIn) { Write-Host "Packager: built in (no IntuneWinAppUtil.exe needed)" -ForegroundColor DarkGray; Write-Host "" }
+# Built in: nothing to say or fetch. Otherwise IntuneWinAppUtil.exe, downloaded when it isn't there yet.
+if ($BuiltIn) { }
 elseif (-not (Test-Path -LiteralPath $ToolPath)) {
     if (-not (Download-IntuneWinAppUtil -DestinationPath $ToolPath)) {
         Write-Host ""
@@ -367,24 +365,12 @@ if ($UseCentralOutput) {
     # Create central output folder if needed
     if (-not (Test-Path -LiteralPath $OutputFolder)) {
         New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
-        Write-Host "Created output folder: $OutputFolder" -ForegroundColor Green
-        Write-Host ""
     }
-    $OutputMode = "Central folder: $OutputFolder"
-} else {
-    $OutputMode = "Per-app folders (in source)"
 }
 
-Write-Host "Configuration:" -ForegroundColor White
-Write-Host "  Input:         $InputFolder" -ForegroundColor Gray
-Write-Host "  Output:        $OutputMode" -ForegroundColor Gray
-Write-Host "  Tool:          $ToolPath" -ForegroundColor Gray
-Write-Host "  Recursive:     $(if ($Recursive) { 'Yes' } else { 'No' })" -ForegroundColor Gray
-Write-Host "  Skip existing: $(if ($SkipExisting) { 'Yes' } else { 'No' })" -ForegroundColor Gray
-Write-Host "  Force:         $(if ($Force) { 'Yes' } else { 'No' })" -ForegroundColor Gray
-Write-Host ""
+Write-Host "Packages folder: $InputFolder" -ForegroundColor Gray
+if ($UseCentralOutput) { Write-Host "Packages go to: $OutputFolder" -ForegroundColor Gray }
 
-Write-Host "Scanning for apps..." -ForegroundColor Cyan
 
 # Find all apps (installers or scripts)
 $AppsToProcess = @()
@@ -518,10 +504,7 @@ if ($AppsToProcess.Count -eq 0) {
 $InstallerCount = ($AppsToProcess | Where-Object { $_.Type -eq "Installer" }).Count
 $ScriptCount = ($AppsToProcess | Where-Object { $_.Type -eq "Script" }).Count
 
-Write-Host "Found $($AppsToProcess.Count) app(s):" -ForegroundColor Green
-Write-Host "  Traditional Installers: $InstallerCount" -ForegroundColor Cyan
-Write-Host "  PowerShell Scripts:     $ScriptCount" -ForegroundColor Cyan
-Write-Host ""
+Write-Host "$($AppsToProcess.Count) app(s) to package: $InstallerCount with an installer, $ScriptCount script app(s)." -ForegroundColor Gray
 
 $SuccessCount = 0
 $FailCount = 0
@@ -532,11 +515,11 @@ $Counter = 0
 foreach ($App in $AppsToProcess) {
     $Counter++
     
-    Write-Host "[$Counter/$($AppsToProcess.Count)] $($App.Type): $($App.AppName)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "=== $($App.AppName) ($Counter of $($AppsToProcess.Count)) ===" -ForegroundColor Yellow
     if ($App.Type -eq "Script") {
-        $u = if ($App.UninstallScript) { "uninstall:Y" } else { "uninstall:N" }
-        $d = if ($App.DetectScript) { "detect:Y" } else { "detect:N" }
-        Write-Host "  install:Y  $u  $d" -ForegroundColor Gray
+        $have = @('install') + @(if ($App.UninstallScript) { 'uninstall' }) + @(if ($App.DetectScript) { 'detection' })
+        Write-Host "  Script app: $($have -join ', ') script$(if ($have.Count -ne 1) { 's' })" -ForegroundColor Gray
 
         # Validate script syntax
         $scriptsToCheck = @($App.SourceFile.FullName)
@@ -590,7 +573,6 @@ foreach ($App in $AppsToProcess) {
         continue
     }
     
-    Write-Host "  Packaging..." -ForegroundColor Cyan
     $TempSourceFolder = $null; $TempOutputFolder = $null
     
     try {
@@ -611,11 +593,11 @@ foreach ($App in $AppsToProcess) {
             try {
                 [void](New-IntuneWinPackage -SourceFolder $PackageSourceFolder -SetupFile $SetupFile -OutputPath (Join-Path $TempOutputFolder ([System.IO.Path]::GetFileNameWithoutExtension($SetupFile) + '.intunewin')))
                 $ExitCode = 0
-                Write-Host "  [BUILT-IN] $SetupFile -> OK ($($ToolTimer.ElapsedMilliseconds) ms)" -ForegroundColor DarkGray
+                Write-Host "  Built from $SetupFile in $($ToolTimer.ElapsedMilliseconds) ms" -ForegroundColor DarkGray
             }
             catch {
                 $ExitCode = 1
-                Write-Host "  [BUILT-IN] $SetupFile -> FAILED: $($_.Exception.Message)" -ForegroundColor Red
+                Write-Host "  [FAILED] Building from $SetupFile`: $($_.Exception.Message)" -ForegroundColor Red
             }
         }
         else {
@@ -706,7 +688,7 @@ foreach ($App in $AppsToProcess) {
                     $DisplayPath = Join-Path $App.FolderName $OutputFileName
                 }
                 
-                Write-Host "  Success: $DisplayPath ($Size KB)" -ForegroundColor Green
+                Write-Host "  [OK] $DisplayPath ($Size KB)" -ForegroundColor Green
                 
                 $SuccessCount++
                 
@@ -724,7 +706,7 @@ foreach ($App in $AppsToProcess) {
                 }
             }
             else {
-                Write-Host "  Failed: Output file not created" -ForegroundColor Red
+                Write-Host "  [FAILED] No .intunewin was made" -ForegroundColor Red
                 
                 # Clean up temp folder
                 if (Test-Path -LiteralPath $TempOutputFolder) {
@@ -748,7 +730,7 @@ foreach ($App in $AppsToProcess) {
             }
         }
         else {
-            Write-Host "  Failed (Exit code: $ExitCode)" -ForegroundColor Red
+            Write-Host "  [FAILED] The packager ended with exit code $ExitCode" -ForegroundColor Red
             
             # Clean up temp folder
             if (Test-Path -LiteralPath $TempOutputFolder) {
@@ -772,7 +754,7 @@ foreach ($App in $AppsToProcess) {
         }
     }
     catch {
-        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [FAILED] $($_.Exception.Message)" -ForegroundColor Red
         $FailCount++
     }
     finally {
@@ -783,24 +765,12 @@ foreach ($App in $AppsToProcess) {
     Write-Host ""
 }
 
-# Summary
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "SUMMARY" -ForegroundColor Cyan
-Write-Host "================================================================" -ForegroundColor Cyan
-Write-Host "Processed:  $($AppsToProcess.Count)" -ForegroundColor White
-Write-Host "Success:    $SuccessCount" -ForegroundColor Green
-Write-Host "Failed:     $FailCount" -ForegroundColor Red
-Write-Host "Skipped:    $SkipCount" -ForegroundColor Yellow
+# Summary - one line.
 Write-Host ""
+Write-Host "=== Done ===" -ForegroundColor Cyan
+$tag = if ($FailCount) { '[FAILED]' } elseif ($SuccessCount) { '[OK]' } else { '[INFO]' }
+Write-Host "$tag $SuccessCount built, $FailCount failed, $SkipCount skipped (of $($AppsToProcess.Count))." -ForegroundColor $(if ($FailCount) { 'Red' } else { 'Green' })
 
-if ($UseCentralOutput) {
-    Write-Host "Output location: $OutputFolder" -ForegroundColor Cyan
-} else {
-    Write-Host "Output location: Each app's source folder" -ForegroundColor Cyan
-}
-
-Write-Host ""
-Write-Host "Done!" -ForegroundColor Green
 #endregion
 # The result is the exit code: failed only when a package failed - never a leftover code of some tool run on the way.
 exit $(if ($FailCount -gt 0) { 1 } else { 0 })

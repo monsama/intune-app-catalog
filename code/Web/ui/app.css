@@ -1694,9 +1694,6 @@ label.inline > select { max-width: 100%; min-width: 0; text-overflow: ellipsis; 
 
 /* 2.38.8: log lines by kind - every log in the app. */
 /* The log is dark in both themes - its own colours, readable on it. */
-pre.log .lerr { color: #ff8a80; font-weight: 600; background: rgba(255, 82, 82, .14); }
-pre.log .lwarn { color: #f5c451; }
-pre.log .lok { color: #7ee2a0; }
 pre.log.hasfail { box-shadow: inset 3px 0 0 #ff6b6b; }
 
 /* 2.38.8: Changes to send - the pill opens the hover card. */
@@ -2036,3 +2033,27 @@ input[list]::-webkit-calendar-picker-indicator { opacity: .45; }
 /* The cards line up at their bottom edge (2.38.69): with wrap-reverse the cross axis runs upward, so flex-start is the bottom. */
 .sendstack { align-items: flex-start; }
 .sendstack .smore { align-self: flex-start; }
+
+/* ---------------------------------------------------------------- 2.38.70: logs that read like the app */
+.logwrap { position: relative; }
+.logwrap:has(> pre[hidden]) { display: none; }
+.logwrap > .logcopy { position: absolute; top: 6px; right: 8px; font: inherit; font-size: 11px; padding: 2px 8px; border-radius: var(--r-s); border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.08); color: var(--log-fg); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.logwrap:hover > .logcopy, .logwrap > .logcopy:focus-visible { opacity: 1; }
+.logwrap > .logcopy:hover { background: rgba(255,255,255,.16); }
+pre.log .ln { display: block; white-space: pre-wrap; min-height: 1.5em; }
+pre.log .lnl { display: none; }
+pre.log .lx { font-size: 0; }
+pre.log .lgone { display: none; }
+pre.log .ln.lblank { min-height: .7em; }
+pre.log .lhead { font-weight: 600; color: #e8eef7; margin-top: 6px; }
+pre.log .lhead:first-child { margin-top: 0; }
+pre.log .lts { color: #8b94a3; }
+pre.log .ltag::before { display: inline-block; width: 1.4em; font-weight: 700; }
+pre.log .ltag.t-ok::before { content: '✓'; color: #7ee2a0; }
+pre.log .ltag.t-warn::before { content: '⚠'; color: #f5c451; }
+pre.log .ltag.t-err::before { content: '✕'; color: #ff8a80; }
+pre.log .ltag.t-info::before { content: '•'; color: #8b94a3; }
+pre.log .ln.lerr { color: #ffb4ab; background: rgba(255, 82, 82, .12); border-radius: 3px; margin: 0 -4px; padding: 0 4px; }
+pre.log .ln.lwarn { color: #f5d08a; }
+pre.log .ln.lok { color: inherit; }
+pre.log .ln.ldetail { color: #8b94a3; }

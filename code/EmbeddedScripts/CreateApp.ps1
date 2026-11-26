@@ -29,7 +29,6 @@ $ErrorActionPreference = "Stop"
 # HTTPS handshake to hang or fail silently against a server that only
 # accepts TLS 1.2+, even though basic TCP connectivity succeeds fine.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Write-Host "TLS protocol forced to: $([Net.ServicePointManager]::SecurityProtocol)" -ForegroundColor DarkGray
 
 # By default .NET adds "Expect: 100-continue" to PUT/POST requests with a
 # body - the client then WAITS for the server to say "100 Continue" before
@@ -40,7 +39,6 @@ Write-Host "TLS protocol forced to: $([Net.ServicePointManager]::SecurityProtoco
 # symptoms for .NET scripts talking to Azure from behind corporate networks -
 # disabling it means the body is sent immediately, no handshake to hang on.
 [System.Net.ServicePointManager]::Expect100Continue = $false
-Write-Host "Expect100Continue set to: $([System.Net.ServicePointManager]::Expect100Continue)" -ForegroundColor DarkGray
 
 function Write-Step {
     param([string]$Text)
