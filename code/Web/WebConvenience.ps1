@@ -431,6 +431,8 @@ function Global:Read-WebPackageList {
         # By name only the suite itself (2.38.23) - not "Office Timeline" or another app that starts with the word.
         $o365 = @($all | Where-Object { $_.office -or (-not $_.wingetId -and ([string]$_.appName).Trim() -match '^(Microsoft 365( Apps)?|Office 365|Microsoft Office)(\s+(for\s+)?(enterprise|business|ProPlus))?$') }) | Select-Object -First 1
         if ($o365) { $have[(Get-OfficeStarterId).ToLowerInvariant()] = [string]$o365.appName }
+        # The clean-up apps (2.38.58): by their name.
+        foreach ($c in @(Get-CleanupAppSet)) { $hit = @($all | Where-Object { ([string]$_.appName) -eq [string]$c.name }) | Select-Object -First 1; if ($hit) { $have[([string]$c.id).ToLowerInvariant()] = [string]$hit.appName } }
         return @{ ok = $true; starter = $true; items = @(Get-StarterAppSet | ForEach-Object { $k = ([string]$_.id).ToLowerInvariant()
             [ordered]@{ id = $_.id; name = $_.name; category = $_.category; recommended = [bool]$_.recommended; why = $_.why; inCatalog = $(if ($have.ContainsKey($k)) { $have[$k] } else { '' }) } }) }
     }

@@ -930,13 +930,22 @@ try {
     $ss = Invoke-Api '/api/store-search' @{ q = 'x' }
     Check (-not $ss.ok -and $ss.error -like '*at least 2*') 'store search: too short a query is refused' ($ss | ConvertTo-Json -Compress)
     $st = Invoke-Api '/api/package-list' @{ starter = $true }
-    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 10 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
+    Check ($st.ok -and $st.starter -and @($st.items).Count -ge 20 -and @($st.items | Where-Object { $_.recommended }).Count -eq 13 -and @($st.items | Where-Object { $_.id -eq 'Mozilla.Firefox' -and $_.name -and $_.category -and $_.why }).Count -eq 1) 'recommended apps: the starter set, each with its name, category and why' ($st | ConvertTo-Json -Compress -Depth 3)
     Check ((Invoke-Api '/api/installed-apps').ok) 'detection from this PC: the installed apps can be listed (empty off Windows)'
     # 2.38.21: Microsoft 365 Apps from the starter set - Intune's own Office app with its settings, ready to send without a package.
     $o365 = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune'; name = 'Microsoft 365 Apps' }); required = @('SG-ZZ-Office') }
     $o365Name = @($o365.added)[0]
     $o365App = if ($o365Name) { (Invoke-Api '/api/app-get' @{ name = $o365Name }).app }
     Check ($o365.ok -and $o365Name -and $o365App.office.channel -eq 'monthlyEnterprise' -and -not $o365App.wingetId -and @($o365App.office.excluded) -contains 'lync') 'Microsoft 365 Apps: added from the starter set with the default settings' (@($o365, $o365App) | ConvertTo-Json -Compress -Depth 4)
+    # 2.38.58: a clean-up app from the starter set - a script app: Install.ps1 removes, the same script detects; groups as chosen.
+    $cl = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'IntuneAppCatalog.Cleanup.HP' }); requiredFor = @('SG-ZZ-Clean') }
+    $clName = @($cl.added)[0]
+    $clApp = if ($clName) { (Invoke-Api '/api/app-get' @{ name = $clName }).app }
+    $clFiles = if ($clName) { Invoke-Api '/api/package-files' @{ name = $clName } }
+    $clInstall = if ($clFiles -and $clFiles.folder) { Get-Content -LiteralPath (Join-Path $clFiles.folder 'Install.ps1') -Raw } else { '' }
+    Check ($clName -eq 'Remove preinstalled vendor apps - HP' -and $clApp.deploy.detection.type -eq 'Script' -and (@($clApp.requiredFor) -contains 'SG-ZZ-Clean') -and $clInstall -match '\$DetectOnly = \$false' -and $clInstall -match 'HP Support Assistant') 'clean-up apps: added from the starter set as a script app, with its groups' (@($cl, $clApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
+    $clStarter = Invoke-Api '/api/package-list' @{ starter = $true }
+    Check (@($clStarter.items | Where-Object { $_.id -eq 'IntuneAppCatalog.Cleanup.HP' -and $_.inCatalog -eq $clName }).Count -eq 1) 'clean-up apps: the starter set says it is in the catalog'
     $o365Again = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune' }) }
     Check (@($o365Again.added).Count -eq 0 -and @($o365Again.skipped) -match 'already in the catalog') 'Microsoft 365 Apps: a second one is refused' ($o365Again | ConvertTo-Json -Compress)
     if ($o365Name) {
