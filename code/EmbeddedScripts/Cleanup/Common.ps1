@@ -87,13 +87,39 @@ function Remove-CleanupProgram($Entry) {
     Write-CleanupLog "Removing $($Entry.Name) ($($Entry.Publisher))"
     $guid = if ($Entry.Key -match '^\{[0-9A-Fa-f-]{36}\}$') { $Entry.Key } else { [regex]::Match($Entry.Uninstall, '\{[0-9A-Fa-f-]{36}\}').Value }
     if ($guid -and ($Entry.Msi -or $Entry.Uninstall -match '(?i)msiexec')) { return (Invoke-CleanupProcess 'msiexec.exe' "/x $guid /qn /norestart REBOOT=ReallySuppress" 30) }
-    if ($Entry.Quiet) { $cmd = Split-CleanupCommand $Entry.Quiet; return (Invoke-CleanupProcess $cmd[0] $cmd[1]) }
+    if ($Entry.Quiet) { $cmd = Split-CleanupCommand $Entry.Quiet; $qcut = $cmd[0].LastIndexOfAny([char[]]'\/'); if ($qcut -gt 0) { Stop-CleanupProgramProcesses $cmd[0].Substring(0, $qcut) }; return (Invoke-CleanupProcess $cmd[0] $cmd[1]) }
     if (-not $Entry.Uninstall) { Write-CleanupLog '  it has no uninstall command'; return 1 }
     $cmd = Split-CleanupCommand $Entry.Uninstall
     $file = $cmd[0]; $arguments = $cmd[1]
-    if ([System.IO.Path]::GetFileName($file) -match '(?i)^unins\d{3}\.exe$') { $arguments = "$arguments /VERYSILENT /SUPPRESSMSGBOXES /NORESTART".Trim() }
+    # Split by hand (a Windows path - the same wherever the tests run).
+    $cut = $file.LastIndexOfAny([char[]]'\/'); $leaf = $file.Substring($cut + 1); $dir = if ($cut -gt 0) { $file.Substring(0, $cut) } else { '' }
+    # The program and its services stopped first (2.38.63): an uninstaller that finds it running asks to close it - and
+    # waits for an answer nobody can give (Lenovo AI Now's Uninstall.exe /S hung until the time limit).
+    Stop-CleanupProgramProcesses $dir
+    if ($leaf -match '(?i)^unins\d{3}\.exe$') { $arguments = "$arguments /VERYSILENT /SUPPRESSMSGBOXES /NORESTART".Trim() }
     elseif ($arguments -notmatch '(?i)(^|\s)[/-](s|silent|quiet|q|qn|verysilent)(\s|$)') { $arguments = "$arguments /S".Trim() }
+    # An NSIS uninstaller (Uninstall.exe / uninst.exe) copies itself to the temp folder and returns at once: _?= keeps it
+    # in place, so its end is waited for (its own folder then stays, empty of the program).
+    if ($leaf -match '(?i)^(uninstall|uninst)\.exe$' -and $arguments -match '(?i)(^|\s)/S(\s|$)' -and $arguments -notmatch '_\?=') { $arguments = "$arguments _?=$dir" }
     return (Invoke-CleanupProcess $file $arguments)
+}
+
+function Stop-CleanupProgramProcesses([string]$Folder) {
+    # Processes running from the program's folder, and services whose program is there - stopped before it is removed.
+    # Not for a folder that is too general (Windows, Program Files itself).
+    if (-not $Folder -or $Folder.Length -lt 12 -or $Folder -match '(?i)^[a-z]:\\(windows|program files( \(x86\))?|programdata)\\?$') { return }
+    $base = $Folder.TrimEnd('\') + '\'
+    try {
+        foreach ($svc in @(Get-CimInstance Win32_Service -ErrorAction SilentlyContinue | Where-Object { ([string]$_.PathName).Trim('"').StartsWith($base, [StringComparison]::OrdinalIgnoreCase) -or ([string]$_.PathName).StartsWith('"' + $base, [StringComparison]::OrdinalIgnoreCase) })) {
+            Write-CleanupLog "  stopping the service $($svc.Name)"
+            Stop-Service -Name $svc.Name -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and ([string]$_.ExecutablePath).StartsWith($base, [StringComparison]::OrdinalIgnoreCase) })) {
+            Write-CleanupLog "  stopping $($p.Name) ($($p.ProcessId))"
+            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    catch { Write-CleanupLog "  couldn't stop what runs from $Folder`: $($_.Exception.Message)" }
 }
 
 function Remove-CleanupPackage($Package) {

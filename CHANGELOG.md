@@ -8,6 +8,9 @@
   aren't in the app's packages folder, the script fetches MCPR.exe from McAfee (download.mcafee.com), uses it only when
   validly signed by McAfee, lets it unpack, copies mccleanup.exe and stops it. Without either, the log says what to add. Apps added before: remove the clean-up app from the catalog and
   add it again from the starter set (its scripts are written when it is added).
+- **Clean-up apps: uninstallers no longer hang on a running program.** Before an uninstaller starts, what runs from
+  the program's folder (processes and services) is stopped - Lenovo AI Now's `Uninstall.exe /S` waited for it to be
+  closed until the time limit. An NSIS uninstaller (`Uninstall.exe`) is run in place (`_?=`), so its end is waited for.
 
 ## 2.38.62
 

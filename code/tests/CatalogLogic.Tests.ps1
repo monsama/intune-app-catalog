@@ -3478,6 +3478,13 @@ Assert-True (($lnGot -join '|') -eq 'McAfee WebAdvisor|Lenovo Now|Lenovo AI Now|
 $mcNo = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
     @((Test-CleanupLike '"C:\Program Files\McAfee\MSC\mcuihost.exe" /body:misp://MSCJsRes.dll::uninstall.html /id:uninstall' $Targets.NoUninstaller), (Test-CleanupLike '"C:\Program Files\McAfee\WebAdvisor\Uninstaller.exe"' $Targets.NoUninstaller)) }
 Assert-True ($mcNo[0] -and -not $mcNo[1]) "Clean-up Lenovo: McAfee's asking suite uninstaller is never started, WebAdvisor's is" ($mcNo -join ',')
+# 2.38.63: an NSIS Uninstall.exe runs in place (_?=) with /S, after what runs from its folder was stopped.
+$nsis = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
+    $script:stopped = ''; function Stop-CleanupProgramProcesses([string]$Folder) { $script:stopped = $Folder }
+    function Invoke-CleanupProcess([string]$File, [string]$Arguments) { "$File|$Arguments" }
+    $r = Remove-CleanupProgram ([pscustomobject]@{ Name = 'Lenovo AI Now'; Publisher = 'Lenovo'; Key = 'AINow'; Uninstall = '"C:\Program Files\Lenovo\AI Now\Uninstall.exe"'; Quiet = ''; Msi = $false })
+    @($r, $script:stopped) }
+Assert-True ($nsis[0] -eq 'C:\Program Files\Lenovo\AI Now\Uninstall.exe|/S _?=C:\Program Files\Lenovo\AI Now' -and $nsis[1] -eq 'C:\Program Files\Lenovo\AI Now') "Clean-up: an NSIS Uninstall.exe runs silently in place, its program stopped first" ($nsis -join ' / ')
 $cats = @($starter | ForEach-Object { $_.category }); $runs = @(for ($i = 0; $i -lt $cats.Count; $i++) { if ($i -eq 0 -or $cats[$i] -ne $cats[$i - 1]) { $cats[$i] } })
 Assert-True (@($runs | Select-Object -Unique).Count -eq $runs.Count) "Starter set: each category's apps together (the list shows one heading per category)"
 
