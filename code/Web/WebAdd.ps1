@@ -133,8 +133,10 @@ function Global:Get-WebCleanupScripts {
     # A clean-up app's scripts (2.38.58): @{ Install; Detect; Uninstall } - Install.ps1 and the detection script are the
     # same files, the detection one only looks ($DetectOnly).
     param($Definition)
-    $download = [string]$Definition.kind -eq 'download'
-    $dir = Join-Path (Join-Path (Join-Path $Global:App.RootPath 'code') 'EmbeddedScripts') $(if ($download) { 'Download' } else { 'Cleanup' })
+    # The ones fetched from their vendor and (2.38.77) the Windows set-up ones run by $Action; the clean-up ones by $DetectOnly.
+    $download = [string]$Definition.kind -in 'download', 'setup'
+    $sub = switch ([string]$Definition.kind) { 'download' { 'Download' } 'setup' { 'Setup' } default { 'Cleanup' } }
+    $dir = Join-Path (Join-Path (Join-Path $Global:App.RootPath 'code') 'EmbeddedScripts') $sub
     $body = (@($Definition.files) | ForEach-Object { (Get-Content -LiteralPath (Join-Path $dir $_) -Raw -Encoding UTF8).TrimEnd() }) -join "`r`n`r`n"
     $head = "# $($Definition.name) - from Intune App Catalog's starter set. Runs as SYSTEM.`r`n"
     # An app fetched from its vendor (2.38.66): the same text three times - $Action says which part runs.
@@ -163,7 +165,7 @@ function Global:Add-WebCleanupApp {
         requiredFor = @($Data.requiredFor); availableFor = @($Data.availableFor); excludeFor = @($Data.excludeFor) }
     # Three hours to run (2.38.61): Intune stops an install after 60 minutes by default - several uninstallers (10 to 30
     # minutes each) and McAfee's removal tool can take longer, and the removal was stopped half way.
-    $minutes = if ([string]$Definition.kind -eq 'download') { 75 } else { 180 }
+    $minutes = switch ([string]$Definition.kind) { 'download' { 75 } 'setup' { 30 } default { 180 } }
     if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes; $a.metadata | Add-Member -NotePropertyName installTimeMinutes -NotePropertyValue $minutes -Force }.GetNewClosure()) }
     return $r
 }

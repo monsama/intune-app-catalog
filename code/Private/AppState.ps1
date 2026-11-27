@@ -18,7 +18,7 @@ function Global:Initialize-AppState {
     $Global:App.CatalogTextCache = [hashtable]::Synchronized(@{})
     $Global:App.Uploads = [hashtable]::Synchronized(@{})
     $Global:App.LibraryExports = [hashtable]::Synchronized(@{})
-    $Global:App.AppVersion = "2.38.76"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
+    $Global:App.AppVersion = "2.38.77"   # bump when shipping a meaningfully different build, so "which version are you on" is answerable at a glance
     # The catalog as last read (Read-WebCatalogRecords) - the shared
     # functions that look at "the catalog" (default dependencies, known
     # groups) read it from here.

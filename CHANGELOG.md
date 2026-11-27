@@ -1,5 +1,62 @@
 # Changelog
 
+## 2.38.77
+
+Two new recommended script apps in the starter set (Add apps > Recommended).
+
+### Windows desktop defaults (category "Windows set-up")
+
+How a new PC looks at the first sign-in.
+
+**Taskbar**
+- Only File Explorer and Edge are pinned.
+- Search shows as an icon.
+- No Widgets, Task view, Chat or Copilot button.
+- The taskbar is aligned left.
+
+**Desktop**
+- No shortcuts on the shared desktop. Edge doesn't put its shortcut back when it updates.
+- This PC and the Recycle Bin are shown.
+
+**Background and theme**
+- Your picture as the background: `wallpaper.jpg` or `.png`, uploaded to the app's packages folder with "Upload
+  another..." in the editor. Without one, the background is solid black.
+- Dark mode for Windows and apps.
+
+**Lock screen and suggestions**
+- The lock screen has no Windows spotlight and no "fun facts, tips, tricks".
+- No tips, suggestions, "finish setting up" pages, or apps Windows installs on its own.
+
+**How it applies**
+- These are defaults, not rules: they go into the default profile (everyone who signs in for the first time) and
+  into the profiles already on the PC (after they sign in again). Each user can change them afterwards.
+- The taskbar pins apply to new profiles only.
+- Only Edge's desktop shortcut is held back by a policy.
+- The lock screen picture needs Windows Enterprise or Education. On Pro the lock screen shows Windows' own picture,
+  without spotlight.
+- Detection: a version marker. Raising `$SettingsVersion` at the top of the script applies a changed script again.
+- The log is `IntuneAppCatalog-WindowsDesktopDefaults.log` in the Intune Management Extension's log folder.
+
+### Remove Windows extras (category "Clean-up")
+
+Removes the Store apps Windows comes with that a work PC doesn't need, for every user and from the Windows image.
+
+**Removed**
+- Xbox and the Game Bar
+- Solitaire
+- Clipchamp, News, Weather, Tips, Get Help, Feedback Hub, To Do
+- Teams (free)
+- Mail and Calendar, and the new Outlook for Windows (Outlook comes with Microsoft 365)
+- Maps, Movies & TV, Paint 3D
+- Promoted apps: Spotify, Disney+, TikTok and others
+
+**Kept**
+- The Store and its parts
+- Calculator, Photos, Notepad, Paint, Snipping Tool, Terminal, Camera, Sound Recorder, Clock
+- Company Portal, Teams for work and school, Edge
+
+If a feature update brings one back, the detection finds it and it is removed again.
+
 ## 2.38.76
 
 - **Send to Intune builds a custom package itself.**

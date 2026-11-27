@@ -107,6 +107,8 @@ $testableFunctionNames = @(
     "Get-CleanupStarterItem",
     "Get-DownloadAppSet",
     "Get-DownloadStarterItem",
+    "Get-SetupAppSet",
+    "Get-SetupStarterItem",
     "Get-ScriptStarterAppSet",
     # Who signed a file (Packaging.ps1, 2.38.71): the organisation read field by field
     "Get-CertificateOrganization",
@@ -3467,15 +3469,30 @@ $starter = @(Get-StarterAppSet)
 $sIds = @($starter | ForEach-Object { $_.id })
 Assert-True ($starter.Count -ge 20 -and @($sIds | Select-Object -Unique).Count -eq $sIds.Count -and -not @($starter | Where-Object { $_.id -notmatch '^[A-Za-z0-9][A-Za-z0-9._+\-]{0,127}$' -or -not $_.name -or -not $_.category -or -not $_.why }).Count) "Starter set: unique, valid Winget IDs, each with a name, category and why"
 Assert-True ($sIds[0] -eq (Get-OfficeStarterId) -and $sIds[1] -eq '9WZDNCRFJ3PZ' -and $starter[0].category -eq 'Microsoft' -and $starter[1].recommended) "Starter set (2.38.21): Microsoft 365 Apps and Company Portal first"
-Assert-True (@($starter | Where-Object recommended).Count -eq 15 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
+Assert-True (@($starter | Where-Object recommended).Count -eq 17 -and (@('Mozilla.Firefox', 'Google.Chrome', 'VideoLAN.VLC', 'EclipseAdoptium.Temurin.21.JRE', '7zip.7zip') | Where-Object { $sIds -notcontains $_ }).Count -eq 0) "Starter set: the ten recommended ones, Firefox, Chrome, VLC, Java and 7-Zip among them"
 # 2.38.58: the clean-up apps - Lenovo, HP and preinstalled Office, their scripts in EmbeddedScripts\Cleanup.
 $cleanDir = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'EmbeddedScripts') 'Cleanup'
 $cleanSet = @(Get-CleanupAppSet)
-Assert-True ($cleanSet.Count -eq 3 -and @($cleanSet | Where-Object { $sIds -contains $_.id }).Count -eq 3 -and -not @($cleanSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $cleanDir $_)) }).Count -and @($starter | Where-Object { $_.category -eq 'Clean-up' }).Count -eq 3) "Clean-up apps (2.38.58): three in the starter set, their script files there"
+Assert-True ($cleanSet.Count -eq 4 -and @($cleanSet | Where-Object { $sIds -contains $_.id }).Count -eq 4 -and -not @($cleanSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $cleanDir $_)) }).Count -and @($starter | Where-Object { $_.category -eq 'Clean-up' }).Count -eq 4) "Clean-up apps (2.38.58, Windows extras 2.38.77): four in the starter set, their script files there"
 # 2.38.66: TeamViewer and QuickSupport fetched from TeamViewer - script apps instead of winget's (its manifests broke).
 $dlDir = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'EmbeddedScripts') 'Download'
 $dlSet = @(Get-DownloadAppSet)
-Assert-True ($dlSet.Count -eq 2 -and @($dlSet | Where-Object { $sIds -contains $_.id }).Count -eq 2 -and -not @($dlSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $dlDir $_)) }).Count -and $sIds -notcontains 'TeamViewer.TeamViewer' -and $sIds -notcontains 'TeamViewer.TeamViewer.QuickSupport' -and $sIds -contains 'TeamViewer.TeamViewer.Host' -and @(Get-ScriptStarterAppSet).Count -eq 5) "Starter set: TeamViewer and QuickSupport as script apps fetched from TeamViewer, their files there; the Host stays a Winget app"
+Assert-True ($dlSet.Count -eq 2 -and @($dlSet | Where-Object { $sIds -contains $_.id }).Count -eq 2 -and -not @($dlSet | ForEach-Object { $_.files } | Where-Object { -not (Test-Path -LiteralPath (Join-Path $dlDir $_)) }).Count -and $sIds -notcontains 'TeamViewer.TeamViewer' -and $sIds -notcontains 'TeamViewer.TeamViewer.QuickSupport' -and $sIds -contains 'TeamViewer.TeamViewer.Host' -and @(Get-ScriptStarterAppSet).Count -eq 7) "Starter set: TeamViewer and QuickSupport as script apps fetched from TeamViewer, their files there; the Host stays a Winget app"
+# 2.38.77: Windows extras - Teams for work, the Store and its parts stay; the free Teams and both Outlooks for Windows go.
+$winX = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Windows.ps1'); . (Join-Path $cleanDir 'Common.ps1')
+    @((Test-CleanupLike 'MicrosoftTeams' $Targets.Packages), (Test-CleanupLike 'MSTeams' $Targets.Packages), (Test-CleanupLike 'MSTeams' $Targets.KeepPackages), (Test-CleanupLike 'Microsoft.OutlookForWindows' $Targets.Packages),
+        (Test-CleanupLike 'microsoft.windowscommunicationsapps' $Targets.Packages), (Test-CleanupLike 'Microsoft.WindowsStore' $Targets.Packages), (Test-CleanupLike 'Microsoft.XboxGamingOverlay' $Targets.Packages),
+        (Test-CleanupLike 'Microsoft.Paint' $Targets.Packages), (Test-CleanupLike 'Microsoft.MSPaint' $Targets.Packages)) }
+Assert-True ($winX[0] -and -not $winX[1] -and $winX[2] -and $winX[3] -and $winX[4] -and -not $winX[5] -and $winX[6] -and -not $winX[7] -and $winX[8]) "Windows extras: the free Teams, both Outlooks for Windows, the Game Bar and Paint 3D go; Teams for work, the Store and Paint stay" ($winX -join ',')
+# 2.38.77: Windows desktop defaults - one script, by $Action; it parses, and holds what was asked for.
+$setDir = Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'EmbeddedScripts') 'Setup'
+$setSet = @(Get-SetupAppSet)
+$setTxt = (@($setSet[0].files) | ForEach-Object { Get-Content -LiteralPath (Join-Path $setDir $_) -Raw }) -join "`n"
+$setErr = $null; foreach ($act in 'Install', 'Detect', 'Uninstall') { $pe = $null; [void][System.Management.Automation.Language.Parser]::ParseInput("`$Action = '$act'`n" + $setTxt, [ref]$null, [ref]$pe); if ($pe.Count) { $setErr = "$act : $($pe[0].Message)" } }
+Assert-True ($setSet.Count -eq 1 -and $setSet[0].kind -eq 'setup' -and $sIds -contains $setSet[0].id -and -not $setErr -and @($starter | Where-Object { $_.category -eq 'Windows set-up' }).Count -eq 1) "Windows desktop defaults (2.38.77): in the starter set, its script parses for Install, Detect and Uninstall" $setErr
+$need = @('TaskbarAl', 'SearchboxTaskbarMode', 'ShowTaskViewButton', 'TaskbarDa', 'AppsUseLightTheme', 'SystemUsesLightTheme', '{20D04FE0-3AEA-1069-A2D8-08002B30309D}', '{645FF040-5081-101B-9F08-00AA002F954E}', 'RotatingLockScreenEnabled', 'SubscribedContent-338387Enabled', 'CreateDesktopShortcutDefault', 'PinListPlacement="Replace"', 'Microsoft.Windows.Explorer', 'MSEdge', "'0 0 0'", 'NTUSER.DAT')
+$missing = @($need | Where-Object { -not $setTxt.Contains($_) })
+Assert-True (-not $missing.Count -and $setTxt -notmatch 'Policies\\Microsoft\\Dsh') "Windows desktop defaults: every setting asked for is there; Widgets as a default (no policy)" ($missing -join ', ')
 $dlTest = & { Set-Variable -Name DownloadLoadOnly -Value $true; Set-Variable -Name Action -Value 'Detect'; . (Join-Path $dlDir 'TeamViewer.ps1'); . (Join-Path $dlDir 'Common.ps1')
     @((Test-DownloadSigner 'CN=TeamViewer Germany GmbH, O=TeamViewer Germany GmbH, L=Goeppingen, S=Baden-Wuerttemberg, C=DE'), (Test-DownloadSigner 'CN=TeamViewer GmbH, O=TeamViewer GmbH, C=DE'),
         (Test-DownloadSigner 'CN=Evil, O=Not TeamViewer Germany GmbH Ltd, C=US'), (Test-DownloadSigner 'CN=TeamViewer Germany GmbH, O=Someone Else, C=US'),
