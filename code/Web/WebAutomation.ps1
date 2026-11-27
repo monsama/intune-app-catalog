@@ -647,9 +647,9 @@ function Global:Save-WebWatchedInstaller {
     $old = if ($w.file) { Join-Path $folder ($w.file -replace '[\\/]+', [System.IO.Path]::DirectorySeparatorChar) } else { '' }
     if ($old -and -not (Test-Path -LiteralPath $old -PathType Leaf)) { $old = '' }
     $ext = if ($old) { [System.IO.Path]::GetExtension($old).ToLowerInvariant() } else { $urlExt }
-    if ($ext -notin '.msi', '.exe') { return @{ ok = $false; error = "winget's installer for $($a.watchWinget) isn't an .msi or .exe ($(if ($urlExt) { $urlExt } else { 'no file type in its link' })) - upload it in the editor (Install & detection)." } }
+    if ($ext -notin '.msi', '.exe') { return @{ ok = $false; error = "winget's installer for $($a.watchWinget) isn't an .msi or .exe ($(if ($urlExt) { $urlExt } else { 'no file type in its link' })) - upload it in the editor (App)." } }
     # A link to something else (.zip, .msix, ...) never replaces the folder's .exe or .msi (2.38.0).
-    if ($urlExt -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it in the editor (Install & detection) and check the commands." } }
+    if ($urlExt -and $urlExt -ne $ext) { return @{ ok = $false; error = "winget's installer is an $urlExt, the one in the folder an $ext - their commands differ. Upload it in the editor (App) and check the commands." } }
     $target = if ($old) { $old } else { Join-Path $folder ([System.IO.Path]::GetFileName(([Uri]$w.url).AbsolutePath)) }
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("intunecat-dl-" + [guid]::NewGuid().ToString('N') + $ext)
     try {

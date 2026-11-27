@@ -283,6 +283,14 @@ try {
     $pwRow = @($pwPlan.apps) | Where-Object { $_.name -eq $pwName } | Select-Object -First 1
     Check ($pwAdd.ok -and $pwRow -and $pwRow.ready -and @($pwRow.warnings | Where-Object { $_ -like '*Uninstall.ps1*' }).Count -eq 1) 'deploy plan: ready, with a warning for what does not fit together in its package' (@($pwAdd, $pwPlan) | ConvertTo-Json -Compress -Depth 5)
 
+    # 2.38.76: a custom package not built yet is built as part of the send - ready, marked build; one built after its files isn't.
+    $nbName = 'ZZ Graph Nobuild ' + [guid]::NewGuid().ToString('N').Substring(0, 4)
+    $nbAdd = Invoke-Api '/api/add-script' @{ name = $nbName; publisher = 'IT'; version = '1.0'; install = 'Write-Output hi'; uninstall = 'Write-Output bye'; detectScript = "Write-Output 'Installed'" }
+    if ($nbAdd.ok) { $created.Add($nbAdd.name) }
+    $nbPlan = Invoke-Api '/api/deploy-plan' @{ names = @($nbName) }
+    $nbRow = @($nbPlan.apps) | Where-Object { $_.name -eq $nbName } | Select-Object -First 1
+    Check ($nbAdd.ok -and $nbRow -and $nbRow.ready -and $nbRow.build -and -not $pwRow.build) 'deploy plan: a custom package not built yet is ready - built as part of the send; one built after its files is not built again' (@($nbAdd, $nbPlan, $pwPlan) | ConvertTo-Json -Compress -Depth 5)
+
     # 2.38.21: Microsoft 365 Apps - ready to send without a package or a detection rule.
     $o365 = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune'; name = 'Microsoft 365 Apps' }) }
     if (@($o365.added).Count) { $created.Add(@($o365.added)[0]) }

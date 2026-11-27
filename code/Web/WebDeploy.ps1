@@ -55,6 +55,9 @@ function Global:Get-WebDeployPlan {
         $store = (Test-StoreProductId ([string]$a.wingetId)) -or [bool]$a.office
         $pkg = if ($store) { @{ Found = $true } } else { Resolve-AppPackagePath -AppName $a.appName -Uncommon $unc -Index $index -PackagePath $a.packagePath }
         $reason = ''
+        # 2.38.76: a custom package not built yet, or built before its files last changed, is built as part of the send -
+        # not refused ("build it with More > Package"), and not sent stale.
+        $build = $unc -and -not $store -and (Test-WebPackageNeedsBuild $a)
         $lt = if ($a.appId) { [string]$typeOf[([string]$a.appId).ToLowerInvariant()] } else { '' }
         if ($a.appId -and $tenantIds -and -not $tenantIds.ContainsKey(([string]$a.appId).ToLowerInvariant())) { $reason = "Its App ID isn't in this tenant (copied from another?) - clear it first: Catalog > Set up this tenant." }
         # A same-name app in Intune first: building a package would only lead to a duplicate.
@@ -62,19 +65,37 @@ function Global:Get-WebDeployPlan {
         elseif (-not $store -and ($nonPkg = Get-NonPackageAppHint $a)) { $reason = $nonPkg }
         # Linked to a type it can't become (2.38.42) - the same refusals Start-WebDeploy gives, said here instead of mid-queue.
         elseif ($store -and $lt -and $lt -ne $(if ($a.office -and -not $a.wingetId) { 'officeSuiteApp' } else { 'winGetApp' })) { $reason = "It is linked to a $(Get-FriendlyIntuneAppType -ODataType $lt) in Intune, which can't become $(if ($a.office -and -not $a.wingetId) { 'Microsoft 365 Apps' } else { 'a Microsoft Store app' }) - clear its App ID (More > Clear App ID) and send it again." }
-        elseif (-not $pkg.Found) {
-            $reason = if ($unc) { "No package (.intunewin) yet - build it with More > Package." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
+        elseif (-not $pkg.Found -and -not $build) {
+            $reason = if ($unc) { "No installer in its packages folder yet - upload it in the editor (App: Upload an installer)." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging builds it." }
         }
         elseif (-not $store -and $a.managedUpdates -and $a.wingetId -and -not (Test-ReleaseVersionText ([string]$(if ($a.metadata) { $a.metadata.appVersion })))) { $reason = "Managed updates deploy a fixed version - set its App version first (Pin newest in its side panel)." }
-        elseif ($unc -and -not $store -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with a custom package needs one (the editor's Install & detection)." }
+        elseif ($unc -and -not $store -and -not ($a.metadata -and $a.metadata.detectionRule)) { $reason = "No detection rule yet - an app with a custom package needs one (the editor's Detection)." }
         $lob = $a.appId -and (Test-IntuneLobMsiType ([string]$typeOf[([string]$a.appId).ToLowerInvariant()]))
         # What doesn't fit together (2.36.0): said, not blocking - each can be on purpose.
         $warnings = if ($unc -and -not $store -and -not $reason) { @(Get-WebPackageWarnings $a) } else { @() }
-        [ordered]@{ name = $a.appName; update = ([bool]$a.appId -and -not $lob); ready = (-not $reason); reason = $reason; deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } }))
+        # Built as part of the send: "changed after the package was built" no longer applies.
+        if ($build) { $warnings = @($warnings | Where-Object { $_ -notlike 'Files in its packages folder changed after the package was built*' }) }
+        [ordered]@{ name = $a.appName; update = ([bool]$a.appId -and -not $lob); ready = (-not $reason); reason = $reason; build = [bool]($build -and -not $reason); deps = @($(if ($a.metadata) { @($a.metadata.dependencies) | Where-Object { $_ } | ForEach-Object { [string]$_ } }))
             replacesLob = [bool]$lob; warnings = @($warnings)
             note = $(if ($lob) { 'An MSI line-of-business app in Intune - it can''t be updated as Win32, so it is created as a new Win32 app with its groups. The MSI app stays until you retire it (the side panel).' } else { '' }) }
     }
     return @{ ok = $true; apps = @($plan); circular = @($order.CircularNames); note = $note }
+}
+
+function Global:Test-WebPackageNeedsBuild {
+    # A custom-package app whose .intunewin is missing, or older than a file in its packages folder (2.38.76) - and that
+    # has files to build from. Send to Intune and Replace package build it first.
+    param($App)
+    if (-not $App -or ([string]$App.wingetId).Trim()) { return $false }
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $App.appName)
+    if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return $false }
+    $src = @(Get-ChildItem -LiteralPath $folder -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -ne '.intunewin' })
+    if (-not $src.Count) { return $false }
+    $pkg = Resolve-AppPackagePath -AppName $App.appName -Uncommon $true -Index $null -PackagePath ([string]$App.packagePath)
+    if (-not $pkg.Found) { return $true }
+    $item = Get-Item -LiteralPath $pkg.Path -ErrorAction SilentlyContinue
+    if (-not $item) { return $true }
+    return [bool](@($src | Where-Object { $_.LastWriteTimeUtc -gt $item.LastWriteTimeUtc.AddSeconds(2) } | Select-Object -First 1).Count)
 }
 
 function Global:Get-WebPackageWarnings {
@@ -271,7 +292,7 @@ function Global:Start-WebDeploy {
         [void](Set-ManagedAppPin $pinned)
         $m = $pinned.metadata
     }
-    if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule - set one in the editor's Install & detection." } }
+    if (-not $m.detectionRule) { return @{ ok = $false; error = "$name has no detection rule - set one in the editor's Detection." } }
     $resultPath = Join-Path $env:TEMP (".intunepkg_createapp_result_" + [guid]::NewGuid().ToString('N') + ".json")
     $config = New-WebCreateAppConfig -Catalog $catalog -App $a -Metadata $m -Defaults $defaults -PackagePath $pkg.Path -ResultPath $resultPath
     # An own package already in Intune: a package newer than the one last uploaded goes up again - otherwise the

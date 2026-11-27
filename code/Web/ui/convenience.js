@@ -466,7 +466,7 @@ async function wauSwitch() {
   if (!r.ok) { toast(r.error, true); return; }
   await loadApps();
   const msg = `Switched ${nWord(r.changed.length, 'app')} away from Winget-AutoUpdate.` + ((r.byHand || []).length ? ` Not switched - their commands run Winget-Install.ps1 for several or other IDs, so they're left to you (editor, Install with): ${r.byHand.join(', ')}.` : '');
-  const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install & detection): ${r.carried.join('; ')}.` : '') +
+  const dropped = ((r.carried || []).length ? ` Kept the extra winget options WAU passed (editor, Install): ${r.carried.join('; ')}.` : '') +
     ((r.dropped || []).length ? ` Left out options winget's own command can't take - check these install as you want: ${r.dropped.join('; ')}.` : '');
   const ids = ((r.tookId || []).length ? ` Winget ID taken from the WAU command (none was set): ${r.tookId.join('; ')}.` : '') +
     ((r.mismatch || []).length ? ` Not switched - the WAU command installs another Winget ID than the app has (${r.mismatch.join('; ')}). Set the Winget ID you want in the editor (App), then Switch them again.` : '');
