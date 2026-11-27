@@ -1073,12 +1073,12 @@ try {
     $o365Again = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune' }) }
     Check (@($o365Again.added).Count -eq 0 -and @($o365Again.skipped) -match 'already in the catalog') 'Microsoft 365 Apps: a second one is refused' ($o365Again | ConvertTo-Json -Compress)
     if ($o365Name) {
-        $o365Edit = $o365App; $o365Edit | Add-Member -NotePropertyName office -NotePropertyValue @{ channel = 'current'; architecture = 'x86'; locales = @('de-de'); excluded = @('teams'); sharedActivation = $true; removeOlder = $false } -Force
+        $o365Edit = $o365App; $o365Edit | Add-Member -NotePropertyName office -NotePropertyValue @{ channel = 'current'; architecture = 'x86'; locales = @('de-de'); excluded = @('teams'); products = @('visio'); sharedActivation = $true; removeOlder = $false } -Force
         $o365Save = Invoke-Api '/api/app-save' @{ originalName = $o365Name; version = (Invoke-Api '/api/app-get' @{ name = $o365Name }).version; app = $o365Edit }
         $o365After = (Invoke-Api '/api/app-get' @{ name = $o365Name }).app
-        Check ($o365Save.ok -and $o365After.office.channel -eq 'current' -and $o365After.office.architecture -eq 'x86' -and (@($o365After.office.excluded) -join ',') -eq 'teams' -and $o365After.office.sharedActivation -and -not $o365After.office.removeOlder) 'Microsoft 365 Apps: its settings saved from the editor and read back' (@($o365Save, $o365After.office) | ConvertTo-Json -Compress -Depth 4)
+        Check ($o365Save.ok -and $o365After.office.channel -eq 'current' -and $o365After.office.architecture -eq 'x86' -and (@($o365After.office.excluded) -join ',') -eq 'teams' -and (@($o365After.office.products) -join ',') -eq 'visio' -and $o365After.office.sharedActivation -and -not $o365After.office.removeOlder) 'Microsoft 365 Apps: its settings saved from the editor and read back' (@($o365Save, $o365After.office) | ConvertTo-Json -Compress -Depth 4)
         $o365Row = @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $o365Name })[0]
-        Check ($o365Row.office -and $o365Row.officeText -like 'Current Channel, 32-bit, de-de*without Teams' -and -not $o365Row.msHint) 'Microsoft 365 Apps: the list says its settings in one line' ($o365Row | ConvertTo-Json -Compress -Depth 4)
+        Check ($o365Row.office -and $o365Row.officeText -like 'Current Channel, 32-bit, de-de*without Teams; with Visio' -and -not $o365Row.msHint) 'Microsoft 365 Apps: the list says its settings in one line' ($o365Row | ConvertTo-Json -Compress -Depth 4)
         $o365Dup = Invoke-Api '/api/app-duplicate' @{ name = $o365Name; newName = "$o365Name copy" }
         Check (-not $o365Dup.ok -and $o365Dup.error -like '*one per catalog*') 'Microsoft 365 Apps: not duplicated (one per catalog)' ($o365Dup | ConvertTo-Json -Compress)
         $stO = Invoke-Api '/api/package-list' @{ starter = $true }
