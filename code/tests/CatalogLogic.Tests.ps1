@@ -241,6 +241,7 @@ $testableFunctionNames = @(
     "ConvertTo-PsLiteral",
     "Get-InstalledNamePattern",
     "Get-OfficeAppKeys",
+    "Get-OfficeProducts",
     "Get-StoreIdFromSync",
     "Get-OfficeStarterId",
     "Get-OfficeChannels",
