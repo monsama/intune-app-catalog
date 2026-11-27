@@ -288,16 +288,20 @@ function srcFromField() { const v = $('aWinget').value.trim(); return !v ? null 
 const officeChannels = [['monthlyEnterprise', 'Monthly Enterprise Channel - once a month (recommended)'], ['current', 'Current Channel - new features as they come'],
   ['deferred', 'Semi-Annual Enterprise Channel - twice a year'], ['firstReleaseCurrent', 'Current Channel (Preview)'], ['firstReleaseDeferred', 'Semi-Annual Enterprise Channel (Preview)']];
 const officeApps = [['word', 'Word'], ['excel', 'Excel'], ['powerPoint', 'PowerPoint'], ['outlook', 'Outlook'], ['oneNote', 'OneNote'], ['teams', 'Teams'], ['oneDrive', 'OneDrive'],
-  ['access', 'Access'], ['publisher', 'Publisher (retired)'], ['visio', 'Visio (needs its own licence)'], ['groove', 'OneDrive for Business (Groove, old)'], ['lync', 'Skype for Business (retired)'],
+  ['access', 'Access'], ['publisher', 'Publisher (retired)'], ['groove', 'OneDrive for Business (Groove, old)'], ['lync', 'Skype for Business (retired)'],
   ['infoPath', 'InfoPath (retired)'], ['sharePointDesigner', 'SharePoint Designer (retired)'], ['bing', 'Bing search in the browser']];
-const officeDefaults = () => ({ channel: 'monthlyEnterprise', architecture: 'x64', locales: [], excluded: ['bing', 'groove', 'infoPath', 'lync', 'publisher', 'sharePointDesigner', 'visio'], sharedActivation: false, removeOlder: true });
+const officeDefaults = () => ({ channel: 'monthlyEnterprise', architecture: 'x64', locales: [], excluded: ['bing', 'groove', 'infoPath', 'lync', 'publisher', 'sharePointDesigner'], products: [], sharedActivation: false, removeOlder: true });
+// Visio and Project (2.38.81): products of their own, each with its own licence - not apps of the suite (Get-OfficeProducts).
+const officeProducts = [['visio', 'Visio'], ['project', 'Project']];
 $('oChannel').replaceChildren(...officeChannels.map(([v, t]) => el('option', { value: v, text: t })));
 $('oApps').replaceChildren(...officeApps.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-oapp': k }), t)));
+$('oProducts').replaceChildren(...officeProducts.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-oprod': k }), t)));
 function fillOffice(o) {
   const s = { ...officeDefaults(), ...(o || {}) };
   $('oChannel').value = s.channel; $('oArch').value = s.architecture === 'x86' ? 'x86' : 'x64';
   $('oLocales').value = (s.locales || []).join(', ');
   for (const c of document.querySelectorAll('[data-oapp]')) c.checked = !(s.excluded || []).includes(c.dataset.oapp);
+  for (const c of document.querySelectorAll('[data-oprod]')) c.checked = (s.products || []).includes(c.dataset.oprod);
   $('oShared').checked = !!s.sharedActivation; $('oRemoveOlder').checked = s.removeOlder !== false;
 }
 // Linked to Intune's own Microsoft 365 Apps but without its settings here (2.38.23): they are read from Intune, so the
@@ -316,7 +320,8 @@ const badLocales = text => String(text || '').split(/[\s,;]+/).map(x => x.trim()
 const localeHelp = bad => `Not a language Office knows: ${bad.join(', ')} - use language and region, e.g. de-de, fr-ch, it-it.`;
 function readOffice() {
   return { channel: $('oChannel').value, architecture: $('oArch').value, locales: $('oLocales').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean),
-    excluded: [...document.querySelectorAll('[data-oapp]')].filter(c => !c.checked).map(c => c.dataset.oapp), sharedActivation: $('oShared').checked, removeOlder: $('oRemoveOlder').checked };
+    excluded: [...document.querySelectorAll('[data-oapp]')].filter(c => !c.checked).map(c => c.dataset.oapp),
+    products: [...document.querySelectorAll('[data-oprod]')].filter(c => c.checked).map(c => c.dataset.oprod), sharedActivation: $('oShared').checked, removeOlder: $('oRemoveOlder').checked };
 }
 function showSrc() {
   for (const b of document.querySelectorAll('.srcpick [data-src]')) {

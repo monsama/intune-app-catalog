@@ -185,7 +185,7 @@ function Global:ConvertTo-OfficeSettingsJson {
     if (-not $s) { return 'null' }
     $arr = { param($items) '[' + ((@($items) | ForEach-Object { ConvertTo-JsonStringLiteral ([string]$_) }) -join ', ') + ']' }
     return '{ "channel": ' + (ConvertTo-JsonStringLiteral $s.channel) + ', "architecture": ' + (ConvertTo-JsonStringLiteral $s.architecture) +
-        ', "locales": ' + (& $arr $s.locales) + ', "excluded": ' + (& $arr $s.excluded) +
+        ', "locales": ' + (& $arr $s.locales) + ', "excluded": ' + (& $arr $s.excluded) + ', "products": ' + (& $arr $s.products) +
         ', "sharedActivation": ' + $(if ($s.sharedActivation) { 'true' } else { 'false' }) + ', "removeOlder": ' + $(if ($s.removeOlder) { 'true' } else { 'false' }) + ' }'
 }
 

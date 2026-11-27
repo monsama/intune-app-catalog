@@ -645,7 +645,7 @@ try {
         await page.evaluate(n => api('/api/app-remove', { name: n }).then(() => loadApps()), o365App);
         // 2.38.24: Add apps > Microsoft 365 - the tab and its usual settings, ready to add.
         await page.evaluate(() => openAdd('office')); await page.waitForSelector('#dlgAdd[open] #asec-office:not([hidden])');
-        check(await page.evaluate(() => document.getElementById('aoChannel').value === 'monthlyEnterprise' && document.querySelector('[data-aoapp="word"]').checked && !document.querySelector('[data-aoapp="visio"]').checked && !document.getElementById('btnAddGo').disabled), `${label}: Add apps > Microsoft 365 starts with the usual settings, ready to add`);
+        check(await page.evaluate(() => document.getElementById('aoChannel').value === 'monthlyEnterprise' && document.querySelector('[data-aoapp="word"]').checked && !document.querySelector('[data-aoprod="visio"]').checked && !document.querySelector('[data-aoapp="visio"]') && !document.getElementById('btnAddGo').disabled), `${label}: Add apps > Microsoft 365 starts with the usual settings, ready to add`);
         await unnamed('Add apps > Microsoft 365'); await a11y('Add apps > Microsoft 365'); await shot('add-office');
         await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.getElementById('dlgAdd').open);
         // 2.34.0: a whole folder for an app - reviewed (the setup file in a subfolder suggested), all of it in its

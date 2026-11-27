@@ -372,10 +372,12 @@ for (const r of document.querySelectorAll('input[name="asDetect"]')) r.addEventL
 // ---- Microsoft 365 Apps (2.38.24): the editor's settings, here before it is added - one per catalog.
 $('aoChannel').replaceChildren(...officeChannels.map(([v, t]) => el('option', { value: v, text: t })));
 $('aoApps').replaceChildren(...officeApps.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-aoapp': k }), t)));
+$('aoProducts').replaceChildren(...officeProducts.map(([k, t]) => el('label', { class: 'chk' }, el('input', { type: 'checkbox', 'data-aoprod': k }), t)));
 function aoReset() {
   const d = officeDefaults();
   $('aoName').value = 'Microsoft 365 Apps'; $('aoChannel').value = d.channel; $('aoArch').value = d.architecture; $('aoLocales').value = '';
   for (const c of document.querySelectorAll('[data-aoapp]')) c.checked = !d.excluded.includes(c.dataset.aoapp);
+  for (const c of document.querySelectorAll('[data-aoprod]')) c.checked = d.products.includes(c.dataset.aoprod);
   $('aoRemoveOlder').checked = d.removeOlder; $('aoShared').checked = d.sharedActivation;
 }
 aoReset();
@@ -387,7 +389,8 @@ function aoShow() {
   updateAddButton();
 }
 const aoRead = () => ({ channel: $('aoChannel').value, architecture: $('aoArch').value, locales: $('aoLocales').value.split(/[\s,;]+/).map(x => x.trim().toLowerCase()).filter(Boolean),
-  excluded: [...document.querySelectorAll('[data-aoapp]')].filter(c => !c.checked).map(c => c.dataset.aoapp), sharedActivation: $('aoShared').checked, removeOlder: $('aoRemoveOlder').checked });
+  excluded: [...document.querySelectorAll('[data-aoapp]')].filter(c => !c.checked).map(c => c.dataset.aoapp),
+  products: [...document.querySelectorAll('[data-aoprod]')].filter(c => c.checked).map(c => c.dataset.aoprod), sharedActivation: $('aoShared').checked, removeOlder: $('aoRemoveOlder').checked });
 $('aoName').addEventListener('input', updateAddButton);
 $('aoApps').addEventListener('change', updateAddButton);
 

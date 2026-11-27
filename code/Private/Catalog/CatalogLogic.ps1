@@ -3707,7 +3707,14 @@ function Global:Get-OfficeAppKeys {
     # Pure: the apps of Microsoft 365 Apps Intune can leave out (its excludedApps), with the names people know.
     return [ordered]@{ access = 'Access'; bing = 'Bing (search in the browser)'; excel = 'Excel'; groove = 'OneDrive for Business (Groove)'; infoPath = 'InfoPath'
         lync = 'Skype for Business'; oneDrive = 'OneDrive'; oneNote = 'OneNote'; outlook = 'Outlook'; powerPoint = 'PowerPoint'; publisher = 'Publisher (retired)'
-        sharePointDesigner = 'SharePoint Designer'; teams = 'Teams'; visio = 'Visio'; word = 'Word' }
+        sharePointDesigner = 'SharePoint Designer'; teams = 'Teams'; word = 'Word' }
+}
+
+function Global:Get-OfficeProducts {
+    # Pure (2.38.81): what Intune installs as well as Microsoft 365 Apps - Visio and Project are products of their own
+    # (productIds), each needing its own licence. Not apps of the suite: before, "Visio" was a box among the apps left
+    # out, and ticking it installed nothing (only Microsoft 365 Apps was ever sent as a product).
+    return [ordered]@{ visio = @{ id = 'visioProRetail'; name = 'Visio' }; project = @{ id = 'projectProRetail'; name = 'Project' } }
 }
 
 function Global:Get-OfficeChannels {
@@ -3726,10 +3733,10 @@ function Global:Get-OfficeDefaultSettings {
       Pure: Microsoft 365 Apps as most organisations deploy it - Monthly Enterprise Channel (one update a month, on
       Patch Tuesday), 64-bit, the language of Windows, older Office removed first, no shared computer activation; left
       out: what is retired or replaced (Groove, Skype for Business, InfoPath, SharePoint Designer, Publisher, Bing) and
-      Visio, which needs a licence of its own (2.38.23).
+      no Visio or Project, which need licences of their own (2.38.23, 2.38.81).
     #>
-    return [ordered]@{ channel = 'monthlyEnterprise'; architecture = 'x64'; locales = @(); excluded = @('bing', 'groove', 'infoPath', 'lync', 'publisher', 'sharePointDesigner', 'visio')
-        sharedActivation = $false; removeOlder = $true }
+    return [ordered]@{ channel = 'monthlyEnterprise'; architecture = 'x64'; locales = @(); excluded = @('bing', 'groove', 'infoPath', 'lync', 'publisher', 'sharePointDesigner')
+        products = @(); sharedActivation = $false; removeOlder = $true }
 }
 
 function Global:ConvertTo-OfficeSettings {
@@ -3750,8 +3757,11 @@ function Global:ConvertTo-OfficeSettings {
     if ($Raw -is [System.Collections.IDictionary]) { if ($exHas) { $exRaw = $Raw['excluded'] } } elseif ($exHas) { $exRaw = $Raw.PSObject.Properties['excluded'].Value }
     [string[]]$excluded = @($d.excluded)
     if ($exHas -and $null -ne $exRaw) { [string[]]$excluded = @(@($exRaw) | ForEach-Object { $k = [string]$_; @($keys | Where-Object { $_ -ieq $k })[0] } | Where-Object { $_ } | Select-Object -Unique) }
+    # Visio and Project as well (2.38.81) - only the known ones, in one order.
+    $pRaw = @(@(& $get 'products') | ForEach-Object { [string]$_ })
+    [string[]]$products = @(@((Get-OfficeProducts).Keys) | Where-Object { $k = $_; @($pRaw | Where-Object { $_ -ieq $k }).Count })
     $sa = & $get 'sharedActivation'; $ro = & $get 'removeOlder'
-    return [ordered]@{ channel = $ch; architecture = $arch; locales = $locales; excluded = $excluded
+    return [ordered]@{ channel = $ch; architecture = $arch; locales = $locales; excluded = $excluded; products = $products
         sharedActivation = [bool]$sa; removeOlder = $(if ($null -eq $ro) { $true } else { [bool]$ro }) }
 }
 
@@ -3761,8 +3771,10 @@ function Global:ConvertFrom-OfficeSuiteApp {
     if (-not $App) { return $null }
     $ex = $App.excludedApps
     $left = @(foreach ($k in (Get-OfficeAppKeys).Keys) { if ($ex -and $ex.$k -eq $true) { $k } })
+    $pids = @(@($App.productIds) | ForEach-Object { [string]$_ }); $op = Get-OfficeProducts
+    $prods = @(foreach ($k in $op.Keys) { if (@($pids | Where-Object { $_ -ieq $op[$k].id }).Count) { $k } })
     return (ConvertTo-OfficeSettings ([ordered]@{ channel = [string]$App.updateChannel; architecture = [string]$App.officePlatformArchitecture
-                locales = @($App.localesToInstall); excluded = $left; sharedActivation = [bool]$App.useSharedComputerActivation
+                locales = @($App.localesToInstall); excluded = $left; products = $prods; sharedActivation = [bool]$App.useSharedComputerActivation
                 removeOlder = [bool]$App.shouldUninstallOlderVersionsOfOffice }))
 }
 
@@ -3776,12 +3788,16 @@ function Global:ConvertTo-OfficeSuiteBody {
     if (-not $s) { $s = Get-OfficeDefaultSettings }
     $excluded = [ordered]@{ '@odata.type' = 'microsoft.graph.excludedApps' }
     foreach ($k in (Get-OfficeAppKeys).Keys) { $excluded[$k] = [bool](@($s.excluded) -contains $k) }
+    # Visio with its product only (2.38.81) - Intune's excludedApps has it too.
+    $excluded['visio'] = -not (@($s.products) -contains 'visio')
+    $op = Get-OfficeProducts
+    $productIds = @('o365ProPlusRetail') + @(foreach ($k in $op.Keys) { if (@($s.products) -contains $k) { $op[$k].id } })
     return [ordered]@{
         '@odata.type' = '#microsoft.graph.officeSuiteApp'
         displayName = $(if ($Name) { $Name } else { 'Microsoft 365 Apps' })
         description = $(if ($Description) { $Description } else { 'Microsoft 365 Apps for Windows' })
         publisher = 'Microsoft'
-        productIds = @('o365ProPlusRetail')
+        productIds = $productIds
         excludedApps = $excluded
         useSharedComputerActivation = [bool]$s.sharedActivation
         updateChannel = [string]$s.channel
@@ -3800,7 +3816,7 @@ function Global:Get-OfficeSettingsDiff {
     <#
       Pure (2.38.54): only what differs between two Microsoft 365 Apps settings, in words - @{ Local; Remote } or $null.
       Checks showed both whole summaries, cut off after two lines, so the one app that differed (Bing) was hard to find.
-      The same settings Get-OfficeSettingsSummary names (channel, bitness, languages, shared activation, the apps left out).
+      The same settings Get-OfficeSettingsSummary names (channel, bitness, languages, shared activation, the apps left out, Visio and Project).
     #>
     param($Local, $Remote)
     $l = ConvertTo-OfficeSettings $Local; $r = ConvertTo-OfficeSettings $Remote
@@ -3817,6 +3833,11 @@ function Global:Get-OfficeSettingsDiff {
     $onlyR = @($names.Keys | Where-Object { @($r.excluded) -contains $_ -and @($l.excluded) -notcontains $_ })
     if ($onlyL.Count) { $t = ($onlyL | ForEach-Object { $names[$_] }) -join ', '; $loc.Add("leaves out $t"); $rem.Add("installs $t") }
     if ($onlyR.Count) { $t = ($onlyR | ForEach-Object { $names[$_] }) -join ', '; $loc.Add("installs $t"); $rem.Add("leaves out $t") }
+    $op = Get-OfficeProducts
+    foreach ($k in $op.Keys) {
+        $inL = @($l.products) -contains $k; $inR = @($r.products) -contains $k
+        if ($inL -ne $inR) { $loc.Add($(if ($inL) { "with $($op[$k].name)" } else { "without $($op[$k].name)" })); $rem.Add($(if ($inR) { "with $($op[$k].name)" } else { "without $($op[$k].name)" })) }
+    }
     if (-not $loc.Count) { return $null }
     return @{ Local = ($loc -join '; '); Remote = ($rem -join '; ') }
 }
@@ -3832,5 +3853,7 @@ function Global:Get-OfficeSettingsSummary {
     $txt = $parts -join ', '
     # In one order (2.38.54) - the same apps picked in another order, or read from Intune, read the same.
     if (@($s.excluded).Count) { $txt += '; without ' + ((@($names.Keys | Where-Object { @($s.excluded) -contains $_ }) | ForEach-Object { $names[$_] }) -join ', ') }
+    $op = Get-OfficeProducts
+    if (@($s.products).Count) { $txt += '; with ' + ((@($op.Keys | Where-Object { @($s.products) -contains $_ }) | ForEach-Object { $op[$_].name }) -join ', ') }
     return $txt
 }

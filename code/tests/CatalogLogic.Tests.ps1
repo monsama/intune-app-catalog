@@ -971,7 +971,15 @@ $offE = ConvertTo-OfficeSettings ('{"channel":"current","excluded":[],"locales":
 $offH = ConvertTo-OfficeSettings @{ excluded = @() }
 Assert-True (@($offE.excluded).Count -eq 0 -and @($offH.excluded).Count -eq 0 -and $offH.channel -eq 'monthlyEnterprise' -and (@($offE.locales) -join '') -eq 'sr-latn-rs' -and (ConvertTo-OfficeSuiteBody -Settings $offE).excludedApps.lync -eq $false) "ConvertTo-OfficeSettings: no apps left out is kept, a missing channel is the default, sr-latn-rs is a language"
 $offG = ConvertFrom-OfficeSuiteApp ([pscustomobject]@{ updateChannel = 'deferred'; officePlatformArchitecture = 'x86'; localesToInstall = @('fr-fr'); useSharedComputerActivation = $true; shouldUninstallOlderVersionsOfOffice = $false; excludedApps = [pscustomobject]@{ teams = $true; word = $false; visio = $true } })
-Assert-True ($offG.channel -eq 'deferred' -and $offG.architecture -eq 'x86' -and (@($offG.excluded) -join ',') -eq 'teams,visio' -and $offG.sharedActivation -and -not $offG.removeOlder) "ConvertFrom-OfficeSuiteApp: Intune's Microsoft 365 Apps read back as the catalog's settings"
+Assert-True ($offG.channel -eq 'deferred' -and $offG.architecture -eq 'x86' -and (@($offG.excluded) -join ',') -eq 'teams' -and @($offG.products).Count -eq 0 -and $offG.sharedActivation -and -not $offG.removeOlder) "ConvertFrom-OfficeSuiteApp: Intune's Microsoft 365 Apps read back as the catalog's settings"
+# 2.38.81: Visio and Project are products of their own - sent as productIds (Visio no longer left out then), read back,
+# named in the summary and the difference; an unknown product is dropped.
+$opB = ConvertTo-OfficeSuiteBody -Settings @{ products = @('Project', 'visio', 'access') }
+$opD = ConvertTo-OfficeSuiteBody -Settings (Get-OfficeDefaultSettings)
+$opG = ConvertFrom-OfficeSuiteApp ([pscustomobject]@{ updateChannel = 'current'; productIds = @('o365ProPlusRetail', 'projectProRetail'); excludedApps = [pscustomobject]@{ visio = $true } })
+Assert-True ((@($opB.productIds) -join ',') -eq 'o365ProPlusRetail,visioProRetail,projectProRetail' -and $opB.excludedApps.visio -eq $false -and
+    (@($opD.productIds) -join ',') -eq 'o365ProPlusRetail' -and $opD.excludedApps.visio -eq $true -and (@($opG.products) -join ',') -eq 'project' -and
+    (Get-OfficeSettingsSummary @{ products = @('visio') }) -like '*; with Visio' -and (Get-OfficeSettingsDiff @{ products = @('project') } @{ products = @() }).Local -eq 'with Project') "Microsoft 365 Apps (2.38.81): Visio and Project as products of their own - sent, read back, summed up" (@($opB.productIds) -join ',')
 $odL = Get-OfficeDefaultSettings; $odR = Get-OfficeDefaultSettings; $odL.excluded = @($odL.excluded | Where-Object { $_ -ne 'bing' })
 $odD = Get-OfficeSettingsDiff $odL $odR
 Assert-True ($odD -and $odD.Local -eq 'installs Bing (search in the browser)' -and $odD.Remote -eq 'leaves out Bing (search in the browser)') "Get-OfficeSettingsDiff (2.38.54): only the app that differs, not both whole summaries"

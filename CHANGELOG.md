@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.38.81
+
+- **Microsoft 365 Apps can install Visio and Project.** The editor and Add apps > Microsoft 365 have a new "Also
+  install" section with Visio and Project.
+  - Each is sent to Intune as a product of its own, and each needs its own licence.
+  - Before, "Visio" was a box among the apps of the suite. Ticking it installed nothing, because only Microsoft 365
+    Apps was ever sent. The box is gone.
+  - Read back from Intune and compared in Checks like the other settings.
+  - To install Visio where the old box was ticked, tick Visio under "Also install" and send the app again.
+
 ## 2.38.80
 
 - **The HP and Lenovo vendor clean-ups now find McAfee WebAdvisor under its newer name, "WebAdvisor by McAfee".**
