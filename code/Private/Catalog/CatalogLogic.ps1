@@ -2268,7 +2268,8 @@ function Global:Get-AppRecordFieldValues {
             if ($m) {
                 $mp = if ($m -is [System.Collections.IDictionary]) { @($m.Keys | ForEach-Object { @{ Name = [string]$_; Value = $m[$_] } }) } else { @($m.PSObject.Properties | ForEach-Object { @{ Name = $_.Name; Value = $_.Value } }) }
                 # Which fields wait to be emptied in Intune is bookkeeping, not a change anyone made (2.38.34).
-                foreach ($q in $mp) { if ($q.Name -eq 'clearedFields') { continue }; $j = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12; $out["metadata.$($q.Name)"] = $(if ($j) { [string]$j } else { 'null' }) }
+                # Nor where a starter set app came from and its scripts' hash (2.38.82).
+                foreach ($q in $mp) { if ($q.Name -in 'clearedFields', 'starterId', 'starterScriptHash') { continue }; $j = ConvertTo-Json -InputObject $q.Value -Compress -Depth 12; $out["metadata.$($q.Name)"] = $(if ($j) { [string]$j } else { 'null' }) }
             }
             continue
         }

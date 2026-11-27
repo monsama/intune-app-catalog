@@ -1030,7 +1030,9 @@ function Global:Get-WebAppSentValues {
     $o = [ordered]@{ name = [string]$App.appName }
     # A Store app's or Microsoft 365 Apps' text and links from Microsoft (2.38.52): not sent unless changed here, so not
     # a change to send either (Test-OwnContentField). Which fields are its own is bookkeeping, not something Intune gets.
-    $skip = @($skip) + @('ownFields') + @(Get-OwnContentFieldNames | Where-Object { -not (Test-OwnContentField $App $_) })
+    # Where a starter set script app came from and its scripts' hash (2.38.79) - bookkeeping too: every app showed
+    # "Changes to send" for them (2.38.82).
+    $skip = @($skip) + @('ownFields', 'starterId', 'starterScriptHash') + @(Get-OwnContentFieldNames | Where-Object { -not (Test-OwnContentField $App $_) })
     # Microsoft 365 Apps (2.38.54): only what its send carries (Start-WebDeploy's Office branch) - its Win32 fields
     # (architecture, install context, return codes, ...) never go to Intune, and a Pull empties them.
     $only = if ($App.office -and -not ([string]$App.wingetId).Trim()) { @('owner', 'developer', 'notes', 'isFeatured', 'clearedFields') + @(Get-OwnContentFieldNames) } else { $null }
@@ -1097,8 +1099,16 @@ function Global:Get-WebSentFieldDiffs {
     #>
     param($App, $Was, $Now)
     $text = { param($v) if ($null -eq $v) { '' } elseif ($v -is [string]) { $v } elseif ($v -is [System.Collections.IEnumerable] -and -not ($v -is [System.Collections.IDictionary]) -and -not ($v.PSObject.Properties['PSPath'])) { (@($v | ForEach-Object { if ($_ -is [string] -or $_ -is [ValueType]) { [string]$_ } else { ConvertTo-Json -InputObject $_ -Compress -Depth 8 } })) -join ', ' } elseif ($v -is [ValueType]) { [string]$v } else { ConvertTo-Json -InputObject $v -Compress -Depth 8 } }
-    $office = { param($t) $i = $t.IndexOf('; without '); if ($i -lt 0) { $t } else { $t.Substring(0, $i) + '; without ' + ((@($t.Substring($i + 10) -split ', ') | Sort-Object) -join ', ') } }
-    $notSent = @('ownFields') + @(Get-OwnContentFieldNames) + @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes')
+    # The apps left out and the products in any order; "Visio" among the apps left out, as sends before 2.38.81 said
+    # it, isn't a difference - Visio is a product of its own now, and not installed unless chosen.
+    $office = {
+        param($t)
+        @(([string]$t -split '; ') | ForEach-Object {
+                if ($_ -like 'without *') { $l = @(($_.Substring(8) -split ', ') | Where-Object { $_ -and $_ -ne 'Visio' } | Sort-Object); if ($l.Count) { 'without ' + ($l -join ', ') } }
+                elseif ($_ -like 'with *') { 'with ' + ((@($_.Substring(5) -split ', ') | Sort-Object) -join ', ') }
+                else { $_ } }) -join '; '
+    }
+    $notSent = @('ownFields', 'starterId', 'starterScriptHash') + @(Get-OwnContentFieldNames) + @('appVersion', 'installCommand', 'uninstallCommand', 'detectionRule', 'returnCodes')
     $isOffice = [bool]$App.office -and -not ([string]$App.wingetId).Trim()
     $rows = New-Object System.Collections.Generic.List[object]
     $keys = @(@($Was.PSObject.Properties.Name) + @($Now.PSObject.Properties.Name) | Select-Object -Unique)

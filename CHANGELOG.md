@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.38.82
+
+- **Fixed: every app showed "Changes to send" after 2.38.79.** The two fields that record which starter set script app
+  an app came from were counted as settings Intune gets, but they are never sent. They no longer count, and they are
+  no longer listed in the change history either.
+- **Fixed: Microsoft 365 Apps could show "Changes to send" after 2.38.81.** Sends before 2.38.81 recorded Visio among
+  the apps left out. Visio is a product of its own now, so that entry is no longer a difference.
+
 ## 2.38.81
 
 - **Microsoft 365 Apps can install Visio and Project.** The editor and Add apps > Microsoft 365 have a new "Also
