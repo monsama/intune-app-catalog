@@ -7,8 +7,9 @@ function Get-CleanupTargets {
             @{ Name = 'McAfee WebAdvisor*'; Publisher = '*McAfee*' }
             @{ Name = 'McAfee*'; Publisher = '*McAfee*' }
             @{ Name = 'Lenovo Now*'; Publisher = '*Lenovo*' }
-            @{ Name = 'Lenovo AI Now*'; Publisher = '*Lenovo*' }
-            @{ Name = 'AI Now*'; Publisher = '*Lenovo*' }
+            # Its uninstaller (Electron) hung as SYSTEM (2.38.78): 5 minutes, then removed by hand.
+            @{ Name = 'Lenovo AI Now*'; Publisher = '*Lenovo*'; Minutes = 5; Force = $true }
+            @{ Name = 'AI Now*'; Publisher = '*Lenovo*'; Minutes = 5; Force = $true }
             @{ Name = 'Lenovo Smart Meeting*'; Publisher = '*Lenovo*' }
             @{ Name = 'Smart Connect*'; Publisher = @('*Motorola*', '*Lenovo*') }
             @{ Name = 'Motorola Smart Connect*'; Publisher = '' }

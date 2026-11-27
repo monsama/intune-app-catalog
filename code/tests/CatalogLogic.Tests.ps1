@@ -3535,6 +3535,21 @@ $nsis = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name 
     $r = Remove-CleanupProgram ([pscustomobject]@{ Name = 'Lenovo AI Now'; Publisher = 'Lenovo'; Key = 'AINow'; Uninstall = '"C:\Program Files\Lenovo\AI Now\Uninstall.exe"'; Quiet = ''; Msi = $false })
     @($r, $script:stopped) }
 Assert-True ($nsis[0] -eq 'C:\Program Files\Lenovo\AI Now\Uninstall.exe|/S _?=C:\Program Files\Lenovo\AI Now' -and $nsis[1] -eq 'C:\Program Files\Lenovo\AI Now') "Clean-up: an NSIS Uninstall.exe runs silently in place, its program stopped first" ($nsis -join ' / ')
+# 2.38.78: an Electron app's uninstaller (Lenovo AI Now's "Lenovo AINow Uninstall.exe") gets /allusers and _?=, and the
+# time the list gives it; the list's Force and Minutes reach the program found.
+$elDir = Join-Path ([System.IO.Path]::GetTempPath()) ('ica-electron-' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+[void](New-Item -ItemType Directory -Path (Join-Path $elDir 'resources') -Force); Set-Content -LiteralPath (Join-Path (Join-Path $elDir 'resources') 'app.asar') -Value 'x'
+$el = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
+    function Stop-CleanupProgramProcesses([string]$Folder) { $null = $Folder }
+    function Invoke-CleanupProcess([string]$File, [string]$Arguments, [int]$Minutes) { "$Arguments|$Minutes" }
+    $found = @(Get-CleanupPrograms @([pscustomobject]@{ Name = 'Lenovo AI Now 1.4'; Publisher = 'Lenovo'; Key = 'AINow'; Uninstall = "`"$elDir/Lenovo AINow Uninstall.exe`""; Quiet = ''; Msi = $false }))
+    @((Remove-CleanupProgram $found[0]), $found[0].Force, $found[0].Minutes) }
+Remove-Item -LiteralPath $elDir -Recurse -Force -ErrorAction SilentlyContinue
+Assert-True ($el[0] -eq "/S /allusers _?=$elDir|5" -and $el[1] -eq $true -and $el[2] -eq 5) "Clean-up (2.38.78): an Electron app's uninstaller runs with /allusers, in place, for the minutes the list gives it - and may be removed by hand" ($el -join ' / ')
+$byHand = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
+    function Stop-CleanupProgramProcesses([string]$Folder) { throw 'must not be reached' }
+    @((Remove-CleanupProgramByHand ([pscustomobject]@{ Name = 'X'; Location = 'C:\Windows\System32'; Uninstall = ''; Quiet = '' })), (Remove-CleanupProgramByHand ([pscustomobject]@{ Name = 'Y'; Location = ''; Uninstall = 'C:\uninstall.exe'; Quiet = '' }))) }
+Assert-True (-not $byHand[0] -and -not $byHand[1]) "Clean-up (2.38.78): removal by hand only in a program folder of its own - never Windows or a drive's root" ($byHand -join ' / ')
 # 2.38.66: nothing is stopped for an uninstaller in Windows or Common Files - Windows' own processes run from there.
 $stopNo = & { Set-Variable -Name CleanupLoadOnly -Value $true; Set-Variable -Name DetectOnly -Value $true; . (Join-Path $cleanDir 'Lenovo.ps1'); . (Join-Path $cleanDir 'Common.ps1')
     $script:said = New-Object System.Collections.Generic.List[string]; function Write-CleanupLog([string]$Text) { $script:said.Add($Text) }

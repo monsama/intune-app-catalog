@@ -30,8 +30,8 @@ function Get-CleanupPrograms($Entries) {
             foreach ($k in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
                 $p = Get-ItemProperty -LiteralPath $k.PSPath -ErrorAction SilentlyContinue
                 if ($p -and [string]$p.DisplayName) {
-                    [pscustomobject]@{ Name = [string]$p.DisplayName; Publisher = [string]$p.Publisher; Key = [string]$k.PSChildName
-                        Uninstall = [string]$p.UninstallString; Quiet = [string]$p.QuietUninstallString; Msi = ([string]$p.WindowsInstaller -eq '1') }
+                    [pscustomobject]@{ Name = [string]$p.DisplayName; Publisher = [string]$p.Publisher; Key = [string]$k.PSChildName; RegPath = [string]$k.PSPath
+                        Uninstall = [string]$p.UninstallString; Quiet = [string]$p.QuietUninstallString; Msi = ([string]$p.WindowsInstaller -eq '1'); Location = [string]$p.InstallLocation }
                 }
             }
         }) }
@@ -42,6 +42,9 @@ function Get-CleanupPrograms($Entries) {
             if ($t.Publisher -and -not (Test-CleanupLike $e.Publisher $t.Publisher)) { continue }
             if (Test-CleanupLike $e.Name $Targets.Keep) { continue }
             if (@($found | Where-Object { $_.Key -eq $e.Key }).Count) { continue }
+            # What the list says for it (2.38.78): its own time limit, and whether it is removed by hand when its uninstaller fails.
+            $e | Add-Member -NotePropertyName Minutes -NotePropertyValue $(if ($t.Minutes) { [int]$t.Minutes } else { 10 }) -Force
+            $e | Add-Member -NotePropertyName Force -NotePropertyValue ([bool]$t.Force) -Force
             $found.Add($e)
         }
     }
@@ -98,10 +101,45 @@ function Remove-CleanupProgram($Entry) {
     Stop-CleanupProgramProcesses $dir
     if ($leaf -match '(?i)^unins\d{3}\.exe$') { $arguments = "$arguments /VERYSILENT /SUPPRESSMSGBOXES /NORESTART".Trim() }
     elseif ($arguments -notmatch '(?i)(^|\s)[/-](s|silent|quiet|q|qn|verysilent)(\s|$)') { $arguments = "$arguments /S".Trim() }
-    # An NSIS uninstaller (Uninstall.exe / uninst.exe) copies itself to the temp folder and returns at once: _?= keeps it
-    # in place, so its end is waited for (its own folder then stays, empty of the program).
-    if ($leaf -match '(?i)^(uninstall|uninst)\.exe$' -and $arguments -match '(?i)(^|\s)/S(\s|$)' -and $arguments -notmatch '_\?=') { $arguments = "$arguments _?=$dir" }
-    return (Invoke-CleanupProcess $file $arguments)
+    # An Electron app's uninstaller (electron-builder's NSIS: "Lenovo AINow Uninstall.exe", 2.38.78): installed for all
+    # users it needs /allusers - without it, it starts itself again to ask for admin rights and, as SYSTEM, waits for
+    # that forever (Lenovo AI Now hung until the time limit).
+    $electron = $dir -and (Test-Path -LiteralPath ([System.IO.Path]::Combine($dir, 'resources', 'app.asar')))
+    if ($electron -and $arguments -match '(?i)(^|\s)/S(\s|$)' -and $arguments -notmatch '(?i)/(allusers|currentuser)') { $arguments = "$arguments /allusers" }
+    # An NSIS uninstaller (Uninstall.exe / uninst.exe, or an Electron app's) copies itself to the temp folder and returns
+    # at once: _?= keeps it in place, so its end is waited for (its own folder then stays, empty of the program).
+    if (($electron -or $leaf -match '(?i)^(uninstall|uninst)\.exe$') -and $arguments -match '(?i)(^|\s)/S(\s|$)' -and $arguments -notmatch '_\?=') { $arguments = "$arguments _?=$dir" }
+    $minutes = if ($Entry.Minutes) { [int]$Entry.Minutes } else { 10 }
+    return (Invoke-CleanupProcess $file $arguments $minutes)
+}
+
+function Remove-CleanupProgramByHand($Entry) {
+    # When its own uninstaller fails or hangs (2.38.78) - only for what the list marks Force: its processes stopped, its
+    # folder, its entry in Windows' list of programs and its shortcuts removed. Only a folder of its own under Program
+    # Files or ProgramData - never one shared by several programs.
+    $folder = [string]$Entry.Location
+    if (-not $folder) { $cmd = Split-CleanupCommand $(if ($Entry.Quiet) { $Entry.Quiet } else { $Entry.Uninstall }); $cut = $cmd[0].LastIndexOfAny([char[]]'\/'); if ($cut -gt 0) { $folder = $cmd[0].Substring(0, $cut) } }
+    $folder = $folder.Trim('"').TrimEnd('\')
+    $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramData) | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') + '\' }
+    $under = @($roots | Where-Object { $folder.StartsWith($_, [StringComparison]::OrdinalIgnoreCase) -and $folder.Length -gt $_.Length + 2 })
+    if (-not $under.Count -or $folder -match '(?i)\\(common files|windowsapps|microsoft)(\\|$)') { Write-CleanupLog "  not removed by hand: $folder isn't a program folder of its own"; return $false }
+    Write-CleanupLog "  its uninstaller didn't remove it - removing $($Entry.Name) by hand ($folder)"
+    Stop-CleanupProgramProcesses $folder
+    # Shortcuts that lead into its folder (Start menu, the shared desktop).
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        foreach ($place in @((Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'), (Join-Path $env:PUBLIC 'Desktop'))) {
+            foreach ($lnk in @(Get-ChildItem -LiteralPath $place -Filter '*.lnk' -Recurse -File -ErrorAction SilentlyContinue)) {
+                $target = [string]$shell.CreateShortcut($lnk.FullName).TargetPath
+                if ($target -and $target.StartsWith($folder + '\', [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $lnk.FullName -Force -ErrorAction SilentlyContinue; Write-CleanupLog "  removed the shortcut $($lnk.FullName)" }
+            }
+        }
+    }
+    catch { Write-CleanupLog "  its shortcuts couldn't be looked at: $($_.Exception.Message)" }
+    Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $folder) { Write-CleanupLog "  some of $folder is still there (in use) - it goes with the next restart's run" }
+    if ($Entry.RegPath) { Remove-Item -LiteralPath $Entry.RegPath -Recurse -Force -ErrorAction SilentlyContinue; Write-CleanupLog '  removed from the list of programs' }
+    return $true
 }
 
 function Stop-CleanupProgramProcesses([string]$Folder) {
@@ -250,14 +288,17 @@ if ($Targets.McAfeeTool -and @(Get-CleanupPrograms | Where-Object { $_.Name -lik
     }
     else { Write-CleanupLog 'McAfee''s suite needs McAfee''s removal tool and it couldn''t be fetched: put MCPR''s files (mccleanup.exe and the rest) in this app''s packages folder, then Build package and send it again.' }
 }
+# Store apps first (2.38.78): a program's uninstaller may wait on its Store part (Lenovo AI Now's AINowContextWin11).
+foreach ($p in @(Get-CleanupPackages)) { Remove-CleanupPackage $p }
 foreach ($e in @(Get-CleanupPrograms)) {
     # An uninstaller that can only ask (no quiet mode) is never started: it would wait for an answer nobody gives.
     if (Test-CleanupLike $e.Uninstall $Targets.NoUninstaller) { Write-CleanupLog "Not starting $($e.Name)'s own uninstaller - it only asks, it can't run unattended."; continue }
     $code = Remove-CleanupProgram $e
     Write-CleanupLog "  exit code $code"
     if ($code -in 1641, 3010) { $restart = $true }
+    # Still listed after its uninstaller (failed, or stopped at its time limit): removed by hand when the list says so.
+    elseif ($e.Force -and @(Get-CleanupPrograms | Where-Object { $_.Key -eq $e.Key }).Count) { [void](Remove-CleanupProgramByHand $e) }
 }
-foreach ($p in @(Get-CleanupPackages)) { Remove-CleanupPackage $p }
 
 $left = @(@(Get-CleanupPrograms | ForEach-Object { $_.Name }) + @(Get-CleanupPackages | ForEach-Object { $_.Name }) | Select-Object -Unique)
 # Some uninstallers (NSIS) hand over to a copy of themselves and return at once: up to 3 minutes for them to finish.

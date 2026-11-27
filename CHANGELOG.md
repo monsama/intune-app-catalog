@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.38.78
+
+- **Remove preinstalled vendor apps - Lenovo: Lenovo AI Now is removed.**
+  - Its uninstaller ("Lenovo AINow Uninstall.exe", an Electron app) hung as SYSTEM until the 10-minute limit. Run
+    with only /S, it starts itself again to ask for admin rights and waits for that forever.
+  - An Electron app's uninstaller now runs with `/S /allusers`, in place.
+  - AI Now gets 5 minutes. If it is still installed after that, it is removed by hand: its processes, its folder, its
+    shortcuts and its entry in the list of programs. This only happens for programs the list marks for it, and only
+    in a program folder of their own.
+- **All clean-up apps remove the Store apps first, then the programs.** A program's uninstaller may wait on its Store
+  part, such as AI Now's AINowContextWin11.
+- **To use it:** take the new Install.ps1 and detection script from Add apps > Recommended (remove the app from the
+  catalog and add it again), then Send to Intune.
+
 ## 2.38.77
 
 Two new recommended script apps in the starter set (Add apps > Recommended).
