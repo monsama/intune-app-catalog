@@ -18,6 +18,9 @@ function Global:ConvertTo-AppRecord {
             # Fields emptied in the catalog on purpose (2.38.34): sent to Intune as empty once, so its value goes too.
             # A field the catalog never had stays out - what was set in the portal is kept.
             clearedFields    = @(@($Raw.metadata.clearedFields) | Where-Object { [string]$_ -in 'owner', 'developer', 'informationUrl', 'privacyUrl', 'notes', 'appVersion' } | ForEach-Object { [string]$_ } | Select-Object -Unique)
+            # The starter set's script app it came from and a hash of its scripts as added (2.38.79) - empty for the rest.
+            starterId         = $(if ([string]$Raw.metadata.starterId -match '^[A-Za-z0-9.\-]{1,80}$') { [string]$Raw.metadata.starterId } else { '' })
+            starterScriptHash = $(if ([string]$Raw.metadata.starterScriptHash -match '^[0-9a-f]{64}$') { [string]$Raw.metadata.starterScriptHash } else { '' })
             # A Store app's or Microsoft 365 Apps' description, publisher or links changed here (2.38.52) - see Test-OwnContentField.
             ownFields        = @(@($Raw.metadata.ownFields) | Where-Object { [string]$_ -in 'description', 'publisher', 'informationUrl', 'privacyUrl' } | ForEach-Object { [string]$_ } | Select-Object -Unique)
             # Intune's "App version" (displayVersion) and "Show this as a
@@ -424,6 +427,8 @@ function Global:ConvertTo-SingleAppJson {
         $metaFields.Add("    `"privacyUrl`": $(ConvertTo-JsonStringLiteral $m.privacyUrl)")
         $metaFields.Add("    `"notes`": $(ConvertTo-JsonStringLiteral $m.notes)")
         if (@($m.clearedFields | Where-Object { $_ }).Count) { $metaFields.Add("    `"clearedFields`": $(ConvertTo-JsonStringArray -Items @($m.clearedFields | Where-Object { $_ }) -IndentLevel 2)") }
+        if ($m.starterId) { $metaFields.Add("    `"starterId`": $(ConvertTo-JsonStringLiteral ([string]$m.starterId))") }
+        if ($m.starterScriptHash) { $metaFields.Add("    `"starterScriptHash`": $(ConvertTo-JsonStringLiteral ([string]$m.starterScriptHash))") }
         if (@($m.ownFields | Where-Object { $_ }).Count) { $metaFields.Add("    `"ownFields`": $(ConvertTo-JsonStringArray -Items @($m.ownFields | Where-Object { $_ }) -IndentLevel 2)") }
         # null stays null - see ConvertTo-AppRecord
         $metaFields.Add("    `"appVersion`": $(if ($null -ne $m.appVersion) { ConvertTo-JsonStringLiteral ([string]$m.appVersion) } else { 'null' })")

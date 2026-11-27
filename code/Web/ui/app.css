@@ -1088,8 +1088,10 @@ dialog > #dlgTray { position: fixed; }
 dialog#dlgApp:not(.maxed) { margin-top: 4vh; height: min(90vh, 960px); }
 dialog#dlgApp > form { min-height: 100%; display: flex; flex-direction: column; }
 dialog#dlgApp > form > .actions.split { margin-top: auto; }
-dialog.addapps[open]:not(.maxed) { height: min(84vh, 860px); display: flex; flex-direction: column; }
-dialog.addapps[open]:not(.maxed) > .asec:not([hidden]) { flex: 1 1 auto; overflow: auto; min-height: 0; }
+dialog.addapps[open]:not(.maxed) { height: min(84vh, 860px); }
+/* Maximized too (2.38.80): its section scrolls, not the window - the scrollbar under the close button, the buttons in view. */
+dialog.addapps[open] { display: flex; flex-direction: column; }
+dialog.addapps[open] > .asec:not([hidden]) { flex: 1 1 auto; overflow: auto; min-height: 0; }
 .card h2 .unsaved { margin-left: 8px; font-size: 11px; vertical-align: middle; }
 /* 2.38.4: lists that refill when opened keep one width - sized to their text they jumped when clicked. */
 #aAppLink { width: 130px; flex: none; }
@@ -1321,7 +1323,7 @@ label.chk > input[type=checkbox] { margin-top: 2px; }
 .justfilled { box-shadow: 0 0 0 2px var(--ok) !important; transition: box-shadow .4s; }
 
 /* Compare (Checks): catalog next to Intune, changed lines marked */
-#dlgCompare .cmpbody { display: grid; gap: 14px; overflow: auto; max-height: calc(100vh - 230px); }
+#dlgCompare .cmpbody { display: grid; gap: 14px; }
 #dlgCompare .cmpfield h3 { margin: 0 0 6px; font-size: 14px; }
 #dlgCompare .cmpnav { display: inline-flex; align-items: center; gap: 4px; }
 #dlgCompare .fixes { display: inline-flex; gap: 6px; }
@@ -1368,7 +1370,7 @@ dialog.addapps .wgsearch { margin-bottom: 0; gap: 6px; }
 dialog.addapps .asec > label.inline { margin-top: 12px; }
 dialog.addapps .asec > label.inline select { width: auto; min-width: 240px; }
 /* Winget and From a list: the results fill the tab; an empty list says what goes there. */
-dialog.addapps[open]:not(.maxed) > #asec-winget:not([hidden]), dialog.addapps[open]:not(.maxed) > #asec-list:not([hidden]) { display: flex; flex-direction: column; }
+dialog.addapps[open] > #asec-winget:not([hidden]), dialog.addapps[open] > #asec-list:not([hidden]) { display: flex; flex-direction: column; }
 #asec-winget > .awsplit { flex: 1 1 auto; min-height: 180px; }
 #asec-winget > .awsplit .tablewrap, #asec-winget > .awsplit .awdetail { max-height: none; height: 100%; }
 #asec-list > .tablewrap { flex: 1 1 auto; min-height: 180px; overflow: auto; }
@@ -1661,7 +1663,7 @@ label.chk:has(> #aManagedNote) { flex-wrap: wrap; }
 #aManagedNote:not(:empty) { flex-basis: 100%; padding-left: 24px; }
 /* Add apps > From a list on a phone: one scrolling list, not a box inside a scrolling box (only its header showed). */
 @media (max-width: 600px) {
-  dialog.addapps[open]:not(.maxed) > #asec-list:not([hidden]) { display: block; }
+  dialog.addapps[open] > #asec-list:not([hidden]) { display: block; }
   #asec-list > .tablewrap { min-height: 0; max-height: none; overflow: visible; }
 }
 /* Groups > a group's apps on a phone: the table keeps a readable width and scrolls sideways in its box, the Unassign
@@ -1850,7 +1852,7 @@ body:has(dialog[open]) .toast { bottom: auto; top: 18px; }
 /* Menu section headings in line with their items. */
 .menu .mhead { padding: 6px 12px 2px; }
 /* Add apps: room for the focus ring of the first full-width field (the scrolling section clipped it). */
-dialog.addapps[open]:not(.maxed) > .asec:not([hidden]) { padding: 3px 3px 0; margin-inline: -3px; }
+dialog.addapps[open] > .asec:not([hidden]) { padding: 3px 3px 0; margin-inline: -3px; }
 /* Text sizes as their neighbours. */
 .officeapps .srclbl { font-size: 12px; font-weight: 500; }
 #awNote, #alNote { font-size: 12px; }
@@ -2133,3 +2135,11 @@ dialog#dlgApp > form { flex: 1 1 auto; min-height: 0; }
 #appForm > .edbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; margin-right: -14px; scrollbar-gutter: stable; }
 #dlgApp .actions.split { position: static; margin: 16px -31px -18px -20px; padding: 12px 31px 18px 20px; }
 #appForm > h2, #appForm > .edtabs, #appForm > .actions.split { flex: none; }
+/* 2.38.80: every wide window scrolls its middle only (.wbody, windows.js) - its scrollbar inside the window under the
+   close button, its title and buttons in view; the title, the middle and the buttons end on one line. */
+dialog.haswbody[open] { display: flex; flex-direction: column; overflow: hidden; padding-right: 31px; }
+dialog.haswbody > form { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+dialog.haswbody .wbody { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; margin-right: -14px; scrollbar-gutter: stable; }
+dialog.haswbody > h2, dialog.haswbody > .actions, dialog.haswbody > form > h2, dialog.haswbody > form > .actions { flex: none; }
+dialog.haswbody > .actions.end, dialog.haswbody > form > .actions.end { margin-right: -31px; padding-right: 31px; }
+#dlgBatch.haswbody > .actions { position: static; }

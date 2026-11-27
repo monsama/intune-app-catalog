@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.38.79
+
+- **Starter set script apps update with one click.** This covers the clean-up apps, TeamViewer, QuickSupport and
+  Windows desktop defaults.
+  - When a new version of the app ships newer scripts for one of them, the Apps list shows it as "Newer scripts", with
+    **Update scripts**.
+  - Update scripts puts in Install.ps1, Uninstall.ps1 and the detection rule as this version ships them. The old ones
+    go to the Backups folder first.
+  - The App ID, groups, settings and other files in its packages folder (a wallpaper, McAfee's tool) stay.
+  - Send to Intune then builds the package and sends it. You no longer remove the app and add it again.
+  - Scripts you changed in the app since adding it are noticed: you are told before they are replaced.
+  - Apps added before this version are found by their name.
+- **Every window scrolls inside itself.** Before, only the app editor did.
+  - Its scrollbar is now under the ✕, not at the window's edge.
+  - Its title and its buttons stay in view.
+  - This also holds when a window is maximized, Add apps included.
+  - Opening a window still puts the cursor in its first field.
+- **Remove preinstalled vendor apps - HP also removes McAfee WebAdvisor.** The Lenovo one already did. Earlier HP
+  apps get it through **Update scripts**.
+
 ## 2.38.78
 
 - **Remove preinstalled vendor apps - Lenovo: Lenovo AI Now is removed.**

@@ -166,8 +166,79 @@ function Global:Add-WebCleanupApp {
     # Three hours to run (2.38.61): Intune stops an install after 60 minutes by default - several uninstallers (10 to 30
     # minutes each) and McAfee's removal tool can take longer, and the removal was stopped half way.
     $minutes = switch ([string]$Definition.kind) { 'download' { 75 } 'setup' { 30 } default { 180 } }
-    if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes; $a.metadata | Add-Member -NotePropertyName installTimeMinutes -NotePropertyValue $minutes -Force }.GetNewClosure()) }
+    # Where it came from, and its scripts as added (2.38.79): a later version of the app knows it is newer, and whether
+    # they were changed here since.
+    $starterId = [string]$Definition.id; $hash = Get-WebScriptTextHash @($sc.Install, $sc.Uninstall, $sc.Detect)
+    if ($r.ok) { [void](Update-WebCatalogApp -Name $r.name -Change { param($a) $a.metadata.notes = [string]$Definition.notes; $a.metadata | Add-Member -NotePropertyName installTimeMinutes -NotePropertyValue $minutes -Force
+        $a.metadata | Add-Member -NotePropertyName starterId -NotePropertyValue $starterId -Force; $a.metadata | Add-Member -NotePropertyName starterScriptHash -NotePropertyValue $hash -Force }.GetNewClosure()) }
     return $r
+}
+
+function Global:Get-WebScriptTextHash {
+    # One SHA-256 over script texts, the same whatever their line endings or trailing blanks (2.38.79).
+    param([string[]]$Texts)
+    $joined = (@($Texts) | ForEach-Object { ([string]$_ -replace "`r`n", "`n").TrimEnd() }) -join "`n----`n"
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($joined)) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() }
+}
+
+function Global:Get-WebStarterDefinition {
+    # The starter set's script app an app came from (2.38.79): by the id it keeps - or, added before, by its name.
+    param($App)
+    if (-not $App -or ([string]$App.wingetId).Trim()) { return $null }
+    $id = if ($App.metadata -and $App.metadata.PSObject.Properties['starterId']) { [string]$App.metadata.starterId } else { '' }
+    $set = @(Get-ScriptStarterAppSet)
+    # @(...) around the whole if: one hit stays a list (else $hit[0] was the first value of the entry itself).
+    $hit = @(if ($id) { $set | Where-Object { $_.id -eq $id } } else { $set | Where-Object { $_.name -eq [string]$App.appName } })
+    if ($hit.Count) { return $hit[0] }
+    return $null
+}
+
+function Global:Get-WebStarterScriptState {
+    # An app from the starter set's script apps against the scripts this version of the app ships (2.38.79):
+    # @{ id; current = they are the same; edited = changed here since it was added ($null: not known - added before) }.
+    param($App)
+    $def = Get-WebStarterDefinition $App
+    if (-not $def) { return $null }
+    $sc = Get-WebCleanupScripts $def
+    $folder = Join-Path (Get-AppFolder -Kind Packages) (Get-SafeFileNameForApp -Name $App.appName)
+    $read = { param($f) $p = Join-Path $folder $f; if (Test-Path -LiteralPath $p -PathType Leaf) { [System.IO.File]::ReadAllText($p) } else { '' } }
+    $det = if ($App.metadata -and $App.metadata.detectionRule -and $App.metadata.detectionRule.PSObject.Properties['Script_Content']) { [string]$App.metadata.detectionRule.Script_Content } else { '' }
+    $now = Get-WebScriptTextHash @((& $read 'Install.ps1'), (& $read 'Uninstall.ps1'), $det)
+    $added = if ($App.metadata.PSObject.Properties['starterScriptHash']) { [string]$App.metadata.starterScriptHash } else { '' }
+    return @{ id = [string]$def.id; name = [string]$def.name; current = ($now -eq (Get-WebScriptTextHash @($sc.Install, $sc.Uninstall, $sc.Detect))); edited = $(if ($added) { $now -ne $added } else { $null }) }
+}
+
+function Global:Update-WebStarterScripts {
+    # Its scripts as this version of the app ships them (2.38.79): Install.ps1, Uninstall.ps1 and the detection script -
+    # nothing else (App ID, groups, settings and the other files in its folder stay). The old ones go to Backups first.
+    # Send to Intune then builds the package again and sends it.
+    param($Data)
+    $name = [string]$Data.name
+    $app = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq $name }) | Select-Object -First 1
+    if (-not $app) { return @{ ok = $false; error = "No app called '$name' in the catalog." } }
+    $def = Get-WebStarterDefinition $app
+    if (-not $def) { return @{ ok = $false; error = "$name isn't one of the starter set's script apps." } }
+    $sc = Get-WebCleanupScripts $def
+    $folder = Join-Path (Get-AppFolder -Kind Packages -Create) (Get-SafeFileNameForApp -Name $app.appName)
+    [void](New-Item -ItemType Directory -Path $folder -Force)
+    foreach ($f in 'Install.ps1', 'Uninstall.ps1') { if (Test-WebPathThroughLink (Join-Path $folder $f)) { return @{ ok = $false; error = "$f in its packages folder is a link - not written." } } }
+    $bk = Join-Path (Join-Path (Get-AppFolder -Kind Backups -Create) ('starter-update_' + (Get-Date -Format 'yyyy-MM-dd_HHmmss'))) (Split-Path $folder -Leaf)
+    [void](New-Item -ItemType Directory -Path $bk -Force)
+    foreach ($f in 'Install.ps1', 'Uninstall.ps1') { $p = Join-Path $folder $f; if (Test-Path -LiteralPath $p) { Copy-Item -LiteralPath $p -Destination $bk -Force } }
+    if ($app.metadata -and $app.metadata.detectionRule) { ($app.metadata.detectionRule | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath (Join-Path $bk 'detection-rule.json') -Encoding UTF8 }
+    $utf8 = New-Object System.Text.UTF8Encoding($true)
+    [System.IO.File]::WriteAllText((Join-Path $folder 'Install.ps1'), (ConvertTo-CanonicalLineEndings $sc.Install), $utf8)
+    [System.IO.File]::WriteAllText((Join-Path $folder 'Uninstall.ps1'), (ConvertTo-CanonicalLineEndings $sc.Uninstall), $utf8)
+    $rule = [pscustomobject][ordered]@{ Type = 'Script'; Script_Content = (ConvertTo-CanonicalLineEndings $sc.Detect).TrimEnd() }
+    $id = [string]$def.id; $hash = Get-WebScriptTextHash @($sc.Install, $sc.Uninstall, $sc.Detect); $notes = [string]$def.notes
+    try {
+        [void](Update-WebCatalogApp -Name $app.appName -Change { param($a) $a.metadata.detectionRule = $rule; $a.metadata.notes = $notes
+            $a.metadata | Add-Member -NotePropertyName starterId -NotePropertyValue $id -Force; $a.metadata | Add-Member -NotePropertyName starterScriptHash -NotePropertyValue $hash -Force }.GetNewClosure())
+    }
+    catch { return @{ ok = $false; error = "The scripts are written, but saving the detection rule failed: $($_.Exception.Message) - the old ones are in $bk." } }
+    Write-Log "[OK] $($app.appName): its scripts are the ones of this version now - the old ones are in $bk. Send to Intune builds and sends them."
+    return @{ ok = $true; name = $app.appName; backup = $bk }
 }
 
 function Global:Add-WebOfficeApp {

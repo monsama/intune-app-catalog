@@ -92,6 +92,9 @@ function Global:Get-WebCatalog {
                 wingetVersion = [string]$(if ($Global:App.WingetLatest -and $wk) { $Global:App.WingetLatest[$wk.ToLowerInvariant()] })
                 newerOnWinget = [bool]($Global:App.WingetLatest -and $wk -and (Compare-AppVersionText $ahead ([string]$Global:App.WingetLatest[$wk.ToLowerInvariant()])) -eq 1)
                 watchWinget  = [string]$apps[$i].watchWinget
+                # A starter set script app whose scripts aren't the ones this version ships (2.38.79): Update scripts.
+                starterUpdate = [bool]$(if (-not $apps[$i].wingetId) { $ss = Get-WebStarterScriptState $apps[$i]; $ss -and -not $ss.current })
+                starterEdited = $(if (-not $apps[$i].wingetId -and $ss -and -not $ss.current) { $ss.edited } else { $null })
                 managed      = [bool]$apps[$i].managedUpdates
                 updatesItself = [bool](Test-AppUpdatesItself $apps[$i])
                 # Company Portal, Microsoft 365 Apps, Store/other Intune types: nothing to package.
@@ -897,6 +900,7 @@ function Global:Invoke-WebApi {
         '/api/folder-upload-start' { return (Start-WebFolderUpload $Data) }
         '/api/upload-setup'     { return (Set-WebUploadSetup $Data) }
         '/api/package-files'    { return (Get-WebPackageFiles $Data) }
+        '/api/starter-update'   { return (Update-WebStarterScripts $Data) }
         '/api/package-file-delete' { return (Invoke-WithCatalogLock { Remove-WebPackageFile $Data }) }
         '/api/package-setup'    { return (Invoke-WithCatalogLock { Set-WebPackageSetup $Data }) }
         '/api/retire-status'    { return (Get-WebRetireStatus $Data) }
