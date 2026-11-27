@@ -4,7 +4,8 @@ function Get-CleanupTargets {
     return @{
         Name     = 'Lenovo'
         Programs = @(
-            @{ Name = 'McAfee WebAdvisor*'; Publisher = '*McAfee*' }
+            # Older versions are "McAfee WebAdvisor", newer ones "WebAdvisor by McAfee" (2.38.80: that one was missed).
+            @{ Name = '*WebAdvisor*'; Publisher = '*McAfee*' }
             @{ Name = 'McAfee*'; Publisher = '*McAfee*' }
             @{ Name = 'Lenovo Now*'; Publisher = '*Lenovo*' }
             # Its uninstaller (Electron) hung as SYSTEM (2.38.78): 5 minutes, then removed by hand.

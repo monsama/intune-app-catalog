@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.38.80
+
+- **The HP and Lenovo vendor clean-ups now find McAfee WebAdvisor under its newer name, "WebAdvisor by McAfee".**
+  - Before, only "McAfee WebAdvisor" was matched, so the newer version was neither removed nor seen by the detection.
+  - In the Apps list, click **Update scripts**, then **Send to Intune**. Devices then remove it on the next check.
+
 ## 2.38.79
 
 - **Starter set script apps update with one click.** This covers the clean-up apps, TeamViewer, QuickSupport and

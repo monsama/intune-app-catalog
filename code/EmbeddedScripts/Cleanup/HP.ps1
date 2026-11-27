@@ -8,7 +8,8 @@ function Get-CleanupTargets {
         Programs = @(
             # McAfee WebAdvisor, which some HP PCs come with too (2.38.80) - its own uninstaller, quietly. Not McAfee's
             # suite: that one needs McAfee's removal tool, and the Lenovo app has it.
-            @{ Name = 'McAfee WebAdvisor*'; Publisher = '*McAfee*' }
+            # Older versions are "McAfee WebAdvisor", newer ones "WebAdvisor by McAfee" (2.38.80: that one was missed).
+            @{ Name = '*WebAdvisor*'; Publisher = '*McAfee*' }
             @{ Name = 'HP Wolf Security'; Publisher = '*HP*' }
             @{ Name = 'HP Wolf Security - Console'; Publisher = '*HP*' }
             @{ Name = 'HP Sure Click*'; Publisher = '*HP*' }
