@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.38.83
+
+- **Fixed: an app removed and added again showed the old app's "Changes to send".** What was last sent is kept by the
+  app's name. A new app with the same name (TeamViewer QuickSupport, re-created) showed the old one's groups as still
+  in Intune, although the new Intune app never had them.
+  - Removing an app from the catalog now forgets what was sent for it.
+  - What is sent now also records which Intune app it went to. An app linked to another Intune app no longer compares
+    against what the old one got.
+  - Records from before this version don't know their App ID: an app that still shows the wrong groups loses them
+    with one **Send groups**.
+
 ## 2.38.82
 
 - **Fixed: every app showed "Changes to send" after 2.38.79.** The two fields that record which starter set script app

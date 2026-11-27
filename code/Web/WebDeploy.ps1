@@ -793,7 +793,7 @@ function Global:Save-WebPulledStamps {
                     $a = $apps | Where-Object { $_.appName -eq $n } | Select-Object -First 1
                     if (-not $a) { continue }
                     $now = (Get-WebAppSentValues $a).g
-                    $st = $sent[(Get-SafeFileNameForApp -Name $a.appName)]
+                    $st = Get-WebSentStampFor $a $sent
                     $was = if ($st -and $st.gv) { try { $st.gv | ConvertFrom-Json } catch { $null } } else { $null }
                     $same = if ($was) { (@($was.x) -join "`n") -eq (@($now.x) -join "`n") -and [string]$was.f -eq [string]$now.f -and [string]$was.fm -eq [string]$now.fm }
                             else { -not @($now.x).Count -and -not [string]$now.f }

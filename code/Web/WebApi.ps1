@@ -1048,9 +1048,40 @@ function Global:Read-WebSentStamps {
     $file = Join-Path (Get-WebIntegrityFolder) 'sent.json'
     $map = @{}
     if (Test-Path -LiteralPath $file) {
-        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ s = [string]$p.Value.s; g = [string]$p.Value.g; sv = [string]$p.Value.sv; gv = [string]$p.Value.gv } } } catch { }
+        try { foreach ($p in (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).PSObject.Properties) { $map[$p.Name] = @{ s = [string]$p.Value.s; g = [string]$p.Value.g; sv = [string]$p.Value.sv; gv = [string]$p.Value.gv; si = [string]$p.Value.si; gi = [string]$p.Value.gi } } } catch { }
     }
     return $map
+}
+
+function Global:Get-WebSentStampFor {
+    <#
+      What was last sent for this app (2.38.83) - only for the Intune app it is linked to now. The record is kept by
+      the app's name: an app removed and added again (or linked to another Intune app) showed "Changes to send" against
+      what was sent to the old one, which the new one never had. Records from before 2.38.83 don't know their App ID.
+    #>
+    param($App, [hashtable]$Map)
+    $st = $Map[(Get-SafeFileNameForApp -Name $App.appName)]
+    if (-not $st) { return $null }
+    $id = ([string]$App.appId).Trim().ToLowerInvariant()
+    $use = @{}; foreach ($k in @($st.Keys)) { $use[$k] = $st[$k] }
+    foreach ($part in 's', 'g') {
+        $was = ([string]$st["$($part)i"]).Trim().ToLowerInvariant()
+        if ($was -and $was -ne $id) { $use[$part] = ''; $use["$($part)v"] = '' }
+    }
+    return $use
+}
+
+function Global:Remove-WebSentStamp {
+    # An app gone from the catalog (2.38.83): what was sent for it goes too - an app added again under its name starts fresh.
+    param([string]$Name)
+    $file = Join-Path (Get-WebIntegrityFolder) 'sent.json'
+    if (-not (Test-Path -LiteralPath $file)) { return }
+    $map = Read-WebSentStamps
+    $key = Get-SafeFileNameForApp -Name $Name
+    if (-not $map.ContainsKey($key)) { return }
+    $map.Remove($key)
+    $o = [ordered]@{}; foreach ($k in @($map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ s = $map[$k].s; g = $map[$k].g; sv = [string]$map[$k].sv; gv = [string]$map[$k].gv; si = [string]$map[$k].si; gi = [string]$map[$k].gi } }
+    [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 function Global:Set-WebSentStamp {
@@ -1080,12 +1111,14 @@ function Global:Set-WebSentStamp {
                 $h = @{ s = $h.s; g = $h.g }; $h[$Part] = (Get-WebTextSha256 (ConvertTo-Json -InputObject $use -Compress -Depth $(if ($Part -eq 'g') { 4 } else { 10 })))
             }
         }
-        if (-not $map.ContainsKey($key)) { $map[$key] = @{ s = ''; g = ''; sv = ''; gv = '' } }
+        if (-not $map.ContainsKey($key)) { $map[$key] = @{ s = ''; g = ''; sv = ''; gv = ''; si = ''; gi = '' } }
         $map[$key][$Part] = $h[$Part]
+        # Which Intune app it went to (2.38.83) - see Get-WebSentStampFor.
+        $map[$key]["$($Part)i"] = ([string]$a.appId).Trim().ToLowerInvariant()
         # The values too - "Changes to send" shows them next to the catalog's.
         $map[$key]["$($Part)v"] = (ConvertTo-Json -InputObject $v[$Part] -Compress -Depth 10)
     }
-    $o = [ordered]@{}; foreach ($k in @($map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ s = $map[$k].s; g = $map[$k].g; sv = [string]$map[$k].sv; gv = [string]$map[$k].gv } }
+    $o = [ordered]@{}; foreach ($k in @($map.Keys | Sort-Object)) { $o[$k] = [ordered]@{ s = $map[$k].s; g = $map[$k].g; sv = [string]$map[$k].sv; gv = [string]$map[$k].gv; si = [string]$map[$k].si; gi = [string]$map[$k].gi } }
     [System.IO.File]::WriteAllText((Join-Path (Get-WebIntegrityFolder -Create) 'sent.json'), (ConvertTo-Json -InputObject $o -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 }
 
@@ -1134,7 +1167,7 @@ function Global:Get-WebUnsentDiff {
     param($Data)
     $a = @((Read-WebCatalogRecords).Apps | Where-Object { $_.appName -eq [string]$Data.name }) | Select-Object -First 1
     if (-not $a) { return @{ ok = $false; error = 'Not in the catalog.' } }
-    $st = (Read-WebSentStamps)[(Get-SafeFileNameForApp -Name $a.appName)]
+    $st = Get-WebSentStampFor $a (Read-WebSentStamps)
     $h = Get-WebAppSentHashes $a
     $now = Get-WebAppSentValues $a
     $labels = @{ r = 'Required for'; a = 'Available for'; u = 'Uninstall for'; x = 'Excluded'; f = 'Assignment filter'; fm = 'Filter mode'; name = 'Name' }
@@ -1189,7 +1222,7 @@ function Global:Get-WebUnsentDiff {
 function Global:Get-WebUnsent {
     # '' when Intune has what the catalog says (or it isn't known), else 'settings', 'groups' or 'settings,groups'.
     param($App, [hashtable]$Sent)
-    $st = $Sent[(Get-SafeFileNameForApp -Name $App.appName)]
+    $st = Get-WebSentStampFor $App $Sent
     if (-not $st) { return '' }
     $h = Get-WebAppSentHashes $App
     # A fingerprint that differs is checked field by field when the sent values were kept (2.38.54): a field the app

@@ -381,6 +381,24 @@ try {
         $udReq = @($ud.rows | Where-Object { $_.field -eq 'Required for' }) | Select-Object -First 1
         Check ($ud.ok -and -not $ud.fromHistory -and $udReq -and $udReq.now -like '*sg-zz-later*' -and $udReq.sent -notlike '*sg-zz-later*' -and @($ud.rows).Count -eq 1) 'changes to send: what changed since the send, field by field' ($ud | ConvertTo-Json -Compress -Depth 4)
 
+        # 2.38.83: what was sent belongs to the app - removed and added again under its name, it starts fresh (it showed
+        # the old one's groups as "Changes to send"); linked to another Intune app, the old one's record doesn't count.
+        $rowOf = { param($n) @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $n }) | Select-Object -First 1 }
+        $unsentBefore = [string](& $rowOf $linkedName).unsent
+        [void](Invoke-Api '/api/app-remove' @{ name = $linkedName }); [void]$created.Remove($linkedName)
+        [void](Add-TestApp @{ appName = $linkedName; appId = $appLinked; requiredFor = @('SG-ZZ-Exists') })
+        $unsentAgain = [string](& $rowOf $linkedName).unsent
+        Check ($unsentBefore -eq 'groups' -and $unsentAgain -eq '') 'changes to send: an app removed and added again doesn''t show the old one''s sends' "$unsentBefore / $unsentAgain"
+        $push2 = Invoke-Api '/api/push-start' @{ names = @($linkedName); mode = 'Apply' }
+        [void](Wait-TestJob $push2.job)
+        $relinked = (Invoke-Api '/api/app-get' @{ name = $linkedName }).app
+        $relinked.appId = '0f0f0f0f-1111-2222-3333-444444444444'; $relinked.requiredFor = @()
+        [void](Invoke-Api '/api/app-save' @{ originalName = $linkedName; app = $relinked })
+        $unsentOther = [string](& $rowOf $linkedName).unsent
+        $relinked.appId = $appLinked; $relinked.requiredFor = @('SG-ZZ-Exists')
+        [void](Invoke-Api '/api/app-save' @{ originalName = $linkedName; app = $relinked })
+        Check ($unsentOther -eq '' -and [string](& $rowOf $linkedName).unsent -eq '') 'changes to send: linked to another Intune app, what was sent to the old one doesn''t count' "$unsentOther"
+
         $del = Invoke-Api '/api/delete-intune' @{ name = $linkedName }
         $delDone = Wait-TestJob $del.job
         Check ($del.ok -and $delDone.Poll.result.success) 'step: Delete from Intune succeeds' "$($delDone.Poll | ConvertTo-Json -Compress -Depth 4) $($delDone.Log)"

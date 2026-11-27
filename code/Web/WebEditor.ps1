@@ -468,6 +468,8 @@ function Global:Remove-WebApp {
     if (-not ([string]$app.wingetId).Trim() -and -not $shared) {
         try { $moved = Move-WebPackageFolderToBackups -Name $app.appName } catch { Write-Log "[WARN] $($name)'s packages folder stays where it is: $($_.Exception.Message)" }
     }
+    # What was sent for it goes too (2.38.83): added again under its name, it showed the old app's groups as "Changes to send".
+    try { Remove-WebSentStamp -Name $app.appName } catch { Write-Log "[WARN] $($name): what was last sent for it is still noted: $($_.Exception.Message)" }
     Add-WebHistoryEntry -App $name -Kind 'catalog' -Text 'Removed from the catalog'
     Write-Log "[OK] Removed from the catalog: $name (a copy is in the Backups folder$(if ($moved) { ', its packages folder too' }); nothing in Intune changed)."
     return @{ ok = $true; packagesMoved = $moved }
