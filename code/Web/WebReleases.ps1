@@ -102,7 +102,7 @@ function Global:Start-WebRelease {
     # No pilot groups: the release goes to everyone at once (2.38.41) - the page and the nightly run promote it right after.
     if (-not $own) { [void](Initialize-SharedWingetPackage) }
     $pkg = Resolve-AppPackagePath -AppName $a.appName -Uncommon $own -PackagePath $a.packagePath
-    if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - upload the new installer in its editor (Install & detection) - this release then builds and sends it." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
+    if (-not $pkg.Found) { return @{ ok = $false; error = $(if ($own) { "$name has no package to upload - upload the new installer in its editor (App) - this release then builds and sends it." } else { "The shared Winget package (init.intunewin) isn't built yet - Settings > Packaging & folders builds it." }) } }
     $defaults = $null
     $m = $a.metadata
     if (-not $m) { $defaults = Get-DefaultAppMetadata -AppName $a.appName -WingetId $a.wingetId -Uncommon $own; $m = $defaults }

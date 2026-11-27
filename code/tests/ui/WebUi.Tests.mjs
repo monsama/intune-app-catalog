@@ -247,16 +247,16 @@ try {
       await page.evaluate(() => { document.getElementById('dlgApp').close(); openEditor(''); });
       await page.waitForSelector('#dlgApp[open]');
       // Each tab is a page of the editor: only its part shows.
-      await page.click('.edtab[data-i="4"]');
-      check(await page.isVisible('#xType') && !(await page.isVisible('#aName')), `${label}: the editor's Install & detection tab shows the detection rule, not the basics`);
-      await unnamed('the app editor (install & detection)'); await a11y('the app editor (install & detection)');
+      await page.click('.edtab[data-i="5"]');
+      check(await page.isVisible('#xType') && !(await page.isVisible('#aName')), `${label}: the editor's Detection tab shows the detection rule, not the basics`);
+      await unnamed('the app editor (detection)'); await a11y('the app editor (detection)');
       // 2.38.67: "Ready to send?" is a chip in the footer on every part; it opens the list, and a link in it goes to the field.
       check(await page.isVisible('#readyChip') && /of \d/.test(await page.textContent('#readyChip')), `${label}: the footer says how ready it is, on every part`, await page.textContent('#readyChip'));
       await page.click('#readyChip');
       check(await page.isVisible('#readyBox'), `${label}: the chip opens the list of what it still needs`);
       await page.click('#readyList .linkish');
       check(!(await page.isVisible('#readyBox')) && await page.isVisible('#aName'), `${label}: a link in the list goes to the field (the App part) and closes the list`);
-      await page.click('.edtab[data-i="4"]');
+      await page.click('.edtab[data-i="5"]');
       // The name is a required field: the browser itself says so, the save never leaves the page, and the editor shows the name's page.
       await page.click('#btnSaveApp');
       const blocked = await page.evaluate(() => document.getElementById('aName').validity.valueMissing && document.getElementById('dlgApp').open);
@@ -517,11 +517,11 @@ try {
         await page.click('#gAvailableBox .chip.tag .x');
         check(chipAdded && !(await page.inputValue('#gAvailable')).includes('SG-ZZ-Chip'), `${label}: a group is added as a chip and removed with its x`, await page.inputValue('#gAvailable'));
         // 2.38.73: Requirements on a part of its own - the fields show at once (no folded line with Change there).
+        await page.click('.edtab[data-i="6"]');
+        check(await page.evaluate(() => document.querySelectorAll('.edtab').length === 7 && !!document.getElementById('xTime').offsetParent && !!document.getElementById('xCodesRows').offsetParent && !document.querySelector('[data-sum="req"]').offsetParent), `${label}: the Requirements part shows its fields at once`);
         await page.click('.edtab[data-i="5"]');
-        check(await page.evaluate(() => document.querySelectorAll('.edtab').length === 6 && !!document.getElementById('xTime').offsetParent && !!document.getElementById('xCodesRows').offsetParent && !document.querySelector('[data-sum="req"]').offsetParent), `${label}: the Requirements part shows its fields at once`);
-        await page.click('.edtab[data-i="4"]');
-        check(await page.evaluate(() => !document.getElementById('xType').offsetParent && /Made for winget/.test(document.querySelector('[data-sum="det"]').textContent) && !document.getElementById('xTime').offsetParent), `${label}: a winget app's detection shows as one line; the requirements are not on Install & detection`);
-        await page.click('.edtab[data-i="5"]');
+        check(await page.evaluate(() => !document.getElementById('xType').offsetParent && /Made for winget/.test(document.querySelector('[data-sum="det"]').textContent) && !document.getElementById('xTime').offsetParent), `${label}: a winget app's detection shows as one line; the requirements are not on Detection (2.38.76: Install, Detection, Requirements)`);
+        await page.click('.edtab[data-i="6"]');
         await page.click('#xCodesRows > button');
         await page.fill('#xCodesRows .coderow:last-of-type input', '1707');
         check((await page.inputValue('#xCodes')).split('\n').includes('1707 = success'), `${label}: a return code is added as a row`, await page.inputValue('#xCodes'));
@@ -635,7 +635,7 @@ try {
         check(await page.evaluate(() => !document.getElementById('aOfficeBox').hidden && document.getElementById('aWingetRow').hidden && document.getElementById('oChannel').value === 'monthlyEnterprise' && document.querySelector('[data-oapp="word"]').checked && !document.querySelector('[data-oapp="lync"]').checked), `${label}: Installs from Microsoft 365 shows its settings, with the defaults`);
         await unnamed('the Microsoft 365 settings'); await a11y('the Microsoft 365 settings');
         check(await page.evaluate(() => !!document.querySelector('#appMenu [data-act="deploy"], [role="menu"] [data-act="deploy"]')), `${label}: the app menu has Send to Intune (2.38.22)`);
-        check(await page.evaluate(() => document.querySelector('.edtab[data-i="4"]').hidden && document.querySelector('.edtab[data-i="5"]').hidden && document.querySelector('.edtab[data-i="1"]').hidden && getComputedStyle(document.getElementById('mAppVersion').closest('label')).display === 'none'), `${label}: Microsoft 365 Apps - no Install & detection tab and no App version (2.38.22)`); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
+        check(await page.evaluate(() => document.querySelector('.edtab[data-i="4"]').hidden && document.querySelector('.edtab[data-i="5"]').hidden && document.querySelector('.edtab[data-i="6"]').hidden && document.querySelector('.edtab[data-i="1"]').hidden && getComputedStyle(document.getElementById('mAppVersion').closest('label')).display === 'none'), `${label}: Microsoft 365 Apps - no Install, Detection or Requirements tab and no App version (2.38.22)`); await page.$eval('#aOfficeBox', e => e.scrollIntoView({ block: 'center' })); await shot('editor-office');
         await page.selectOption('#oChannel', 'current'); await page.uncheck('[data-oapp="teams"]');
         await page.click('#btnSaveApp'); await page.waitForFunction(() => !document.getElementById('dlgApp').open, null, { timeout: 15000 });
         // The dialog closes before the list is read again - wait for the row as it is now.

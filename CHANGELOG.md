@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.38.76
+
+- **Send to Intune builds a custom package itself.**
+  - If an app has no .intunewin yet, or its files changed after the last build, Send to Intune builds the package
+    first, in the same log, then sends it.
+  - Before, the app was listed as "Not ready - build it with More > Package", or the old package was sent.
+  - Replace package does the same.
+  - The send list says "Builds its package first".
+  - In the editor's ready list, an uploaded installer is enough; it no longer has to be packaged by hand first.
+- **Editor: Detection is its own tab.**
+  - The tabs are now App, Updates, Who gets it, Details, Install (the commands), Detection, Requirements.
+  - Messages that point to the detection rule now name the Detection tab.
+
 ## 2.38.75
 
 - **Scrollbars sit inside the window.**

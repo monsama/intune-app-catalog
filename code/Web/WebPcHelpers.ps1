@@ -117,7 +117,7 @@ function Global:Get-WebInstalledAppsScript {
     $text = (Get-WebHelperHeader 'detection from an app installed on this PC') + @'
 
 # Lists the apps Windows has installed (the Uninstall keys: 64-bit, 32-bit, yours). Pick one: its details go to
-# the clipboard - paste them into the app editor (Install & detection > From an app on a PC), which makes the
+# the clipboard - paste them into the app editor (Detection > From an app on a PC), which makes the
 # detection rule from them. Nothing is changed on this PC.
 $hives = @(@{ H = 'HKLM'; P = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' }, @{ H = 'HKLM-WOW'; P = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' }, @{ H = 'HKCU'; P = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' })
 $apps = foreach ($h in $hives) {

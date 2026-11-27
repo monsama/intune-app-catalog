@@ -405,7 +405,7 @@ function Global:Set-WebUploadProposal {
     if ($leaf -ieq 'Invoke-AppDeployToolkit.exe' -or $leaf -ieq 'Invoke-AppDeployToolkit.ps1') {
         $run = if ($leaf -ieq 'Invoke-AppDeployToolkit.exe') { & $quote $rel } else { "$ps $(& $quote $rel)" }
         $none.InstallCommand = "$run -DeploymentType Install -DeployMode Silent"; $none.UninstallCommand = "$run -DeploymentType Uninstall -DeployMode Silent"
-        $none.Notes = @('A PSADT 4 package - set its detection rule in the editor (Install & detection).')
+        $none.Notes = @('A PSADT 4 package - set its detection rule in the editor (Detection).')
         $u.Proposal = $none; return
     }
     if ($leaf -ieq 'install.ps1') {
@@ -413,7 +413,7 @@ function Global:Set-WebUploadProposal {
         $un = if ($dir) { "$dir\uninstall.ps1" } else { 'uninstall.ps1' }
         $none.InstallCommand = "$ps $(& $quote ".\$rel")"
         if (Test-Path -LiteralPath (Join-Path $u.Root ($un -replace '\\', [System.IO.Path]::DirectorySeparatorChar))) { $none.UninstallCommand = "$ps $(& $quote ".\$un")" }
-        $none.Notes = @('A script package - set its detection rule in the editor (Install & detection).')
+        $none.Notes = @('A script package - set its detection rule in the editor (Detection).')
         $u.Proposal = $none; return
     }
     $u.Info = Get-WebInstallerFacts (Join-Path $u.Root ($rel -replace '\\', [System.IO.Path]::DirectorySeparatorChar))
@@ -624,7 +624,7 @@ function Global:Add-WebInstallerApp {
     Remove-Item -LiteralPath (Split-Path $u.Path -Parent) -Recurse -Force -ErrorAction SilentlyContinue
     (Get-WebUploads).Remove([string]$Data.uploadId)
     # No detection proposed (a folder whose setup is install.ps1 or a .cmd): said plainly - Intune can't send it without one.
-    $detText = if ($rule -and [string]$rule.Type) { "$($rule.Type) detection" } else { 'no detection rule yet - set one on Install & detection before sending' }
+    $detText = if ($rule -and [string]$rule.Type) { "$($rule.Type) detection" } else { 'no detection rule yet - set one on Detection before sending' }
     Write-Log "$(if ($rule -and [string]$rule.Type) { '[OK]' } else { '[WARN]' }) Added $($r.name) from $($u.FileName) ($detText) - its installer is in $folder."
     return @{ ok = $true; name = $r.name; folder = $folder }
 }

@@ -502,7 +502,7 @@ async function deletePkgFile(path) {
 async function setPkgSetup(path) {
   const name = editingName, r = await api('/api/package-setup', { name, path });
   if (!r.ok) { toast(r.error, true); return; }
-  toast(`${path} is the setup file now - Package builds with it; check the install command on Install & detection.`); refreshPkg(name);
+  toast(`${path} is the setup file now - Package builds with it; check the install command on Install.`); refreshPkg(name);
 }
 // An installer, a .zip or a folder for the app open in the editor (2.33.0, folders 2.34.0): uploaded, then the
 // review - its files, the setup file, replace or add to what is there - then into its packages folder.
@@ -549,7 +549,7 @@ function pkgUploadReview(f, have) {
       if (f.folder) { $('puSetup').replaceChildren(el('option', { value: '', text: '(none - I write the commands)' }), ...(x.candidates || []).map(c => el('option', { value: c, text: c }))); $('puSetup').value = x.setup || ''; }
       const extra = f.folder && !(x.candidates || []).length && have > 0;
       $('puWill').textContent = extra ? 'They go next to what is there - the setup file, the commands and the detection rule stay as they are.'
-        : x.installCommand ? `Install command (when it has none yet): ${x.installCommand}` : 'No install command is proposed - write it in the editor (Install & detection).';
+        : x.installCommand ? `Install command (when it has none yet): ${x.installCommand}` : 'No install command is proposed - write it in the editor (Install).';
       $('puNotes').replaceChildren(...(extra ? [] : (x.notes || [])).map(n => el('li', { text: n })));
     };
     fill(f);
@@ -1291,7 +1291,9 @@ async function openDeploy(names, opts = {}) {
   if (!r.ok) { toast(r.error, true); return; }
   deployPlan = r.apps; deployResults = {};
   $('deployRows').replaceChildren(...deployPlan.map(a => el('tr', { 'data-name': a.name },
-    el('td', { text: a.name }), el('td', {}, el('span', { text: a.replacesLob ? 'Create as Win32' : a.update ? 'Send settings' : 'Create' }), a.replacesLob ? el('span', { class: 'why', text: a.note }) : ''),
+    el('td', { text: a.name }), el('td', {}, el('span', { text: a.replacesLob ? 'Create as Win32' : a.update ? 'Send settings' : 'Create' }), a.replacesLob ? el('span', { class: 'why', text: a.note }) : '',
+      // 2.38.76: its package is built first - none yet, or older than its files.
+      a.build ? el('span', { class: 'why', text: 'Builds its package first (none yet, or its files changed since).' }) : ''),
     el('td', {}, a.ready ? el('span', { class: 'pill muted', text: 'Waiting' }) : el('span', { class: 'pill warn', text: 'Not ready', title: a.reason }), a.ready ? '' : el('span', { class: 'why', text: a.reason }),
       // 2.36.0: what doesn't fit together in its package - it can be sent, but likely isn't what was meant.
       ...(a.ready ? (a.warnings || []).map(w => el('span', { class: 'why pkgwarn', text: '⚠ ' + w })) : [])))));
@@ -1308,7 +1310,16 @@ async function openDeploy(names, opts = {}) {
   if (opts.autostart && n) runDeployQueue(deployPlan.filter(a => a.ready).map(a => a.name));
 }
 // One app: deploy, then push its groups when the step asks for it. Resolves with whether the deploy worked.
-function deployOne(name) {
+async function deployOne(name) {
+  // A custom package not built yet, or older than its files (2.38.76): built first, in the same log - then sent.
+  const p = deployPlan.find(a => a.name === name);
+  if (p && p.build) {
+    setDeployStatus(name, 'info', 'Building package...');
+    const built = await new Promise(res => runJob({ names: [name] }, ok => res(ok), { path: '/api/package-start', log: 'deployLog', startText: `Building ${name}'s package...` }).then(started => { if (!started) res(false); }));
+    if (!built) return { ok: false, error: 'Building its package failed - the log says why.' };
+    p.build = false;
+    setDeployStatus(name, 'info', 'Running...');
+  }
   return new Promise(resolve => {
     runJob({ name, sendGroups: $('dpGroups').checked }, async (ok, result, after) => {
       if (!ok) { resolve({ ok: false, error: (result && result.error) || 'see the log' }); return; }
@@ -1543,7 +1554,7 @@ function openMenu(x, y, right = false) {
   const one = oneSelected();
   const sel = [...selected].map(n => apps.find(a => a.name === n)).filter(Boolean);
   const any = sel.length > 0, anyId = sel.some(a => a.hasAppId);
-  const enable = { edit: !!one, duplicate: !!one, export: any, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && one.packageBuilt), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
+  const enable = { edit: !!one, duplicate: !!one, export: any, deploy: any, pushgroups: anyId, package: !any || sel.some(a => !a.wingetId), pull: anyId, pushsettings: anyId, replacepkg: !!(one && one.hasAppId && !one.wingetId && !one.office && !one.msHint), status: !!(one && one.hasAppId), batchedit: any, addgroups: any, removegroups: any,
     replacegroup: sel.some(a => (a.groups || []).length), copyid: anyId, clearid: anyId, delete: anyId, remove: any, deleteall: any, retire: !!(one && (one.hasAppId || one.retiringSince)),
     takeversion: sel.some(a => a.wingetId && a.wingetVersion && a.newerOnWinget && !(a.managed && a.hasAppId)),
     watchfetch: !!(one && !one.wingetId && one.watchWinget),
@@ -1552,7 +1563,7 @@ function openMenu(x, y, right = false) {
     managed: any,
     rollback: !!(one && (one.previousVersions || []).length && !one.pilotVersion), cleanup: !!(one && ((one.previousVersions || []).length > 1 || (one.rolledBackVersions || []).length)) };
   const why = {
-    replacepkg: !one ? 'Select exactly one app.' : !one.hasAppId ? 'This app isn\'t in Intune yet - Send to Intune uploads its package.' : (one.wingetId || one.office) ? 'Only for an app with a custom package.' : 'Build its package first (Build package).',
+    replacepkg: !one ? 'Select exactly one app.' : !one.hasAppId ? 'This app isn\'t in Intune yet - Send to Intune uploads its package.' : (one.wingetId || one.office) ? 'Only for an app with a custom package.' : 'Not for Microsoft\'s own apps in Intune.',
     edit: 'Select exactly one app.', duplicate: 'Select exactly one app.', export: 'Select one or more apps first - Catalog > Export library exports all of them.', filldetails: 'Only for Winget apps - their details come from winget.', watchfetch: one ? 'Only for a custom package that watches a winget package for new versions (the editor: Winget package to watch).' : 'Select exactly one app.', pushgroups: 'None of the selected apps is in Intune yet.',
     package: 'Winget apps use the shared package (Settings > Packaging).', pull: 'Only for apps already in Intune (with an App ID).',
     pushsettings: 'Only for apps already in Intune (with an App ID).', status: one ? 'This app isn\'t in Intune yet.' : 'Select exactly one app that is in Intune.',
