@@ -1,11 +1,14 @@
 function Get-CleanupTargets {
-    # What "Remove preinstalled vendor apps - HP" removes (2.38.58): HP Wolf Security and HP's add-ons; HP Support
+    # What "Remove preinstalled vendor apps - HP" removes (2.38.58): HP Wolf Security, HP's add-ons and McAfee WebAdvisor; HP Support
     # Assistant and what drivers, keys, audio, docks and the BIOS need stay. Name and Publisher take * as a wildcard.
     # Programs are removed in this order - HP Wolf Security's parts first, the console before what it needs.
     # Edit it here and in the detection rule alike.
     return @{
         Name     = 'HP'
         Programs = @(
+            # McAfee WebAdvisor, which some HP PCs come with too (2.38.80) - its own uninstaller, quietly. Not McAfee's
+            # suite: that one needs McAfee's removal tool, and the Lenovo app has it.
+            @{ Name = 'McAfee WebAdvisor*'; Publisher = '*McAfee*' }
             @{ Name = 'HP Wolf Security'; Publisher = '*HP*' }
             @{ Name = 'HP Wolf Security - Console'; Publisher = '*HP*' }
             @{ Name = 'HP Sure Click*'; Publisher = '*HP*' }

@@ -1056,6 +1056,18 @@ try {
     Check ($clName -eq 'Remove preinstalled vendor apps - HP' -and $clApp.deploy.detection.type -eq 'Script' -and (@($clApp.requiredFor) -contains 'SG-ZZ-Clean') -and $clInstall -match '\$DetectOnly = \$false' -and $clInstall -match 'HP Support Assistant') 'clean-up apps: added from the starter set as a script app, with its groups' (@($cl, $clApp.deploy.detection) | ConvertTo-Json -Compress -Depth 4)
     $clStarter = Invoke-Api '/api/package-list' @{ starter = $true }
     Check (@($clStarter.items | Where-Object { $_.id -eq 'IntuneAppCatalog.Cleanup.HP' -and $_.inCatalog -eq $clName }).Count -eq 1) 'clean-up apps: the starter set says it is in the catalog'
+    # 2.38.79: a starter set script app knows its scripts are this version's; changed ones are seen, and Update scripts
+    # puts this version's back (the old ones to Backups), keeping its groups.
+    $row = { param($n) @((Invoke-Api '/api/catalog').apps | Where-Object { $_.name -eq $n }) | Select-Object -First 1 }
+    $suBefore = & $row $clName
+    if ($clFiles -and $clFiles.folder) { Add-Content -LiteralPath (Join-Path $clFiles.folder 'Install.ps1') -Value '# changed here' }
+    $suChanged = & $row $clName
+    $su = Invoke-Api '/api/starter-update' @{ name = $clName }
+    $suAfter = & $row $clName
+    $suInstall = if ($clFiles -and $clFiles.folder) { Get-Content -LiteralPath (Join-Path $clFiles.folder 'Install.ps1') -Raw } else { '' }
+    Check ($suBefore -and -not $suBefore.starterUpdate -and $suChanged.starterUpdate -and $suChanged.starterEdited -eq $true -and $su.ok -and $su.backup -and (Test-Path -LiteralPath (Join-Path $su.backup 'Install.ps1')) -and -not $suAfter.starterUpdate -and $suInstall -notmatch 'changed here' -and $suInstall -match 'HP Support Assistant' -and (@((Invoke-Api '/api/app-get' @{ name = $clName }).app.requiredFor) -contains 'SG-ZZ-Clean')) 'starter script apps: changed scripts are seen, Update scripts puts this version''s back (old ones in Backups), groups kept' (@($suBefore.starterUpdate, $suChanged.starterUpdate, $suChanged.starterEdited, $su) | ConvertTo-Json -Compress -Depth 3)
+    $suOther = Invoke-Api '/api/starter-update' @{ name = 'No such app' }
+    Check (-not $suOther.ok) 'starter script apps: Update scripts refuses an app that is not one of them' ($suOther | ConvertTo-Json -Compress)
     # Not left for the next test file (WebGraph reads the same catalog, and its groups).
     if ($clName) { [void](Invoke-Api '/api/app-remove' @{ name = $clName }) }
     $o365Again = Invoke-Api '/api/add-winget' @{ items = @(@{ id = 'Microsoft.365Apps.Intune' }) }

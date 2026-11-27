@@ -104,6 +104,31 @@ function wcSetup(d) {
   d.addEventListener('close', () => { strip.style.top = ''; });
   const head = d.querySelector('.addhead, .trayhead') || d.querySelector('h2');
   if (head) { head.classList.add('wtitle'); wcMovable(d, head); }
+  wcBody(d);
+}
+// 2.38.80: a window scrolls its middle only - between its title and its buttons, as the app editor does (2.38.75).
+// Its scrollbar sits inside the window, under its close button; the title and the buttons stay in view. The editor
+// (its own), Add apps (its sections scroll), the command palette and the job tray are left as they are.
+function wcBody(d) {
+  if (d.id === 'dlgApp' || d.matches('.addapps, .palette, .tray, .haswbody')) return;
+  const others = [...d.children].filter(c => !c.matches('.wctl, .sendstack, #dlgTray'));
+  const host = others.length === 1 && others[0].tagName === 'FORM' ? others[0] : d;
+  const kids = [...host.children].filter(c => !c.matches('.wctl, .sendstack, #dlgTray'));
+  const first = kids[0] && kids[0].matches('h2, .addhead, .trayhead') ? kids[0] : null;
+  const last = kids.length > 1 && kids[kids.length - 1].matches('.actions') ? kids[kids.length - 1] : null;
+  const mid = kids.filter(c => c !== first && c !== last);
+  if (!mid.length) return;
+  const body = el('div', { class: 'wbody' });
+  mid[0].before(body); body.append(...mid);
+  d.classList.add('haswbody');
+  // Opening it focuses its first field, as before - not the scrolling middle (Chrome makes a scroller focusable, and
+  // the browser gave it the focus with a frame around it).
+  new MutationObserver(() => { if (!d.open) return; queueMicrotask(() => {
+    if (document.activeElement !== body) return;
+    const t = [...body.querySelectorAll('input:not([type=hidden]), select, textarea, button, a[href], [tabindex]:not([tabindex="-1"])')].find(e => !e.disabled && e.offsetParent)
+      || [...d.querySelectorAll('.actions button')].find(e => !e.disabled && e.offsetParent);
+    if (t) t.focus({ preventScroll: true });
+  }); }).observe(d, { attributes: true, attributeFilter: ['open'] });
 }
 for (const d of document.querySelectorAll('dialog')) wcSetup(d);
 window.wcSetup = wcSetup;

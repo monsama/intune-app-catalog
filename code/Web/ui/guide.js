@@ -34,6 +34,8 @@ function stageOf(a) {
   if (isWauApp(a)) return { key: 'retire', label: 'Retire', cls: 'muted', why: a.hasAppId ? 'Winget-AutoUpdate - replaced by managed updates. Retire it to take it off the devices.' : 'Winget-AutoUpdate - replaced by managed updates. It isn\'t in Intune from this catalog: remove it from the catalog.', next: a.hasAppId ? { label: 'Retire...', title: 'Uninstall it from its groups\' devices, then delete it from Intune', run: () => onApp(a, 'retire') } : null };
   // Nothing to do here for it (it's added in Intune itself) - no "next step" button that only opens the editor again.
   if (a.msHint && !a.hasAppId) return { key: 'msapp', label: 'Microsoft app', cls: 'muted', why: a.msHint };
+  // A starter set script app with newer scripts in this version (2.38.79): one click puts them in, Send to Intune sends them.
+  if (a.starterUpdate) return { key: 'scripts', label: 'Newer scripts', cls: 'info', why: `This version of the app ships newer scripts for ${a.name}${a.starterEdited ? ' - its scripts were changed here since it was added, and updating replaces those changes' : ''}. Update scripts puts them in (the old ones go to Backups); Send to Intune then builds and sends it.`, next: { label: 'Update scripts', title: 'Put in the scripts this version ships - App ID, groups, settings and its other files stay', run: () => updateStarterScripts(a) } };
   if (/issue|Check failed/.test(a.audit || '')) return { key: 'look', label: 'Needs a look', cls: 'warn', why: 'Intune differs from the catalog (last check).', next: { label: 'Checks', title: 'See what differs and fix it', run: () => showChecksFor(a.name) } };
   if (own && !a.hasAppId && !a.hasInstall) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs an install command (editor: Install).', next: { label: 'Edit', title: 'Set its install command', run: () => openEditor(a.name) } };
   if (own && !a.hasAppId && !a.hasDetection) return { key: 'draft', label: 'Draft', cls: 'muted', why: 'It needs a detection rule - Send to Intune refuses a custom package without one.', next: { label: 'Edit', title: 'Set its detection rule (Detection)', run: () => openEditor(a.name) } };
@@ -746,4 +748,14 @@ async function retireLobApp(name) {
   if (!r.ok) { toast(r.error, true); return; }
   toast(r.gone ? 'The MSI app was already gone from Intune.' : 'The MSI line-of-business app is deleted from Intune - the Win32 app replaces it.');
   await loadApps();
+}
+
+// A starter set script app's scripts as this version ships them (2.38.79) - asked first; changed scripts are said so.
+async function updateStarterScripts(a) {
+  const edited = a.starterEdited === true ? '\n\nIts scripts were changed here since it was added - those changes are replaced.' : a.starterEdited === null ? '\n\nIf you changed its scripts here, those changes are replaced.' : '';
+  if (!(await ask(`Update ${a.name}'s scripts to the ones this version of the app ships?\n\nInstall.ps1, Uninstall.ps1 and the detection rule are replaced - the old ones go to the Backups folder. Its App ID, groups, settings and other files (a wallpaper, a tool) stay.${edited}\n\nSend to Intune then builds the package and sends it.`, { ok: 'Update scripts' }))) return;
+  const r = await api('/api/starter-update', { name: a.name });
+  if (!r.ok) { toast(r.error, true); return; }
+  toast(`${a.name}: the newer scripts are in - send it to Intune.`, false, [{ label: 'Send to Intune', run: () => openDeploy([a.name]) }]);
+  loadApps();
 }
