@@ -2351,7 +2351,11 @@ function Global:Get-CleanupAppSet {
             notes = 'Removes HP Wolf Security and HP''s add-ons; HP Support Assistant stays (the list is at the top of Install.ps1 and of the detection script - keep them the same). Test on one PC first; the log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-HP.log.' },
         [ordered]@{ id = 'IntuneAppCatalog.Cleanup.Office'; name = 'Remove preinstalled Office'; files = @('Office.ps1')
             why = 'Removes the consumer Microsoft 365 trial PCs come with (Family/Personal, in every language) - Microsoft 365 Apps for enterprise, Visio, Project and bought Office stay.'
-            notes = 'Removes the Microsoft 365 Family/Personal trial a PC came with (and the free OneNote), in every language, with Office''s own uninstall commands (nothing downloaded). Microsoft 365 Apps for enterprise or business, Visio, Project and volume-licensed Office stay. If it runs while Microsoft 365 Apps installs, one of them fails and Intune tries again later. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log.' }
+            notes = 'Removes the Microsoft 365 Family/Personal trial a PC came with (and the free OneNote), in every language, with Office''s own uninstall commands (nothing downloaded). Microsoft 365 Apps for enterprise or business, Visio, Project and volume-licensed Office stay. If it runs while Microsoft 365 Apps installs, one of them fails and Intune tries again later. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Office.log.' },
+        # 2.38.77: Windows' own extras - for every PC, whatever its vendor.
+        [ordered]@{ id = 'IntuneAppCatalog.Cleanup.Windows'; name = 'Remove Windows extras'; files = @('Windows.ps1', 'Common.ps1')
+            why = 'Removes the Store apps Windows comes with that a work PC doesn''t need: Xbox and the Game Bar, Solitaire, Clipchamp, News, Weather, Tips, Get Help, Feedback Hub, To Do, Teams (free), Mail and Calendar, the new Outlook (Outlook comes with Microsoft 365), Maps, Movies & TV, Paint 3D, and the promoted apps (Spotify, Disney+, TikTok, ...). The Store, Calculator, Photos, Notepad, Paint, Snipping Tool, Terminal, Camera and Teams for work stay.'
+            notes = 'Removes these Store apps for every user and from the Windows image, so new users don''t get them (the list is at the top of Install.ps1 and of the detection script - keep them the same). Windows may bring one back with a feature update - the detection then finds it and it is removed again. The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-Cleanup-Windows.log.' }
     )
 }
 
@@ -2373,9 +2377,30 @@ function Global:Get-DownloadAppSet {
     )
 }
 
+function Global:Get-SetupAppSet {
+    <#
+      Pure (2.38.77): the starter set's Windows set-up apps - script apps that set how a new PC looks (defaults each user
+      can change afterwards). Their scripts are in code\EmbeddedScripts\Setup: Install.ps1, Uninstall.ps1 and the
+      detection script are the same text - $Action says which part runs. Found = this version was applied.
+    #>
+    return @(
+        [ordered]@{ id = 'IntuneAppCatalog.Setup.DesktopDefaults'; name = 'Windows desktop defaults'; files = @('DesktopDefaults.ps1'); kind = 'setup'
+            why = 'How a new PC looks at the first sign-in: only File Explorer and Edge on the taskbar, search as an icon, no Widgets or Task view, the taskbar on the left; dark mode; no desktop shortcuts, This PC and the Recycle Bin shown; your wallpaper (or solid black); the lock screen without Windows spotlight, fun facts and tips. Defaults - each user can change them.'
+            notes = 'Put your wallpaper in its packages folder as wallpaper.jpg (or .png) - editor > App > Upload another... - then Build package; without one the desktop is solid black. The settings go into the default profile (everyone who signs in for the first time) and the profiles already on the PC (after they sign in again); the taskbar''s pins only for new profiles. Only Edge''s desktop shortcut is held back by a policy; the lock screen picture needs Windows Enterprise or Education (Pro shows Windows'' own picture). To apply a changed script again, raise $SettingsVersion at its top (in Install.ps1 and the detection script). The log is C:\ProgramData\Microsoft\IntuneManagementExtension\Logs\IntuneAppCatalog-WindowsDesktopDefaults.log.' }
+    )
+}
+
+function Global:Get-SetupStarterItem {
+    # Pure (2.38.77): one Windows set-up app as a starter set entry.
+    param([int]$Index)
+    $c = @(Get-SetupAppSet)[$Index]
+    return [ordered]@{ id = $c.id; name = $c.name; category = 'Windows set-up'; recommended = $true; why = $c.why }
+}
+
 function Global:Get-ScriptStarterAppSet {
-    # Pure (2.38.66): every script app of the starter set - the clean-up apps and the ones fetched from their vendor.
-    return @(@(Get-CleanupAppSet) + @(Get-DownloadAppSet))
+    # Pure (2.38.66): every script app of the starter set - the clean-up apps, the ones fetched from their vendor and
+    # (2.38.77) the Windows set-up ones.
+    return @(@(Get-CleanupAppSet) + @(Get-DownloadAppSet) + @(Get-SetupAppSet))
 }
 
 function Global:Get-DownloadStarterItem {
@@ -2406,7 +2431,9 @@ function Global:Get-StarterAppSet {
         [ordered]@{ id = (Get-OfficeStarterId); name = 'Microsoft 365 Apps'; category = 'Microsoft'; recommended = $true; why = 'Word, Excel, Outlook, PowerPoint, OneNote, Teams, OneDrive and Access - Intune''s own Office app: Monthly Enterprise Channel, 64-bit, the language of Windows, older Office removed (each changeable in the editor).' },
         [ordered]@{ id = '9WZDNCRFJ3PZ'; name = 'Company Portal'; category = 'Microsoft'; recommended = $true; why = 'Where users install the apps they are offered (Available) - the Microsoft Store app, kept up to date by the Store.' },
         # 2.38.58: script apps that take what PCs come with off them - see Get-CleanupAppSet.
-        (Get-CleanupStarterItem 0), (Get-CleanupStarterItem 1), (Get-CleanupStarterItem 2),
+        (Get-CleanupStarterItem 0), (Get-CleanupStarterItem 1), (Get-CleanupStarterItem 2), (Get-CleanupStarterItem 3),
+        # 2.38.77: how a new PC looks - see Get-SetupAppSet.
+        (Get-SetupStarterItem 0),
         [ordered]@{ id = 'Mozilla.Firefox'; name = 'Mozilla Firefox'; category = 'Browsers'; recommended = $true; why = 'A second browser beside Edge - many sites and admins expect one.' },
         [ordered]@{ id = 'Google.Chrome'; name = 'Google Chrome'; category = 'Browsers'; recommended = $true; why = 'Chrome''s enterprise MSI - installs for all users, managed by policy.' },
         [ordered]@{ id = 'Mozilla.Firefox.ESR'; name = 'Mozilla Firefox ESR'; category = 'Browsers'; recommended = $false; why = 'Instead of Firefox: a release a year, security fixes only - fewer changes for users.' },
